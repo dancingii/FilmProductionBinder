@@ -6912,8 +6912,8 @@ function DayBlock(
   getSceneBlockTextColor,
   updateDayCollapse,
   handleSceneDoubleClick,
-  syncShootingDays,
-}) {
+  syncShootingDays
+) {
   const [editingBlock, setEditingBlock] = React.useState(null);
   const [editValue, setEditValue] = React.useState("");
 
@@ -10511,49 +10511,225 @@ function LocationsModule({
           </div>
         </>
       )}
-    {/* Location Scenes Popup */}
-    {showLocationScenesPopup && (() => {
-        const assignedScenes = scenes.filter((s) =>
-          showLocationScenesPopup.some((n) => String(n) === String(s.sceneNumber))
-        );
-        if (assignedScenes.length === 0) {
+      {/* Location Scenes Popup */}
+      {showLocationScenesPopup &&
+        (() => {
+          const assignedScenes = scenes.filter((s) =>
+            showLocationScenesPopup.some(
+              (n) => String(n) === String(s.sceneNumber)
+            )
+          );
+          if (assignedScenes.length === 0) {
+            return (
+              <>
+                <div
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    backgroundColor: "rgba(0,0,0,0.5)",
+                    zIndex: 999,
+                  }}
+                  onClick={() => setShowLocationScenesPopup(null)}
+                />
+                <div
+                  style={{
+                    position: "fixed",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%,-50%)",
+                    backgroundColor: "white",
+                    border: "2px solid #ccc",
+                    borderRadius: "8px",
+                    padding: "20px",
+                    zIndex: 1000,
+                    minWidth: "300px",
+                  }}
+                >
+                  <h3>No Scenes Found</h3>
+                  <button
+                    onClick={() => setShowLocationScenesPopup(null)}
+                    style={{
+                      backgroundColor: "#2196F3",
+                      color: "white",
+                      padding: "8px 16px",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            );
+          }
+          const currentScene = assignedScenes[locationSceneIndex];
           return (
             <>
-              <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }} onClick={() => setShowLocationScenesPopup(null)} />
-              <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", backgroundColor: "white", border: "2px solid #ccc", borderRadius: "8px", padding: "20px", zIndex: 1000, minWidth: "300px" }}>
-                <h3>No Scenes Found</h3>
-                <button onClick={() => setShowLocationScenesPopup(null)} style={{ backgroundColor: "#2196F3", color: "white", padding: "8px 16px", border: "none", borderRadius: "4px", cursor: "pointer" }}>Close</button>
+              <div
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  backgroundColor: "rgba(0,0,0,0.5)",
+                  zIndex: 999,
+                }}
+                onClick={() => setShowLocationScenesPopup(null)}
+              />
+              <div
+                style={{
+                  position: "fixed",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%,-50%)",
+                  backgroundColor: "white",
+                  border: "2px solid #2196F3",
+                  borderRadius: "8px",
+                  padding: "0",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+                  zIndex: 1000,
+                  width: "900px",
+                  maxWidth: "90vw",
+                  height: "80vh",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "15px 20px",
+                    backgroundColor: "#2196F3",
+                    color: "white",
+                    borderRadius: "8px 8px 0 0",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "15px",
+                    }}
+                  >
+                    <button
+                      onClick={() =>
+                        setLocationSceneIndex(
+                          Math.max(0, locationSceneIndex - 1)
+                        )
+                      }
+                      disabled={locationSceneIndex === 0}
+                      style={{
+                        backgroundColor:
+                          locationSceneIndex === 0 ? "#ccc" : "white",
+                        color: locationSceneIndex === 0 ? "#666" : "#2196F3",
+                        border: "none",
+                        padding: "6px 12px",
+                        borderRadius: "3px",
+                        cursor:
+                          locationSceneIndex === 0 ? "not-allowed" : "pointer",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      ← Prev
+                    </button>
+                    <div style={{ fontWeight: "bold" }}>
+                      Scene {currentScene.sceneNumber} ({locationSceneIndex + 1}{" "}
+                      of {assignedScenes.length})
+                    </div>
+                    <button
+                      onClick={() =>
+                        setLocationSceneIndex(
+                          Math.min(
+                            assignedScenes.length - 1,
+                            locationSceneIndex + 1
+                          )
+                        )
+                      }
+                      disabled={
+                        locationSceneIndex === assignedScenes.length - 1
+                      }
+                      style={{
+                        backgroundColor:
+                          locationSceneIndex === assignedScenes.length - 1
+                            ? "#ccc"
+                            : "white",
+                        color:
+                          locationSceneIndex === assignedScenes.length - 1
+                            ? "#666"
+                            : "#2196F3",
+                        border: "none",
+                        padding: "6px 12px",
+                        borderRadius: "3px",
+                        cursor:
+                          locationSceneIndex === assignedScenes.length - 1
+                            ? "not-allowed"
+                            : "pointer",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      Next →
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setShowLocationScenesPopup(null)}
+                    style={{
+                      backgroundColor: "#f44336",
+                      color: "white",
+                      border: "none",
+                      padding: "6px 12px",
+                      borderRadius: "3px",
+                      cursor: "pointer",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    ✕ Close
+                  </button>
+                </div>
+                <div
+                  style={{
+                    padding: "12px 20px",
+                    backgroundColor: "#f5f5f5",
+                    borderBottom: "1px solid #ddd",
+                    fontFamily: "Courier New, monospace",
+                    fontSize: "12pt",
+                    fontWeight: "bold",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {currentScene.heading}
+                </div>
+                <div
+                  style={{
+                    flex: 1,
+                    padding: "1.5in",
+                    overflow: "auto",
+                    backgroundColor: "white",
+                    boxSizing: "border-box",
+                    fontFamily: "Courier New, monospace",
+                  }}
+                >
+                  <div style={getElementStyle("Scene Heading")}>
+                    {currentScene.heading}
+                  </div>
+                  <div style={{ lineHeight: "1.6", fontSize: "14px" }}>
+                    {(currentScene.content || []).map((block, i) => (
+                      <div key={i} style={getElementStyle(block.type)}>
+                        {block.text}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </>
           );
-        }
-        const currentScene = assignedScenes[locationSceneIndex];
-        return (
-          <>
-            <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }} onClick={() => setShowLocationScenesPopup(null)} />
-            <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", backgroundColor: "white", border: "2px solid #2196F3", borderRadius: "8px", padding: "0", boxShadow: "0 4px 20px rgba(0,0,0,0.3)", zIndex: 1000, width: "900px", maxWidth: "90vw", height: "80vh", display: "flex", flexDirection: "column" }}>
-              <div style={{ padding: "15px 20px", backgroundColor: "#2196F3", color: "white", borderRadius: "8px 8px 0 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
-                  <button onClick={() => setLocationSceneIndex(Math.max(0, locationSceneIndex - 1))} disabled={locationSceneIndex === 0} style={{ backgroundColor: locationSceneIndex === 0 ? "#ccc" : "white", color: locationSceneIndex === 0 ? "#666" : "#2196F3", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: locationSceneIndex === 0 ? "not-allowed" : "pointer", fontWeight: "bold" }}>← Prev</button>
-                  <div style={{ fontWeight: "bold" }}>Scene {currentScene.sceneNumber} ({locationSceneIndex + 1} of {assignedScenes.length})</div>
-                  <button onClick={() => setLocationSceneIndex(Math.min(assignedScenes.length - 1, locationSceneIndex + 1))} disabled={locationSceneIndex === assignedScenes.length - 1} style={{ backgroundColor: locationSceneIndex === assignedScenes.length - 1 ? "#ccc" : "white", color: locationSceneIndex === assignedScenes.length - 1 ? "#666" : "#2196F3", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: locationSceneIndex === assignedScenes.length - 1 ? "not-allowed" : "pointer", fontWeight: "bold" }}>Next →</button>
-                </div>
-                <button onClick={() => setShowLocationScenesPopup(null)} style={{ backgroundColor: "#f44336", color: "white", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: "pointer", fontWeight: "bold" }}>✕ Close</button>
-              </div>
-              <div style={{ padding: "12px 20px", backgroundColor: "#f5f5f5", borderBottom: "1px solid #ddd", fontFamily: "Courier New, monospace", fontSize: "12pt", fontWeight: "bold", textTransform: "uppercase" }}>{currentScene.heading}</div>
-              <div style={{ flex: 1, padding: "1.5in", overflow: "auto", backgroundColor: "white", boxSizing: "border-box", fontFamily: "Courier New, monospace" }}>
-                <div style={getElementStyle("Scene Heading")}>{currentScene.heading}</div>
-                <div style={{ lineHeight: "1.6", fontSize: "14px" }}>
-                  {(currentScene.content || []).map((block, i) => (
-                    <div key={i} style={getElementStyle(block.type)}>{block.text}</div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>
-        );
-      })()}
-
+        })()}
     </div>
   );
 }
