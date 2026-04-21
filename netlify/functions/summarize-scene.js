@@ -1,10 +1,10 @@
-exports.handler = async (event) => {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
+export default async (req, context) => {
+  if (req.method !== "POST") {
+    return new Response("Method Not Allowed", { status: 405 });
   }
 
   try {
-    const { heading, content } = JSON.parse(event.body);
+    const { heading, content } = await req.json();
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -28,16 +28,18 @@ exports.handler = async (event) => {
     const data = await response.json();
     const summary = data.content?.[0]?.text?.trim() || "";
 
-    return {
-      statusCode: 200,
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ summary }),
-    };
+    return new Response(JSON.stringify({ summary }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (err) {
-    console.error("Summarize function error:", err);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: err.message }),
-    };
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
+};
+
+export const config = {
+  path: "/.netlify/functions/summarize-scene",
 };
