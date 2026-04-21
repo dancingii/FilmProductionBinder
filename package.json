@@ -5,6 +5,7 @@
   "keywords": [],
   "main": "src/index.tsx",
   "dependencies": {
+    "ajv": "^8.0.0",
     "jspdf": "2.5.1",
     "pdfmake": "0.2.7",
     "html2canvas": "1.4.1",
@@ -15,9 +16,6 @@
     "react-easy-crop": "^5.0.4"
   },
   "overrides": {
-    "terser-webpack-plugin": {
-      "ajv": "^8"
-    },
     "fork-ts-checker-webpack-plugin": {
       "ajv": "6.12.6",
       "ajv-keywords": "3.5.2"
