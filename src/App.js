@@ -14902,6 +14902,69 @@ function App({ selectedProject, userRole, user }) {
       >
         {renderModule()}
       </div>
+
+      {/* AI Summarization Progress Toast */}
+      {isSummarizing && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "20px",
+            right: "20px",
+            backgroundColor: "#1a1a2e",
+            color: "white",
+            padding: "14px 18px",
+            borderRadius: "8px",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+            zIndex: 99999,
+            minWidth: "260px",
+            fontSize: "13px",
+          }}
+        >
+          <div
+            style={{
+              fontWeight: "bold",
+              marginBottom: "8px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
+            <span style={{ fontSize: "16px" }}>✨</span>
+            AI Summarizing Scenes...
+          </div>
+          <div style={{ marginBottom: "8px", color: "#ccc", fontSize: "12px" }}>
+            Scene {summarizeProgress.current} of {summarizeProgress.total}
+          </div>
+          <div
+            style={{
+              backgroundColor: "#333",
+              borderRadius: "4px",
+              height: "6px",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: "#2196F3",
+                height: "100%",
+                width: `${
+                  summarizeProgress.total > 0
+                    ? Math.round(
+                        (summarizeProgress.current / summarizeProgress.total) *
+                          100
+                      )
+                    : 0
+                }%`,
+                transition: "width 0.3s ease",
+                borderRadius: "4px",
+              }}
+            />
+          </div>
+          <div style={{ marginTop: "6px", color: "#aaa", fontSize: "11px" }}>
+            You can keep working — descriptions will appear as they complete.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -15409,64 +15472,6 @@ function PropsModule({
           })}
         </div>
       </div>
-
-      {/* AI Summarization Progress Toast */}
-      {isSummarizing && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: "20px",
-            right: "20px",
-            backgroundColor: "#1a1a2e",
-            color: "white",
-            padding: "14px 18px",
-            borderRadius: "8px",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-            zIndex: 99999,
-            minWidth: "260px",
-            fontSize: "13px",
-          }}
-        >
-          <div
-            style={{
-              fontWeight: "bold",
-              marginBottom: "8px",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-            }}
-          >
-            <span style={{ fontSize: "16px" }}>✨</span>
-            AI Summarizing Scenes...
-          </div>
-          <div style={{ marginBottom: "8px", color: "#ccc", fontSize: "12px" }}>
-            Scene {summarizeProgress.current} of {summarizeProgress.total}
-          </div>
-          <div
-            style={{
-              backgroundColor: "#333",
-              borderRadius: "4px",
-              height: "6px",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                backgroundColor: "#2196F3",
-                height: "100%",
-                width: `${Math.round(
-                  (summarizeProgress.current / summarizeProgress.total) * 100
-                )}%`,
-                transition: "width 0.3s ease",
-                borderRadius: "4px",
-              }}
-            />
-          </div>
-          <div style={{ marginTop: "6px", color: "#aaa", fontSize: "11px" }}>
-            You can keep working — descriptions will appear as they complete.
-          </div>
-        </div>
-      )}
 
       {selectedProp && (
         <>
