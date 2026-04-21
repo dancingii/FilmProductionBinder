@@ -12596,10 +12596,40 @@ function App({ selectedProject, userRole, user }) {
     }
 
     // Final save to database with all descriptions
-    saveScenesDatabase(updatedScenes);
+    // Keep sync lock active during the entire save + reload cycle
+    syncLocks.current.scenes = true;
+    console.log("🔒 Summarization: Scenes sync lock ENABLED for final save");
+
+    await database.saveScenesDatabase(
+      selectedProject,
+      updatedScenes,
+      scenesLoaded,
+      false,
+      setIsSavingScenes
+    );
+
+    console.log("✅ Descriptions saved — reloading scenes from database");
+
+    // Force reload scenes from DB so UI reflects saved descriptions
+    await database.loadScenesFromDatabase(
+      selectedProject,
+      setScenes,
+      setScenesLoaded,
+      (loadedScenes) => {
+        database.loadStripboardScenesAfterScenes(
+          selectedProject,
+          loadedScenes,
+          setStripboardScenes
+        );
+      }
+    );
+
+    syncLocks.current.scenes = false;
+    console.log("🔓 Summarization: Scenes sync lock RELEASED");
+
     setIsSummarizing(false);
     setSummarizeProgress({ current: 0, total: 0 });
-    console.log("✅ AI scene summarization complete");
+    console.log("✅ AI scene summarization complete — descriptions loaded");
   };
 
   const handleFileUpload = (event) => {
