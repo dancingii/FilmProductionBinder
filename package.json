@@ -15,7 +15,8 @@
     "react-easy-crop": "^5.0.4"
   },
   "overrides": {
-    "ajv": "^8"
+    "ajv": "^8",
+    "fork-ts-checker-webpack-plugin": "6.5.0"
   },
   "devDependencies": {
     "@types/react": "19.0.0",
