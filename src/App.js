@@ -12540,6 +12540,14 @@ function App({ selectedProject, userRole, user }) {
   const summarizeScenesWithAI = async (scenesToSummarize) => {
     setIsSummarizing(true);
     setSummarizeProgress({ current: 0, total: scenesToSummarize.length });
+    console.log(
+      "🎬 Starting AI summarization for",
+      scenesToSummarize.length,
+      "scenes"
+    );
+
+    // Give React a tick to render the progress toast before starting
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const updatedScenes = scenesToSummarize.map((s) => ({ ...s }));
 
