@@ -9667,82 +9667,85 @@ function LocationsModule({
                   backgroundColor: "#fff8e1",
                 }}
               >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "10px",
-            }}
-          >
-            <strong style={{ fontSize: "14px" }}>
-              ⚠️ Unassigned Scenes ({unassignedScenes.length})
-            </strong>
-            <div style={{ display: "flex", gap: "8px" }}>
-              <button
-                onClick={() => {
-                  setUnassignedSceneIndex(0);
-                  setUnassignedScenesPopupScenes(
-                    unassignedScenes.map((s) => s.sceneNumber)
-                  );
-                }}
-                style={{
-                  backgroundColor: "#2196F3",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "3px",
-                  padding: "4px 10px",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                }}
-              >
-                📄 Scenes
-              </button>
-              <button
-                onClick={() => {
-                  setNewLocationHeading("");
-                  setShowAddLocationDialog(true);
-                }}
-                style={{
-                  backgroundColor: "#4CAF50",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "3px",
-                  padding: "4px 10px",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                }}
-              >
-                + Add Location
-              </button>
-            </div>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-            {unassignedScenes.map((scene) => (
-              <span
-                key={scene.sceneNumber}
-                onClick={() => {
-                  setUnassignedReassignTarget("");
-                  setUnassignedReassignScene(scene.sceneNumber);
-                }}
-                style={{
-                  backgroundColor: "#FF9800",
-                  color: "white",
-                  padding: "4px 10px",
-                  borderRadius: "4px",
-                  fontSize: "12px",
-                  fontWeight: "bold",
-                  cursor: "pointer",
-                  border: "1px solid #F57C00",
-                }}
-                title={`Scene ${scene.sceneNumber} - click to assign`}
-              >
-                {scene.sceneNumber}
-              </span>
-            ))}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "10px",
+                  }}
+                >
+                  <strong style={{ fontSize: "14px" }}>
+                    ⚠️ Unassigned Scenes ({unassignedScenes.length})
+                  </strong>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      onClick={() => {
+                        setUnassignedSceneIndex(0);
+                        setUnassignedScenesPopupScenes(
+                          unassignedScenes.map((s) => s.sceneNumber)
+                        );
+                      }}
+                      style={{
+                        backgroundColor: "#2196F3",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "3px",
+                        padding: "4px 10px",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                      }}
+                    >
+                      📄 Scenes
+                    </button>
+                    <button
+                      onClick={() => {
+                        setNewLocationHeading("");
+                        setShowAddLocationDialog(true);
+                      }}
+                      style={{
+                        backgroundColor: "#4CAF50",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "3px",
+                        padding: "4px 10px",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                      }}
+                    >
+                      + Add Location
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {unassignedScenes.map((scene) => (
+                    <span
+                      key={scene.sceneNumber}
+                      onClick={() => {
+                        setUnassignedReassignTarget("");
+                        setUnassignedReassignScene(scene.sceneNumber);
+                      }}
+                      style={{
+                        backgroundColor: "#FF9800",
+                        color: "white",
+                        padding: "4px 10px",
+                        borderRadius: "4px",
+                        fontSize: "12px",
+                        fontWeight: "bold",
+                        cursor: "pointer",
+                        border: "1px solid #F57C00",
+                      }}
+                      title={`Scene ${scene.sceneNumber} - click to assign`}
+                    >
+                      {scene.sceneNumber}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Unassigned Scene Reassign Popup */}
       {unassignedReassignScene && (
