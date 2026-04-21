@@ -8985,6 +8985,30 @@ function LocationsModule({
                           >
                             Reassign
                           </button>
+                          {totalScenes > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const allScenes = subLocations.flatMap(
+                                  (loc) => loc.scenes
+                                );
+                                setLocationSceneIndex(0);
+                                setShowLocationScenesPopup(allScenes);
+                              }}
+                              style={{
+                                backgroundColor: "#2196F3",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "3px",
+                                padding: "2px 6px",
+                                cursor: "pointer",
+                                fontSize: "10px",
+                                marginLeft: "6px",
+                              }}
+                            >
+                              📄 Scenes
+                            </button>
+                          )}
                         </div>
                       </div>
 
