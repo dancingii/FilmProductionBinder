@@ -9655,36 +9655,86 @@ function LocationsModule({
                 )}
               </div>
             ))}
-          </div>
-        </div>
-      </div>
 
-      {/* Unassigned Scenes Group */}
-      {unassignedScenes.length > 0 && (
-        <div style={{ marginTop: "15px", border: "2px solid #FF9800", borderRadius: "6px", padding: "12px", backgroundColor: "#fff8e1" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-            <strong style={{ fontSize: "14px" }}>⚠️ Unassigned Scenes ({unassignedScenes.length})</strong>
+            {/* Unassigned Scenes Group */}
+            {unassignedScenes.length > 0 && (
+              <div
+                style={{
+                  marginTop: "15px",
+                  border: "2px solid #FF9800",
+                  borderRadius: "6px",
+                  padding: "12px",
+                  backgroundColor: "#fff8e1",
+                }}
+              >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "10px",
+            }}
+          >
+            <strong style={{ fontSize: "14px" }}>
+              ⚠️ Unassigned Scenes ({unassignedScenes.length})
+            </strong>
             <div style={{ display: "flex", gap: "8px" }}>
               <button
-                onClick={() => { setUnassignedSceneIndex(0); setUnassignedScenesPopupScenes(unassignedScenes.map(s => s.sceneNumber)); }}
-                style={{ backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "3px", padding: "4px 10px", cursor: "pointer", fontSize: "12px" }}
+                onClick={() => {
+                  setUnassignedSceneIndex(0);
+                  setUnassignedScenesPopupScenes(
+                    unassignedScenes.map((s) => s.sceneNumber)
+                  );
+                }}
+                style={{
+                  backgroundColor: "#2196F3",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "3px",
+                  padding: "4px 10px",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                }}
               >
                 📄 Scenes
               </button>
               <button
-                onClick={() => { setNewLocationHeading(""); setShowAddLocationDialog(true); }}
-                style={{ backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "3px", padding: "4px 10px", cursor: "pointer", fontSize: "12px" }}
+                onClick={() => {
+                  setNewLocationHeading("");
+                  setShowAddLocationDialog(true);
+                }}
+                style={{
+                  backgroundColor: "#4CAF50",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "3px",
+                  padding: "4px 10px",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                }}
               >
                 + Add Location
               </button>
             </div>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-            {unassignedScenes.map(scene => (
+            {unassignedScenes.map((scene) => (
               <span
                 key={scene.sceneNumber}
-                onClick={() => { setUnassignedReassignTarget(""); setUnassignedReassignScene(scene.sceneNumber); }}
-                style={{ backgroundColor: "#FF9800", color: "white", padding: "4px 10px", borderRadius: "4px", fontSize: "12px", fontWeight: "bold", cursor: "pointer", border: "1px solid #F57C00" }}
+                onClick={() => {
+                  setUnassignedReassignTarget("");
+                  setUnassignedReassignScene(scene.sceneNumber);
+                }}
+                style={{
+                  backgroundColor: "#FF9800",
+                  color: "white",
+                  padding: "4px 10px",
+                  borderRadius: "4px",
+                  fontSize: "12px",
+                  fontWeight: "bold",
+                  cursor: "pointer",
+                  border: "1px solid #F57C00",
+                }}
                 title={`Scene ${scene.sceneNumber} - click to assign`}
               >
                 {scene.sceneNumber}
@@ -9697,30 +9747,141 @@ function LocationsModule({
       {/* Unassigned Scene Reassign Popup */}
       {unassignedReassignScene && (
         <>
-          <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }} onClick={() => setUnassignedReassignScene(null)} />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", backgroundColor: "white", borderRadius: "8px", padding: "24px", zIndex: 1000, minWidth: "360px", boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
-            <h3 style={{ marginTop: 0 }}>Assign Scene {unassignedReassignScene}</h3>
-            <p style={{ fontSize: "13px", color: "#666" }}>{scenes.find(s => String(s.sceneNumber) === String(unassignedReassignScene))?.heading}</p>
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              backgroundColor: "rgba(0,0,0,0.5)",
+              zIndex: 999,
+            }}
+            onClick={() => setUnassignedReassignScene(null)}
+          />
+          <div
+            style={{
+              position: "fixed",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%,-50%)",
+              backgroundColor: "white",
+              borderRadius: "8px",
+              padding: "24px",
+              zIndex: 1000,
+              minWidth: "360px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>
+              Assign Scene {unassignedReassignScene}
+            </h3>
+            <p style={{ fontSize: "13px", color: "#666" }}>
+              {
+                scenes.find(
+                  (s) =>
+                    String(s.sceneNumber) === String(unassignedReassignScene)
+                )?.heading
+              }
+            </p>
             <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "bold" }}>Assign to location:</label>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "6px",
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                }}
+              >
+                Assign to location:
+              </label>
               <select
                 value={unassignedReassignTarget}
-                onChange={e => setUnassignedReassignTarget(e.target.value)}
-                style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}
+                onChange={(e) => setUnassignedReassignTarget(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  fontSize: "13px",
+                }}
               >
                 <option value="">Select a location...</option>
-                {scriptLocations.map(loc => (
-                  <option key={loc.id} value={loc.id}>{loc.intExt} {loc.subLocation} ({loc.parentLocation})</option>
+                {scriptLocations.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.intExt} {loc.subLocation} ({loc.parentLocation})
+                  </option>
                 ))}
               </select>
             </div>
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-              <button onClick={() => { setNewLocationHeading(scenes.find(s => String(s.sceneNumber) === String(unassignedReassignScene))?.heading || ""); setShowAddLocationDialog(true); }} style={{ backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: "pointer", fontSize: "13px" }}>+ New Location</button>
-              <button onClick={() => setUnassignedReassignScene(null)} style={{ backgroundColor: "#ccc", color: "#333", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: "pointer", fontSize: "13px" }}>Cancel</button>
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                justifyContent: "flex-end",
+              }}
+            >
               <button
-                onClick={() => { if (unassignedReassignTarget) { assignUnassignedScene(unassignedReassignScene, unassignedReassignTarget); setUnassignedReassignScene(null); setUnassignedReassignTarget(""); }}}
+                onClick={() => {
+                  setNewLocationHeading(
+                    scenes.find(
+                      (s) =>
+                        String(s.sceneNumber) ===
+                        String(unassignedReassignScene)
+                    )?.heading || ""
+                  );
+                  setShowAddLocationDialog(true);
+                }}
+                style={{
+                  backgroundColor: "#4CAF50",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  padding: "8px 14px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                }}
+              >
+                + New Location
+              </button>
+              <button
+                onClick={() => setUnassignedReassignScene(null)}
+                style={{
+                  backgroundColor: "#ccc",
+                  color: "#333",
+                  border: "none",
+                  borderRadius: "4px",
+                  padding: "8px 14px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (unassignedReassignTarget) {
+                    assignUnassignedScene(
+                      unassignedReassignScene,
+                      unassignedReassignTarget
+                    );
+                    setUnassignedReassignScene(null);
+                    setUnassignedReassignTarget("");
+                  }
+                }}
                 disabled={!unassignedReassignTarget}
-                style={{ backgroundColor: unassignedReassignTarget ? "#2196F3" : "#ccc", color: "white", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: unassignedReassignTarget ? "pointer" : "not-allowed", fontSize: "13px", fontWeight: "bold" }}
+                style={{
+                  backgroundColor: unassignedReassignTarget
+                    ? "#2196F3"
+                    : "#ccc",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  padding: "8px 14px",
+                  cursor: unassignedReassignTarget ? "pointer" : "not-allowed",
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                }}
               >
                 Assign
               </button>
@@ -9730,121 +9891,473 @@ function LocationsModule({
       )}
 
       {/* Unassigned Scenes Script Viewer */}
-      {unassignedScenesPopupScenes && (() => {
-        const assignedScenes = scenes.filter(s => unassignedScenesPopupScenes.some(n => String(n) === String(s.sceneNumber)));
-        if (assignedScenes.length === 0) return null;
-        const currentScene = assignedScenes[unassignedSceneIndex];
-        return (
-          <>
-            <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }} onClick={() => setUnassignedScenesPopupScenes(null)} />
-            <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", backgroundColor: "white", border: "2px solid #FF9800", borderRadius: "8px", padding: "0", boxShadow: "0 4px 20px rgba(0,0,0,0.3)", zIndex: 1000, width: "900px", maxWidth: "90vw", height: "80vh", display: "flex", flexDirection: "column" }}>
-              <div style={{ padding: "15px 20px", backgroundColor: "#FF9800", color: "white", borderRadius: "8px 8px 0 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
-                  <button onClick={() => setUnassignedSceneIndex(Math.max(0, unassignedSceneIndex - 1))} disabled={unassignedSceneIndex === 0} style={{ backgroundColor: unassignedSceneIndex === 0 ? "#ccc" : "white", color: unassignedSceneIndex === 0 ? "#666" : "#FF9800", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: unassignedSceneIndex === 0 ? "not-allowed" : "pointer", fontWeight: "bold" }}>← Prev</button>
-                  <div style={{ fontWeight: "bold" }}>Scene {currentScene.sceneNumber} ({unassignedSceneIndex + 1} of {assignedScenes.length})</div>
-                  <button onClick={() => setUnassignedSceneIndex(Math.min(assignedScenes.length - 1, unassignedSceneIndex + 1))} disabled={unassignedSceneIndex === assignedScenes.length - 1} style={{ backgroundColor: unassignedSceneIndex === assignedScenes.length - 1 ? "#ccc" : "white", color: unassignedSceneIndex === assignedScenes.length - 1 ? "#666" : "#FF9800", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: unassignedSceneIndex === assignedScenes.length - 1 ? "not-allowed" : "pointer", fontWeight: "bold" }}>Next →</button>
-                </div>
-                <button onClick={() => setUnassignedScenesPopupScenes(null)} style={{ backgroundColor: "#f44336", color: "white", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: "pointer", fontWeight: "bold" }}>✕ Close</button>
-              </div>
-              <div style={{ padding: "12px 20px", backgroundColor: "#f5f5f5", borderBottom: "1px solid #ddd", fontFamily: "Courier New, monospace", fontSize: "12pt", fontWeight: "bold", textTransform: "uppercase" }}>{currentScene.heading}</div>
-              <div style={{ flex: 1, padding: "1.5in", overflow: "auto", backgroundColor: "white", boxSizing: "border-box", fontFamily: "Courier New, monospace" }}>
-                <div style={getElementStyle("Scene Heading")}>{currentScene.heading}</div>
-                <div style={{ lineHeight: "1.6", fontSize: "14px" }}>
-                  {(currentScene.content || []).map((block, i) => (
-                    <div key={i} style={getElementStyle(block.type)}>{block.text}</div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>
-        );
-      })()}
-
-      {/* Scene Badge Manage Popup */}
-      {showSceneBadgePopup && (() => {
-        const { sceneNumber, locationId, parentLocation } = showSceneBadgePopup;
-        const scene = scenes.find(s => String(s.sceneNumber) === String(sceneNumber));
-        const currentLoc = scriptLocations.find(l => l.id === locationId);
-        return (
-          <>
-            <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }} onClick={() => setShowSceneBadgePopup(null)} />
-            <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", backgroundColor: "white", borderRadius: "8px", padding: "24px", zIndex: 1000, minWidth: "380px", boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
-              <h3 style={{ marginTop: 0 }}>Manage Scene {sceneNumber}</h3>
-              <p style={{ fontSize: "13px", color: "#555", marginBottom: "4px" }}><strong>{scene?.heading}</strong></p>
-              <p style={{ fontSize: "12px", color: "#888", marginBottom: "16px" }}>Currently in: {currentLoc?.intExt} {currentLoc?.subLocation} ({parentLocation})</p>
-              <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-                <button
-                  onClick={() => {
-                    setLocationSceneIndex(0);
-                    setShowLocationScenesPopup([sceneNumber]);
-                    setShowSceneBadgePopup(null);
+      {unassignedScenesPopupScenes &&
+        (() => {
+          const assignedScenes = scenes.filter((s) =>
+            unassignedScenesPopupScenes.some(
+              (n) => String(n) === String(s.sceneNumber)
+            )
+          );
+          if (assignedScenes.length === 0) return null;
+          const currentScene = assignedScenes[unassignedSceneIndex];
+          return (
+            <>
+              <div
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  backgroundColor: "rgba(0,0,0,0.5)",
+                  zIndex: 999,
+                }}
+                onClick={() => setUnassignedScenesPopupScenes(null)}
+              />
+              <div
+                style={{
+                  position: "fixed",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%,-50%)",
+                  backgroundColor: "white",
+                  border: "2px solid #FF9800",
+                  borderRadius: "8px",
+                  padding: "0",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+                  zIndex: 1000,
+                  width: "900px",
+                  maxWidth: "90vw",
+                  height: "80vh",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "15px 20px",
+                    backgroundColor: "#FF9800",
+                    color: "white",
+                    borderRadius: "8px 8px 0 0",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
                   }}
-                  style={{ backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: "pointer", fontSize: "13px" }}
                 >
-                  📄 View Script
-                </button>
-              </div>
-              <div style={{ marginBottom: "16px" }}>
-                <label style={{ display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "bold" }}>Reassign to different location:</label>
-                <select
-                  value={sceneBadgeReassignTarget}
-                  onChange={e => setSceneBadgeReassignTarget(e.target.value)}
-                  style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}
-                >
-                  <option value="">Select a location...</option>
-                  {scriptLocations.filter(l => l.id !== locationId).map(loc => (
-                    <option key={loc.id} value={loc.id}>{loc.intExt} {loc.subLocation} ({loc.parentLocation})</option>
-                  ))}
-                </select>
-              </div>
-              <div style={{ display: "flex", gap: "10px", justifyContent: "space-between" }}>
-                <button
-                  onClick={() => { toggleSceneAssignment(locationId, sceneNumber); setShowSceneBadgePopup(null); }}
-                  style={{ backgroundColor: "#f44336", color: "white", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: "pointer", fontSize: "13px" }}
-                >
-                  Remove from Location
-                </button>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <button onClick={() => setShowSceneBadgePopup(null)} style={{ backgroundColor: "#ccc", color: "#333", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: "pointer", fontSize: "13px" }}>Cancel</button>
-                  <button
-                    onClick={() => { if (sceneBadgeReassignTarget) { reassignSceneToLocation(sceneNumber, locationId, sceneBadgeReassignTarget); setShowSceneBadgePopup(null); setSceneBadgeReassignTarget(""); }}}
-                    disabled={!sceneBadgeReassignTarget}
-                    style={{ backgroundColor: sceneBadgeReassignTarget ? "#FF9800" : "#ccc", color: "white", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: sceneBadgeReassignTarget ? "pointer" : "not-allowed", fontSize: "13px", fontWeight: "bold" }}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "15px",
+                    }}
                   >
-                    Reassign
+                    <button
+                      onClick={() =>
+                        setUnassignedSceneIndex(
+                          Math.max(0, unassignedSceneIndex - 1)
+                        )
+                      }
+                      disabled={unassignedSceneIndex === 0}
+                      style={{
+                        backgroundColor:
+                          unassignedSceneIndex === 0 ? "#ccc" : "white",
+                        color: unassignedSceneIndex === 0 ? "#666" : "#FF9800",
+                        border: "none",
+                        padding: "6px 12px",
+                        borderRadius: "3px",
+                        cursor:
+                          unassignedSceneIndex === 0
+                            ? "not-allowed"
+                            : "pointer",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      ← Prev
+                    </button>
+                    <div style={{ fontWeight: "bold" }}>
+                      Scene {currentScene.sceneNumber} (
+                      {unassignedSceneIndex + 1} of {assignedScenes.length})
+                    </div>
+                    <button
+                      onClick={() =>
+                        setUnassignedSceneIndex(
+                          Math.min(
+                            assignedScenes.length - 1,
+                            unassignedSceneIndex + 1
+                          )
+                        )
+                      }
+                      disabled={
+                        unassignedSceneIndex === assignedScenes.length - 1
+                      }
+                      style={{
+                        backgroundColor:
+                          unassignedSceneIndex === assignedScenes.length - 1
+                            ? "#ccc"
+                            : "white",
+                        color:
+                          unassignedSceneIndex === assignedScenes.length - 1
+                            ? "#666"
+                            : "#FF9800",
+                        border: "none",
+                        padding: "6px 12px",
+                        borderRadius: "3px",
+                        cursor:
+                          unassignedSceneIndex === assignedScenes.length - 1
+                            ? "not-allowed"
+                            : "pointer",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      Next →
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setUnassignedScenesPopupScenes(null)}
+                    style={{
+                      backgroundColor: "#f44336",
+                      color: "white",
+                      border: "none",
+                      padding: "6px 12px",
+                      borderRadius: "3px",
+                      cursor: "pointer",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    ✕ Close
                   </button>
                 </div>
+                <div
+                  style={{
+                    padding: "12px 20px",
+                    backgroundColor: "#f5f5f5",
+                    borderBottom: "1px solid #ddd",
+                    fontFamily: "Courier New, monospace",
+                    fontSize: "12pt",
+                    fontWeight: "bold",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {currentScene.heading}
+                </div>
+                <div
+                  style={{
+                    flex: 1,
+                    padding: "1.5in",
+                    overflow: "auto",
+                    backgroundColor: "white",
+                    boxSizing: "border-box",
+                    fontFamily: "Courier New, monospace",
+                  }}
+                >
+                  <div style={getElementStyle("Scene Heading")}>
+                    {currentScene.heading}
+                  </div>
+                  <div style={{ lineHeight: "1.6", fontSize: "14px" }}>
+                    {(currentScene.content || []).map((block, i) => (
+                      <div key={i} style={getElementStyle(block.type)}>
+                        {block.text}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          </>
-        );
-      })()}
+            </>
+          );
+        })()}
+
+      {/* Scene Badge Manage Popup */}
+      {showSceneBadgePopup &&
+        (() => {
+          const { sceneNumber, locationId, parentLocation } =
+            showSceneBadgePopup;
+          const scene = scenes.find(
+            (s) => String(s.sceneNumber) === String(sceneNumber)
+          );
+          const currentLoc = scriptLocations.find((l) => l.id === locationId);
+          return (
+            <>
+              <div
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  backgroundColor: "rgba(0,0,0,0.5)",
+                  zIndex: 999,
+                }}
+                onClick={() => setShowSceneBadgePopup(null)}
+              />
+              <div
+                style={{
+                  position: "fixed",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%,-50%)",
+                  backgroundColor: "white",
+                  borderRadius: "8px",
+                  padding: "24px",
+                  zIndex: 1000,
+                  minWidth: "380px",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+                }}
+              >
+                <h3 style={{ marginTop: 0 }}>Manage Scene {sceneNumber}</h3>
+                <p
+                  style={{
+                    fontSize: "13px",
+                    color: "#555",
+                    marginBottom: "4px",
+                  }}
+                >
+                  <strong>{scene?.heading}</strong>
+                </p>
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: "#888",
+                    marginBottom: "16px",
+                  }}
+                >
+                  Currently in: {currentLoc?.intExt} {currentLoc?.subLocation} (
+                  {parentLocation})
+                </p>
+                <div
+                  style={{ display: "flex", gap: "8px", marginBottom: "16px" }}
+                >
+                  <button
+                    onClick={() => {
+                      setLocationSceneIndex(0);
+                      setShowLocationScenesPopup([sceneNumber]);
+                      setShowSceneBadgePopup(null);
+                    }}
+                    style={{
+                      backgroundColor: "#2196F3",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      padding: "8px 14px",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                    }}
+                  >
+                    📄 View Script
+                  </button>
+                </div>
+                <div style={{ marginBottom: "16px" }}>
+                  <label
+                    style={{
+                      display: "block",
+                      marginBottom: "6px",
+                      fontSize: "13px",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    Reassign to different location:
+                  </label>
+                  <select
+                    value={sceneBadgeReassignTarget}
+                    onChange={(e) =>
+                      setSceneBadgeReassignTarget(e.target.value)
+                    }
+                    style={{
+                      width: "100%",
+                      padding: "8px",
+                      border: "1px solid #ccc",
+                      borderRadius: "4px",
+                      fontSize: "13px",
+                    }}
+                  >
+                    <option value="">Select a location...</option>
+                    {scriptLocations
+                      .filter((l) => l.id !== locationId)
+                      .map((loc) => (
+                        <option key={loc.id} value={loc.id}>
+                          {loc.intExt} {loc.subLocation} ({loc.parentLocation})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "10px",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      toggleSceneAssignment(locationId, sceneNumber);
+                      setShowSceneBadgePopup(null);
+                    }}
+                    style={{
+                      backgroundColor: "#f44336",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      padding: "8px 14px",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                    }}
+                  >
+                    Remove from Location
+                  </button>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      onClick={() => setShowSceneBadgePopup(null)}
+                      style={{
+                        backgroundColor: "#ccc",
+                        color: "#333",
+                        border: "none",
+                        borderRadius: "4px",
+                        padding: "8px 14px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (sceneBadgeReassignTarget) {
+                          reassignSceneToLocation(
+                            sceneNumber,
+                            locationId,
+                            sceneBadgeReassignTarget
+                          );
+                          setShowSceneBadgePopup(null);
+                          setSceneBadgeReassignTarget("");
+                        }
+                      }}
+                      disabled={!sceneBadgeReassignTarget}
+                      style={{
+                        backgroundColor: sceneBadgeReassignTarget
+                          ? "#FF9800"
+                          : "#ccc",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        padding: "8px 14px",
+                        cursor: sceneBadgeReassignTarget
+                          ? "pointer"
+                          : "not-allowed",
+                        fontSize: "13px",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      Reassign
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          );
+        })()}
 
       {/* Add Location Dialog */}
       {showAddLocationDialog && (
         <>
-          <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }} onClick={() => setShowAddLocationDialog(false)} />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", backgroundColor: "white", borderRadius: "8px", padding: "24px", zIndex: 1000, minWidth: "420px", boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              backgroundColor: "rgba(0,0,0,0.5)",
+              zIndex: 999,
+            }}
+            onClick={() => setShowAddLocationDialog(false)}
+          />
+          <div
+            style={{
+              position: "fixed",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%,-50%)",
+              backgroundColor: "white",
+              borderRadius: "8px",
+              padding: "24px",
+              zIndex: 1000,
+              minWidth: "420px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+            }}
+          >
             <h3 style={{ marginTop: 0 }}>Add New Location</h3>
             <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "bold" }}>Full Scene Heading:</label>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "6px",
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                }}
+              >
+                Full Scene Heading:
+              </label>
               <input
                 type="text"
                 value={newLocationHeading}
-                onChange={e => setNewLocationHeading(e.target.value)}
+                onChange={(e) => setNewLocationHeading(e.target.value)}
                 placeholder="e.g. EXT. FARMHOUSE - DAY"
-                style={{ width: "100%", padding: "10px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
-                onKeyDown={e => { if (e.key === "Enter") addManualLocation(newLocationHeading); }}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  fontSize: "13px",
+                  boxSizing: "border-box",
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") addManualLocation(newLocationHeading);
+                }}
                 autoFocus
               />
-              <p style={{ fontSize: "11px", color: "#888", marginTop: "6px" }}>Include INT./EXT. and time of day (DAY/NIGHT/DAWN/DUSK). INT. and EXT. versions will be created as separate sub-locations.</p>
+              <p style={{ fontSize: "11px", color: "#888", marginTop: "6px" }}>
+                Include INT./EXT. and time of day (DAY/NIGHT/DAWN/DUSK). INT.
+                and EXT. versions will be created as separate sub-locations.
+              </p>
             </div>
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-              <button onClick={() => { setShowAddLocationDialog(false); setNewLocationHeading(""); }} style={{ backgroundColor: "#ccc", color: "#333", border: "none", borderRadius: "4px", padding: "8px 16px", cursor: "pointer", fontSize: "13px" }}>Cancel</button>
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                onClick={() => {
+                  setShowAddLocationDialog(false);
+                  setNewLocationHeading("");
+                }}
+                style={{
+                  backgroundColor: "#ccc",
+                  color: "#333",
+                  border: "none",
+                  borderRadius: "4px",
+                  padding: "8px 16px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                }}
+              >
+                Cancel
+              </button>
               <button
                 onClick={() => addManualLocation(newLocationHeading)}
                 disabled={!newLocationHeading.trim()}
-                style={{ backgroundColor: newLocationHeading.trim() ? "#4CAF50" : "#ccc", color: "white", border: "none", borderRadius: "4px", padding: "8px 16px", cursor: newLocationHeading.trim() ? "pointer" : "not-allowed", fontSize: "13px", fontWeight: "bold" }}
+                style={{
+                  backgroundColor: newLocationHeading.trim()
+                    ? "#4CAF50"
+                    : "#ccc",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  padding: "8px 16px",
+                  cursor: newLocationHeading.trim() ? "pointer" : "not-allowed",
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                }}
               >
                 Add Location
               </button>
