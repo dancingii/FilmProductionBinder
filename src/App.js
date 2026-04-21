@@ -8230,6 +8230,16 @@ function LocationsModule({
   const [reassignTarget, setReassignTarget] = useState("");
   const [showLocationScenesPopup, setShowLocationScenesPopup] = useState(null);
   const [locationSceneIndex, setLocationSceneIndex] = useState(0);
+  const [showAddLocationDialog, setShowAddLocationDialog] = useState(false);
+  const [newLocationHeading, setNewLocationHeading] = useState("");
+  const [manualLocationIds, setManualLocationIds] = useState(new Set());
+  const [showSceneBadgePopup, setShowSceneBadgePopup] = useState(null); // { sceneNumber, locationId, parentLocation }
+  const [sceneBadgeReassignTarget, setSceneBadgeReassignTarget] = useState("");
+  const [unassignedScenesPopupScenes, setUnassignedScenesPopupScenes] =
+    useState(null);
+  const [unassignedSceneIndex, setUnassignedSceneIndex] = useState(0);
+  const [unassignedReassignScene, setUnassignedReassignScene] = useState(null);
+  const [unassignedReassignTarget, setUnassignedReassignTarget] = useState("");
   const [newActualLocation, setNewActualLocation] = useState({
     name: "",
     address: "",
@@ -8454,6 +8464,121 @@ function LocationsModule({
     });
   };
 
+  // Add a manual location from a full scene heading string
+  const addManualLocation = (headingStr) => {
+    if (!headingStr.trim()) return;
+    const upper = headingStr.toUpperCase().trim();
+    const parsed = parseSceneHeading(upper);
+    const intExt = upper.startsWith("INT.")
+      ? "INT."
+      : upper.startsWith("EXT.")
+      ? "EXT."
+      : "";
+    const fullLocation = parsed.location ? parsed.location.trim() : upper;
+
+    let parentLocation = fullLocation;
+    let subLocation = fullLocation;
+
+    if (fullLocation.includes("'S ")) {
+      const parts = fullLocation.split("'S ");
+      parentLocation = parts[0] + "'S";
+      subLocation = parts[1].trim();
+    } else if (
+      /\b(HOUSE|APARTMENT|BUILDING|OFFICE|SCHOOL|HOSPITAL|STORE|SHOP|RESTAURANT|BAR|CLUB)\b/.test(
+        fullLocation
+      )
+    ) {
+      const words = fullLocation.split(" ");
+      const idx = words.findIndex((w) =>
+        [
+          "HOUSE",
+          "APARTMENT",
+          "BUILDING",
+          "OFFICE",
+          "SCHOOL",
+          "HOSPITAL",
+          "STORE",
+          "SHOP",
+          "RESTAURANT",
+          "BAR",
+          "CLUB",
+        ].includes(w)
+      );
+      if (idx !== -1 && idx < words.length - 1) {
+        parentLocation = words.slice(0, idx + 1).join(" ");
+        subLocation = words.slice(idx + 1).join(" ");
+      }
+    }
+
+    const newId = `script_location_manual_${Date.now()}`;
+    const newLoc = {
+      id: newId,
+      parentLocation,
+      subLocation,
+      fullName: fullLocation,
+      intExt,
+      scenes: [],
+      actualLocationId: null,
+      category: intExt === "INT." ? "Interior" : "Exterior",
+      isManual: true,
+    };
+
+    const updated = [...scriptLocations, newLoc];
+    setScriptLocations(updated);
+    setManualLocationIds((prev) => new Set([...prev, newId]));
+    if (onSyncScriptLocations) onSyncScriptLocations(updated);
+    setShowAddLocationDialog(false);
+    setNewLocationHeading("");
+  };
+
+  // Reassign a scene from one location to another
+  const reassignSceneToLocation = (
+    sceneNumber,
+    fromLocationId,
+    toLocationId
+  ) => {
+    setScriptLocations((prev) => {
+      const updated = prev.map((loc) => {
+        if (loc.id === fromLocationId) {
+          return {
+            ...loc,
+            scenes: loc.scenes.filter((s) => String(s) !== String(sceneNumber)),
+          };
+        }
+        if (loc.id === toLocationId) {
+          const newScenes = [...loc.scenes, sceneNumber].sort(
+            (a, b) =>
+              parseFloat(String(a).replace(/[^0-9.]/g, "")) -
+              parseFloat(String(b).replace(/[^0-9.]/g, ""))
+          );
+          return { ...loc, scenes: newScenes };
+        }
+        return loc;
+      });
+      if (onSyncScriptLocations) onSyncScriptLocations(updated);
+      return updated;
+    });
+  };
+
+  // Assign an unassigned scene to a location
+  const assignUnassignedScene = (sceneNumber, toLocationId) => {
+    setScriptLocations((prev) => {
+      const updated = prev.map((loc) => {
+        if (loc.id === toLocationId) {
+          const newScenes = [...loc.scenes, sceneNumber].sort(
+            (a, b) =>
+              parseFloat(String(a).replace(/[^0-9.]/g, "")) -
+              parseFloat(String(b).replace(/[^0-9.]/g, ""))
+          );
+          return { ...loc, scenes: newScenes };
+        }
+        return loc;
+      });
+      if (onSyncScriptLocations) onSyncScriptLocations(updated);
+      return updated;
+    });
+  };
+
   // Get all available scene numbers for manual assignment
   const allSceneNumbers = scenes
     .map((scene) => scene.sceneNumber)
@@ -8472,6 +8597,14 @@ function LocationsModule({
     groups[parent].push(location);
     return groups;
   }, {});
+
+  // Compute unassigned scenes
+  const assignedSceneNumbers = new Set(
+    scriptLocations.flatMap((loc) => loc.scenes.map((s) => String(s)))
+  );
+  const unassignedScenes = scenes.filter(
+    (s) => !assignedSceneNumbers.has(String(s.sceneNumber))
+  );
 
   const toggleGroup = (parentLocation) => {
     setExpandedGroups((prev) => ({
@@ -8881,7 +9014,36 @@ function LocationsModule({
             flexDirection: "column",
           }}
         >
-          <h3>Script Locations ({scriptLocations.length} total)</h3>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "10px",
+            }}
+          >
+            <h3 style={{ margin: 0 }}>
+              Script Locations ({scriptLocations.length} total)
+            </h3>
+            <button
+              onClick={() => {
+                setNewLocationHeading("");
+                setShowAddLocationDialog(true);
+              }}
+              style={{
+                backgroundColor: "#4CAF50",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                padding: "6px 12px",
+                cursor: "pointer",
+                fontSize: "12px",
+                fontWeight: "bold",
+              }}
+            >
+              + Add Location
+            </button>
+          </div>
 
           <div style={{ flex: 1, overflowY: "auto", paddingBottom: "30px" }}>
             {Object.entries(groupedLocations).map(
@@ -8900,8 +9062,18 @@ function LocationsModule({
                     {/* Parent Location Header */}
                     <div
                       style={{
-                        backgroundColor: assignedActual ? "#e8f5e8" : "#f0f0f0",
-                        border: "2px solid #ddd",
+                        backgroundColor: manualLocationIds.has(
+                          subLocations[0]?.id
+                        )
+                          ? "#fde8e8"
+                          : assignedActual
+                          ? "#e8f5e8"
+                          : "#f0f0f0",
+                        border: `2px solid ${
+                          manualLocationIds.has(subLocations[0]?.id)
+                            ? "#e57373"
+                            : "#ddd"
+                        }`,
                         borderRadius: "6px",
                         padding: "12px",
                         cursor: "pointer",
@@ -8985,12 +9157,14 @@ function LocationsModule({
                           >
                             Reassign
                           </button>
-                          {totalScenes > 0 && (
+                          {subLocations.some(
+                            (loc) => loc.scenes && loc.scenes.length > 0
+                          ) && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 const allScenes = subLocations.flatMap(
-                                  (loc) => loc.scenes
+                                  (loc) => loc.scenes || []
                                 );
                                 setLocationSceneIndex(0);
                                 setShowLocationScenesPopup(allScenes);
@@ -9184,12 +9358,16 @@ function LocationsModule({
                                             cursor: "pointer",
                                             border: "1px solid #ddd",
                                           }}
-                                          title={`Scene ${sceneNum} - ${status} (Double-click to remove)`}
-                                          onDoubleClick={() => {
-                                            toggleSceneAssignment(
-                                              location.id,
-                                              sceneNum
-                                            );
+                                          title={`Scene ${sceneNum} - ${status} (click to manage)`}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSceneBadgeReassignTarget("");
+                                            setShowSceneBadgePopup({
+                                              sceneNumber: sceneNum,
+                                              locationId: location.id,
+                                              parentLocation:
+                                                location.parentLocation,
+                                            });
                                           }}
                                         >
                                           {sceneNum}
@@ -9480,6 +9658,200 @@ function LocationsModule({
           </div>
         </div>
       </div>
+
+      {/* Unassigned Scenes Group */}
+      {unassignedScenes.length > 0 && (
+        <div style={{ marginTop: "15px", border: "2px solid #FF9800", borderRadius: "6px", padding: "12px", backgroundColor: "#fff8e1" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+            <strong style={{ fontSize: "14px" }}>⚠️ Unassigned Scenes ({unassignedScenes.length})</strong>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                onClick={() => { setUnassignedSceneIndex(0); setUnassignedScenesPopupScenes(unassignedScenes.map(s => s.sceneNumber)); }}
+                style={{ backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "3px", padding: "4px 10px", cursor: "pointer", fontSize: "12px" }}
+              >
+                📄 Scenes
+              </button>
+              <button
+                onClick={() => { setNewLocationHeading(""); setShowAddLocationDialog(true); }}
+                style={{ backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "3px", padding: "4px 10px", cursor: "pointer", fontSize: "12px" }}
+              >
+                + Add Location
+              </button>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {unassignedScenes.map(scene => (
+              <span
+                key={scene.sceneNumber}
+                onClick={() => { setUnassignedReassignTarget(""); setUnassignedReassignScene(scene.sceneNumber); }}
+                style={{ backgroundColor: "#FF9800", color: "white", padding: "4px 10px", borderRadius: "4px", fontSize: "12px", fontWeight: "bold", cursor: "pointer", border: "1px solid #F57C00" }}
+                title={`Scene ${scene.sceneNumber} - click to assign`}
+              >
+                {scene.sceneNumber}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Unassigned Scene Reassign Popup */}
+      {unassignedReassignScene && (
+        <>
+          <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }} onClick={() => setUnassignedReassignScene(null)} />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", backgroundColor: "white", borderRadius: "8px", padding: "24px", zIndex: 1000, minWidth: "360px", boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
+            <h3 style={{ marginTop: 0 }}>Assign Scene {unassignedReassignScene}</h3>
+            <p style={{ fontSize: "13px", color: "#666" }}>{scenes.find(s => String(s.sceneNumber) === String(unassignedReassignScene))?.heading}</p>
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "bold" }}>Assign to location:</label>
+              <select
+                value={unassignedReassignTarget}
+                onChange={e => setUnassignedReassignTarget(e.target.value)}
+                style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}
+              >
+                <option value="">Select a location...</option>
+                {scriptLocations.map(loc => (
+                  <option key={loc.id} value={loc.id}>{loc.intExt} {loc.subLocation} ({loc.parentLocation})</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <button onClick={() => { setNewLocationHeading(scenes.find(s => String(s.sceneNumber) === String(unassignedReassignScene))?.heading || ""); setShowAddLocationDialog(true); }} style={{ backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: "pointer", fontSize: "13px" }}>+ New Location</button>
+              <button onClick={() => setUnassignedReassignScene(null)} style={{ backgroundColor: "#ccc", color: "#333", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: "pointer", fontSize: "13px" }}>Cancel</button>
+              <button
+                onClick={() => { if (unassignedReassignTarget) { assignUnassignedScene(unassignedReassignScene, unassignedReassignTarget); setUnassignedReassignScene(null); setUnassignedReassignTarget(""); }}}
+                disabled={!unassignedReassignTarget}
+                style={{ backgroundColor: unassignedReassignTarget ? "#2196F3" : "#ccc", color: "white", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: unassignedReassignTarget ? "pointer" : "not-allowed", fontSize: "13px", fontWeight: "bold" }}
+              >
+                Assign
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Unassigned Scenes Script Viewer */}
+      {unassignedScenesPopupScenes && (() => {
+        const assignedScenes = scenes.filter(s => unassignedScenesPopupScenes.some(n => String(n) === String(s.sceneNumber)));
+        if (assignedScenes.length === 0) return null;
+        const currentScene = assignedScenes[unassignedSceneIndex];
+        return (
+          <>
+            <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }} onClick={() => setUnassignedScenesPopupScenes(null)} />
+            <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", backgroundColor: "white", border: "2px solid #FF9800", borderRadius: "8px", padding: "0", boxShadow: "0 4px 20px rgba(0,0,0,0.3)", zIndex: 1000, width: "900px", maxWidth: "90vw", height: "80vh", display: "flex", flexDirection: "column" }}>
+              <div style={{ padding: "15px 20px", backgroundColor: "#FF9800", color: "white", borderRadius: "8px 8px 0 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
+                  <button onClick={() => setUnassignedSceneIndex(Math.max(0, unassignedSceneIndex - 1))} disabled={unassignedSceneIndex === 0} style={{ backgroundColor: unassignedSceneIndex === 0 ? "#ccc" : "white", color: unassignedSceneIndex === 0 ? "#666" : "#FF9800", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: unassignedSceneIndex === 0 ? "not-allowed" : "pointer", fontWeight: "bold" }}>← Prev</button>
+                  <div style={{ fontWeight: "bold" }}>Scene {currentScene.sceneNumber} ({unassignedSceneIndex + 1} of {assignedScenes.length})</div>
+                  <button onClick={() => setUnassignedSceneIndex(Math.min(assignedScenes.length - 1, unassignedSceneIndex + 1))} disabled={unassignedSceneIndex === assignedScenes.length - 1} style={{ backgroundColor: unassignedSceneIndex === assignedScenes.length - 1 ? "#ccc" : "white", color: unassignedSceneIndex === assignedScenes.length - 1 ? "#666" : "#FF9800", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: unassignedSceneIndex === assignedScenes.length - 1 ? "not-allowed" : "pointer", fontWeight: "bold" }}>Next →</button>
+                </div>
+                <button onClick={() => setUnassignedScenesPopupScenes(null)} style={{ backgroundColor: "#f44336", color: "white", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: "pointer", fontWeight: "bold" }}>✕ Close</button>
+              </div>
+              <div style={{ padding: "12px 20px", backgroundColor: "#f5f5f5", borderBottom: "1px solid #ddd", fontFamily: "Courier New, monospace", fontSize: "12pt", fontWeight: "bold", textTransform: "uppercase" }}>{currentScene.heading}</div>
+              <div style={{ flex: 1, padding: "1.5in", overflow: "auto", backgroundColor: "white", boxSizing: "border-box", fontFamily: "Courier New, monospace" }}>
+                <div style={getElementStyle("Scene Heading")}>{currentScene.heading}</div>
+                <div style={{ lineHeight: "1.6", fontSize: "14px" }}>
+                  {(currentScene.content || []).map((block, i) => (
+                    <div key={i} style={getElementStyle(block.type)}>{block.text}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
+      {/* Scene Badge Manage Popup */}
+      {showSceneBadgePopup && (() => {
+        const { sceneNumber, locationId, parentLocation } = showSceneBadgePopup;
+        const scene = scenes.find(s => String(s.sceneNumber) === String(sceneNumber));
+        const currentLoc = scriptLocations.find(l => l.id === locationId);
+        return (
+          <>
+            <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }} onClick={() => setShowSceneBadgePopup(null)} />
+            <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", backgroundColor: "white", borderRadius: "8px", padding: "24px", zIndex: 1000, minWidth: "380px", boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
+              <h3 style={{ marginTop: 0 }}>Manage Scene {sceneNumber}</h3>
+              <p style={{ fontSize: "13px", color: "#555", marginBottom: "4px" }}><strong>{scene?.heading}</strong></p>
+              <p style={{ fontSize: "12px", color: "#888", marginBottom: "16px" }}>Currently in: {currentLoc?.intExt} {currentLoc?.subLocation} ({parentLocation})</p>
+              <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+                <button
+                  onClick={() => {
+                    setLocationSceneIndex(0);
+                    setShowLocationScenesPopup([sceneNumber]);
+                    setShowSceneBadgePopup(null);
+                  }}
+                  style={{ backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: "pointer", fontSize: "13px" }}
+                >
+                  📄 View Script
+                </button>
+              </div>
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "bold" }}>Reassign to different location:</label>
+                <select
+                  value={sceneBadgeReassignTarget}
+                  onChange={e => setSceneBadgeReassignTarget(e.target.value)}
+                  style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}
+                >
+                  <option value="">Select a location...</option>
+                  {scriptLocations.filter(l => l.id !== locationId).map(loc => (
+                    <option key={loc.id} value={loc.id}>{loc.intExt} {loc.subLocation} ({loc.parentLocation})</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: "flex", gap: "10px", justifyContent: "space-between" }}>
+                <button
+                  onClick={() => { toggleSceneAssignment(locationId, sceneNumber); setShowSceneBadgePopup(null); }}
+                  style={{ backgroundColor: "#f44336", color: "white", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: "pointer", fontSize: "13px" }}
+                >
+                  Remove from Location
+                </button>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button onClick={() => setShowSceneBadgePopup(null)} style={{ backgroundColor: "#ccc", color: "#333", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: "pointer", fontSize: "13px" }}>Cancel</button>
+                  <button
+                    onClick={() => { if (sceneBadgeReassignTarget) { reassignSceneToLocation(sceneNumber, locationId, sceneBadgeReassignTarget); setShowSceneBadgePopup(null); setSceneBadgeReassignTarget(""); }}}
+                    disabled={!sceneBadgeReassignTarget}
+                    style={{ backgroundColor: sceneBadgeReassignTarget ? "#FF9800" : "#ccc", color: "white", border: "none", borderRadius: "4px", padding: "8px 14px", cursor: sceneBadgeReassignTarget ? "pointer" : "not-allowed", fontSize: "13px", fontWeight: "bold" }}
+                  >
+                    Reassign
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
+      {/* Add Location Dialog */}
+      {showAddLocationDialog && (
+        <>
+          <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }} onClick={() => setShowAddLocationDialog(false)} />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", backgroundColor: "white", borderRadius: "8px", padding: "24px", zIndex: 1000, minWidth: "420px", boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
+            <h3 style={{ marginTop: 0 }}>Add New Location</h3>
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "bold" }}>Full Scene Heading:</label>
+              <input
+                type="text"
+                value={newLocationHeading}
+                onChange={e => setNewLocationHeading(e.target.value)}
+                placeholder="e.g. EXT. FARMHOUSE - DAY"
+                style={{ width: "100%", padding: "10px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                onKeyDown={e => { if (e.key === "Enter") addManualLocation(newLocationHeading); }}
+                autoFocus
+              />
+              <p style={{ fontSize: "11px", color: "#888", marginTop: "6px" }}>Include INT./EXT. and time of day (DAY/NIGHT/DAWN/DUSK). INT. and EXT. versions will be created as separate sub-locations.</p>
+            </div>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <button onClick={() => { setShowAddLocationDialog(false); setNewLocationHeading(""); }} style={{ backgroundColor: "#ccc", color: "#333", border: "none", borderRadius: "4px", padding: "8px 16px", cursor: "pointer", fontSize: "13px" }}>Cancel</button>
+              <button
+                onClick={() => addManualLocation(newLocationHeading)}
+                disabled={!newLocationHeading.trim()}
+                style={{ backgroundColor: newLocationHeading.trim() ? "#4CAF50" : "#ccc", color: "white", border: "none", borderRadius: "4px", padding: "8px 16px", cursor: newLocationHeading.trim() ? "pointer" : "not-allowed", fontSize: "13px", fontWeight: "bold" }}
+              >
+                Add Location
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Reassign Parent Dialog */}
       {showReassignDialog && (
