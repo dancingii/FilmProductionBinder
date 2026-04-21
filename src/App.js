@@ -12573,7 +12573,7 @@ function App({ selectedProject, userRole, user }) {
         });
 
         const data = await response.json();
-        const summary = data.summary || "";
+        const summary = (data.summary || "").replace(/^#+\s.*\n*/gm, "").trim();
 
         if (summary) {
           updatedScenes[i] = { ...updatedScenes[i], description: summary };
