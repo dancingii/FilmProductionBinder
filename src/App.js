@@ -9274,29 +9274,6 @@ function LocationsModule({
                               Reassign Sub-Location
                             </button>
 
-                            {location.scenes.length > 0 && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setLocationSceneIndex(0);
-                                  setShowLocationScenesPopup(location.scenes);
-                                }}
-                                style={{
-                                  backgroundColor: "#2196F3",
-                                  color: "white",
-                                  border: "none",
-                                  borderRadius: "3px",
-                                  padding: "2px 6px",
-                                  cursor: "pointer",
-                                  fontSize: "10px",
-                                  marginBottom: "8px",
-                                  marginLeft: "6px",
-                                }}
-                              >
-                                📄 Scenes
-                              </button>
-                            )}
-
                             <select
                               value={location.actualLocationId || ""}
                               onChange={(e) =>
