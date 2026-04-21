@@ -1,0 +1,45 @@
+.App {
+  font-family: sans-serif;
+  text-align: center;
+}
+
+/* Print styles for Call Sheet export */
+@media print {
+  /* Hide everything except call sheet */
+  body > *:not(#root) {
+    display: none !important;
+  }
+
+  /* Hide navigation, buttons, and controls */
+  nav,
+  button,
+  select,
+  .sidebar,
+  [style*="position: fixed"],
+  [style*="position: sticky"] {
+    display: none !important;
+  }
+
+  /* Only show the call sheet */
+  [data-call-sheet="true"] {
+    display: block !important;
+    transform: scale(1) !important;
+    page-break-inside: avoid;
+  }
+
+  /* Ensure proper page sizing */
+  @page {
+    size: letter portrait;
+    margin: 0.5in;
+  }
+
+  /* Ensure tables print properly */
+  table {
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+}
