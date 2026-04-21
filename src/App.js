@@ -12546,8 +12546,8 @@ function App({ selectedProject, userRole, user }) {
       "scenes"
     );
 
-    // Give React a tick to render the progress toast before starting
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Give React time to render the progress toast before starting
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
     const updatedScenes = scenesToSummarize.map((s) => ({ ...s }));
 
@@ -12854,7 +12854,9 @@ function App({ selectedProject, userRole, user }) {
           )} minute(s). You can keep using the app while it runs.`
         );
         if (confirmed) {
-          summarizeScenesWithAI(scenesWithPageData);
+          setTimeout(() => {
+            summarizeScenesWithAI(scenesWithPageData);
+          }, 50);
         }
       } catch (err) {
         alert("Failed to parse .fdx file. Please check the file format.");
