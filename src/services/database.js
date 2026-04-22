@@ -382,6 +382,7 @@ export const loadScriptLocationsFromDatabase = async (
       scenes: location.scenes || [],
       actualLocationId: location.actual_location_id || null,
       category: location.category || "",
+      removedScenes: location.removed_scenes || [],
     }));
 
     setScriptLocations(formattedScriptLocations);
@@ -1077,6 +1078,7 @@ export const syncScriptLocationsToDatabase = async (
         scenes: loc.scenes || [],
         actual_location_id: loc.actualLocationId || null,
         category: loc.category || "unassigned",
+        removed_scenes: loc.removedScenes || [],
       }));
 
     // Second check after filter

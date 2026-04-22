@@ -8200,6 +8200,9 @@ function CalendarModule({
 // Locations Module - Enhanced Hierarchical Structure
 function LocationsModule({
   scenes,
+  mainScenes,
+  setMainScenes,
+  saveScenesDatabase,
   scriptLocations,
   setScriptLocations,
   actualLocations,
@@ -8223,6 +8226,32 @@ function LocationsModule({
   const [editParentValue, setEditParentValue] = useState("");
   const [editingSubLocation, setEditingSubLocation] = React.useState(null);
   const [editSubLocationValue, setEditSubLocationValue] = React.useState("");
+  const [editingHeading, setEditingHeading] = React.useState(null); // locationId
+  const [recentlyRemovedScenes, setRecentlyRemovedScenes] = React.useState(
+    () => {
+      // Initialize from scriptLocations on mount
+      const initial = {};
+      return initial;
+    }
+  );
+
+  // Sync recentlyRemovedScenes from scriptLocations when they load
+  React.useEffect(() => {
+    if (scriptLocations && scriptLocations.length > 0) {
+      const fromDb = {};
+      scriptLocations.forEach((loc) => {
+        if (loc.removedScenes && loc.removedScenes.length > 0) {
+          fromDb[loc.id] = new Set(loc.removedScenes.map(String));
+        }
+      });
+      setRecentlyRemovedScenes(fromDb);
+    }
+  }, [scriptLocations.length]);
+  const [editHeadingIntExt, setEditHeadingIntExt] = React.useState("EXT.");
+  const [editHeadingLocation, setEditHeadingLocation] = React.useState("");
+  const [editHeadingTimeOfDay, setEditHeadingTimeOfDay] = React.useState("DAY");
+  const [editHeadingCustomTime, setEditHeadingCustomTime] = React.useState("");
+  React.useState(null);
   const [showReassignSubDialog, setShowReassignSubDialog] =
     React.useState(null);
   const [reassignSubTarget, setReassignSubTarget] = React.useState("");
@@ -8435,21 +8464,46 @@ function LocationsModule({
           );
 
           if (sceneIndex > -1) {
-            // Remove scene - create new array without mutation
+            // Remove scene - track as recently removed
             const newScenes = location.scenes.filter(
               (s, i) => i !== sceneIndex
             );
             console.log("➖ Removing scene", sceneNumber, "from location");
-            return { ...location, scenes: newScenes };
+            setRecentlyRemovedScenes((prev) => {
+              const existing = new Set(prev[locationId] || []);
+              existing.add(String(sceneNumber));
+              return { ...prev, [locationId]: existing };
+            });
+            return {
+              ...location,
+              scenes: newScenes,
+              removedScenes: [
+                ...new Set([
+                  ...(location.removedScenes || []),
+                  String(sceneNumber),
+                ]),
+              ],
+            };
           } else {
-            // Add scene - create new sorted array without mutation
+            // Add scene - remove from recently removed if present
             const newScenes = [...location.scenes, sceneNumber].sort((a, b) => {
               const aNum = parseFloat(String(a).replace(/[^0-9.]/g, ""));
               const bNum = parseFloat(String(b).replace(/[^0-9.]/g, ""));
               return aNum - bNum;
             });
             console.log("➕ Adding scene", sceneNumber, "to location");
-            return { ...location, scenes: newScenes };
+            setRecentlyRemovedScenes((prev) => {
+              const existing = new Set(prev[locationId] || []);
+              existing.delete(String(sceneNumber));
+              return { ...prev, [locationId]: existing };
+            });
+            return {
+              ...location,
+              scenes: newScenes,
+              removedScenes: (location.removedScenes || []).filter(
+                (s) => String(s) !== String(sceneNumber)
+              ),
+            };
           }
         }
         return location;
@@ -8746,6 +8800,96 @@ function LocationsModule({
     setEditSubLocationValue("");
   };
 
+  const startEditingHeading = (location) => {
+    setEditingHeading(location.id);
+    setEditHeadingIntExt(location.intExt || "EXT.");
+    setEditHeadingLocation(location.subLocation || "");
+    const tod =
+      location.scenes.length > 0
+        ? (() => {
+            const s = (mainScenes || scenes).find(
+              (sc) => String(sc.sceneNumber) === String(location.scenes[0])
+            );
+            if (!s) return "DAY";
+            const h = s.heading || "";
+            const match = h.match(
+              /\s*-\s*(DAY|NIGHT|DAWN|DUSK|CONTINUOUS|LATER|SAME|MOMENTS LATER)$/i
+            );
+            return match ? match[1].toUpperCase() : "OTHER";
+          })()
+        : "DAY";
+    const standardTimes = ["DAY", "NIGHT", "DAWN", "DUSK"];
+    if (standardTimes.includes(tod)) {
+      setEditHeadingTimeOfDay(tod);
+      setEditHeadingCustomTime("");
+    } else {
+      setEditHeadingTimeOfDay("OTHER");
+      setEditHeadingCustomTime(tod);
+    }
+  };
+
+  const saveHeadingEdit = () => {
+    if (!editingHeading || !editHeadingLocation.trim()) {
+      setEditingHeading(null);
+      return;
+    }
+
+    const timeOfDay =
+      editHeadingTimeOfDay === "OTHER"
+        ? editHeadingCustomTime.trim()
+        : editHeadingTimeOfDay;
+
+    const newHeading = `${editHeadingIntExt} ${editHeadingLocation
+      .trim()
+      .toUpperCase()} - ${timeOfDay}`;
+    const newSubLocation = editHeadingLocation.trim().toUpperCase();
+    const newParentLocation = editHeadingLocation.trim().toUpperCase();
+
+    // Update scriptLocations
+    const updatedLocations = scriptLocations.map((loc) => {
+      if (loc.id === editingHeading) {
+        return {
+          ...loc,
+          intExt: editHeadingIntExt,
+          subLocation: newSubLocation,
+          parentLocation: newParentLocation,
+          fullName: newSubLocation,
+          category: editHeadingIntExt === "INT." ? "Interior" : "Exterior",
+        };
+      }
+      return loc;
+    });
+
+    setScriptLocations(updatedLocations);
+    if (onSyncScriptLocations) onSyncScriptLocations(updatedLocations);
+
+    // Update all scenes assigned to this sub-location
+    const location = scriptLocations.find((l) => l.id === editingHeading);
+    if (location && location.scenes.length > 0 && mainScenes && setMainScenes) {
+      const updatedScenes = mainScenes.map((scene) => {
+        if (
+          location.scenes.some((sn) => String(sn) === String(scene.sceneNumber))
+        ) {
+          return {
+            ...scene,
+            heading: newHeading,
+            metadata: {
+              ...scene.metadata,
+              intExt: editHeadingIntExt,
+              location: newSubLocation,
+              timeOfDay,
+            },
+          };
+        }
+        return scene;
+      });
+      setMainScenes(updatedScenes);
+      if (saveScenesDatabase) saveScenesDatabase(updatedScenes);
+    }
+
+    setEditingHeading(null);
+  };
+
   const startReassignSubLocation = (locationId, subLocationName) => {
     const location = scriptLocations.find((loc) => loc.id === locationId);
     setShowReassignSubDialog({
@@ -9023,7 +9167,7 @@ function LocationsModule({
       </div>
 
       <div
-        style={{ display: "flex", gap: "20px", height: "calc(100vh - 120px)" }}
+        style={{ display: "flex", gap: "20px", height: "calc(100vh - 164px)" }}
       >
         {/* Left Panel - Grouped Script Locations */}
         <div
@@ -9276,37 +9420,119 @@ function LocationsModule({
                               marginBottom: "5px",
                             }}
                           >
-                            {location.intExt}{" "}
-                            {editingSubLocation === location.id ? (
-                              <input
-                                type="text"
-                                value={editSubLocationValue}
-                                onChange={(e) =>
-                                  setEditSubLocationValue(e.target.value)
-                                }
-                                onBlur={saveSubLocationEdit}
-                                onKeyPress={(e) => {
-                                  if (e.key === "Enter") saveSubLocationEdit();
-                                  if (e.key === "Escape")
-                                    cancelSubLocationEdit();
-                                }}
-                                autoFocus
+                            {editingHeading === location.id ? (
+                              <div
                                 style={{
-                                  fontSize: "14px",
-                                  fontWeight: "bold",
-                                  border: "2px solid #2196F3",
-                                  borderRadius: "3px",
-                                  padding: "2px 6px",
-                                  minWidth: "120px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                  flexWrap: "wrap",
                                 }}
-                              />
+                              >
+                                <select
+                                  value={editHeadingIntExt}
+                                  onChange={(e) =>
+                                    setEditHeadingIntExt(e.target.value)
+                                  }
+                                  style={{
+                                    padding: "3px 6px",
+                                    border: "2px solid #2196F3",
+                                    borderRadius: "3px",
+                                    fontSize: "13px",
+                                    fontWeight: "bold",
+                                  }}
+                                >
+                                  <option value="INT.">INT.</option>
+                                  <option value="EXT.">EXT.</option>
+                                </select>
+                                <input
+                                  type="text"
+                                  value={editHeadingLocation}
+                                  onChange={(e) =>
+                                    setEditHeadingLocation(e.target.value)
+                                  }
+                                  style={{
+                                    padding: "3px 6px",
+                                    border: "2px solid #2196F3",
+                                    borderRadius: "3px",
+                                    fontSize: "13px",
+                                    fontWeight: "bold",
+                                    minWidth: "140px",
+                                  }}
+                                  placeholder="LOCATION NAME"
+                                />
+                                <span style={{ fontWeight: "bold" }}>-</span>
+                                <select
+                                  value={editHeadingTimeOfDay}
+                                  onChange={(e) =>
+                                    setEditHeadingTimeOfDay(e.target.value)
+                                  }
+                                  style={{
+                                    padding: "3px 6px",
+                                    border: "2px solid #2196F3",
+                                    borderRadius: "3px",
+                                    fontSize: "13px",
+                                    fontWeight: "bold",
+                                  }}
+                                >
+                                  <option value="DAY">DAY</option>
+                                  <option value="NIGHT">NIGHT</option>
+                                  <option value="DAWN">DAWN</option>
+                                  <option value="DUSK">DUSK</option>
+                                  <option value="OTHER">OTHER...</option>
+                                </select>
+                                {editHeadingTimeOfDay === "OTHER" && (
+                                  <input
+                                    type="text"
+                                    value={editHeadingCustomTime}
+                                    onChange={(e) =>
+                                      setEditHeadingCustomTime(e.target.value)
+                                    }
+                                    placeholder="e.g. CONTINUOUS"
+                                    style={{
+                                      padding: "3px 6px",
+                                      border: "2px solid #FF9800",
+                                      borderRadius: "3px",
+                                      fontSize: "13px",
+                                      fontWeight: "bold",
+                                      width: "120px",
+                                    }}
+                                  />
+                                )}
+                                <button
+                                  onClick={saveHeadingEdit}
+                                  style={{
+                                    backgroundColor: "#4CAF50",
+                                    color: "white",
+                                    border: "none",
+                                    borderRadius: "3px",
+                                    padding: "3px 10px",
+                                    cursor: "pointer",
+                                    fontSize: "12px",
+                                    fontWeight: "bold",
+                                  }}
+                                >
+                                  ✓ Save
+                                </button>
+                                <button
+                                  onClick={() => setEditingHeading(null)}
+                                  style={{
+                                    backgroundColor: "#f44336",
+                                    color: "white",
+                                    border: "none",
+                                    borderRadius: "3px",
+                                    padding: "3px 10px",
+                                    cursor: "pointer",
+                                    fontSize: "12px",
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
                             ) : (
                               <span
                                 onDoubleClick={() =>
-                                  startEditingSubLocation(
-                                    location.id,
-                                    location.subLocation
-                                  )
+                                  startEditingHeading(location)
                                 }
                                 style={{
                                   cursor: "pointer",
@@ -9320,9 +9546,9 @@ function LocationsModule({
                                   (e.target.style.backgroundColor =
                                     "transparent")
                                 }
-                                title="Double-click to edit sub-location name"
+                                title="Double-click to edit heading"
                               >
-                                {location.subLocation}
+                                {location.intExt} {location.subLocation}
                               </span>
                             )}
                           </div>
@@ -9425,6 +9651,12 @@ function LocationsModule({
                               {allSceneNumbers.map((sceneNum) => {
                                 const isAssigned =
                                   location.scenes.includes(sceneNum);
+                                const isRecentlyRemoved =
+                                  !isAssigned &&
+                                  (
+                                    recentlyRemovedScenes[location.id] ||
+                                    new Set()
+                                  ).has(String(sceneNum));
                                 const scene = scenes.find(
                                   (s) => s.sceneNumber == sceneNum
                                 );
@@ -9436,8 +9668,14 @@ function LocationsModule({
                                     style={{
                                       backgroundColor: isAssigned
                                         ? "#4CAF50"
+                                        : isRecentlyRemoved
+                                        ? "#FFF176"
                                         : "#f0f0f0",
-                                      color: isAssigned ? "white" : "#666",
+                                      color: isAssigned
+                                        ? "white"
+                                        : isRecentlyRemoved
+                                        ? "#333"
+                                        : "#666",
                                       padding: "2px 6px",
                                       borderRadius: "3px",
                                       marginRight: "4px",
@@ -9452,8 +9690,10 @@ function LocationsModule({
                                     }}
                                     title={
                                       isAssigned
-                                        ? `Scene ${sceneNum} - ASSIGNED (Double-click to remove)`
-                                        : `Scene ${sceneNum} - Available (Double-click to add)`
+                                        ? `Scene ${sceneNum} - ASSIGNED (Double-click to remove from this location)`
+                                        : isRecentlyRemoved
+                                        ? `Scene ${sceneNum} - Recently removed (Double-click to re-add)`
+                                        : `Scene ${sceneNum} - Not assigned here (Double-click to add)`
                                     }
                                     onDoubleClick={() => {
                                       toggleSceneAssignment(
@@ -9798,6 +10038,25 @@ function LocationsModule({
                 )?.heading
               }
             </p>
+            <div style={{ marginBottom: "12px" }}>
+              <button
+                onClick={() => {
+                  setLocationSceneIndex(0);
+                  setShowLocationScenesPopup([unassignedReassignScene]);
+                }}
+                style={{
+                  backgroundColor: "#2196F3",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  padding: "6px 12px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                }}
+              >
+                📄 View Scene
+              </button>
+            </div>
             <div style={{ marginBottom: "16px" }}>
               <label
                 style={{
@@ -11518,64 +11777,73 @@ function LocationsModule({
                       gap: "15px",
                     }}
                   >
-                    <button
-                      onClick={() =>
-                        setLocationSceneIndex(
-                          Math.max(0, locationSceneIndex - 1)
-                        )
-                      }
-                      disabled={locationSceneIndex === 0}
-                      style={{
-                        backgroundColor:
-                          locationSceneIndex === 0 ? "#ccc" : "white",
-                        color: locationSceneIndex === 0 ? "#666" : "#2196F3",
-                        border: "none",
-                        padding: "6px 12px",
-                        borderRadius: "3px",
-                        cursor:
-                          locationSceneIndex === 0 ? "not-allowed" : "pointer",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      ← Prev
-                    </button>
-                    <div style={{ fontWeight: "bold" }}>
-                      Scene {currentScene.sceneNumber} ({locationSceneIndex + 1}{" "}
-                      of {assignedScenes.length})
-                    </div>
-                    <button
-                      onClick={() =>
-                        setLocationSceneIndex(
-                          Math.min(
-                            assignedScenes.length - 1,
-                            locationSceneIndex + 1
+                    {assignedScenes.length > 1 && (
+                      <button
+                        onClick={() =>
+                          setLocationSceneIndex(
+                            Math.max(0, locationSceneIndex - 1)
                           )
-                        )
-                      }
-                      disabled={
-                        locationSceneIndex === assignedScenes.length - 1
-                      }
-                      style={{
-                        backgroundColor:
+                        }
+                        disabled={locationSceneIndex === 0}
+                        style={{
+                          backgroundColor:
+                            locationSceneIndex === 0 ? "#ccc" : "white",
+                          color: locationSceneIndex === 0 ? "#666" : "#2196F3",
+                          border: "none",
+                          padding: "6px 12px",
+                          borderRadius: "3px",
+                          cursor:
+                            locationSceneIndex === 0
+                              ? "not-allowed"
+                              : "pointer",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        ← Prev
+                      </button>
+                    )}
+                    <div style={{ fontWeight: "bold" }}>
+                      Scene {currentScene.sceneNumber}
+                      {assignedScenes.length > 1 &&
+                        ` (${locationSceneIndex + 1} of ${
+                          assignedScenes.length
+                        })`}
+                    </div>
+                    {assignedScenes.length > 1 && (
+                      <button
+                        onClick={() =>
+                          setLocationSceneIndex(
+                            Math.min(
+                              assignedScenes.length - 1,
+                              locationSceneIndex + 1
+                            )
+                          )
+                        }
+                        disabled={
                           locationSceneIndex === assignedScenes.length - 1
-                            ? "#ccc"
-                            : "white",
-                        color:
-                          locationSceneIndex === assignedScenes.length - 1
-                            ? "#666"
-                            : "#2196F3",
-                        border: "none",
-                        padding: "6px 12px",
-                        borderRadius: "3px",
-                        cursor:
-                          locationSceneIndex === assignedScenes.length - 1
-                            ? "not-allowed"
-                            : "pointer",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      Next →
-                    </button>
+                        }
+                        style={{
+                          backgroundColor:
+                            locationSceneIndex === assignedScenes.length - 1
+                              ? "#ccc"
+                              : "white",
+                          color:
+                            locationSceneIndex === assignedScenes.length - 1
+                              ? "#666"
+                              : "#2196F3",
+                          border: "none",
+                          padding: "6px 12px",
+                          borderRadius: "3px",
+                          cursor:
+                            locationSceneIndex === assignedScenes.length - 1
+                              ? "not-allowed"
+                              : "pointer",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        Next →
+                      </button>
+                    )}
                   </div>
                   <button
                     onClick={() => setShowLocationScenesPopup(null)}
@@ -15612,6 +15880,9 @@ function App({ selectedProject, userRole, user }) {
         return (
           <LocationsModule
             scenes={stripboardScenes}
+            mainScenes={scenes}
+            setMainScenes={setScenes}
+            saveScenesDatabase={saveScenesDatabase}
             scriptLocations={scriptLocations}
             setScriptLocations={setScriptLocations}
             actualLocations={actualLocations}

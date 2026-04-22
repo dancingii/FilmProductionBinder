@@ -5,7 +5,6 @@
   "keywords": [],
   "main": "src/index.tsx",
   "dependencies": {
-    "ajv": "^8.0.0",
     "jspdf": "2.5.1",
     "pdfmake": "0.2.7",
     "html2canvas": "1.4.1",
@@ -14,12 +13,6 @@
     "react-scripts": "^5.0.0",
     "@supabase/supabase-js": "2.57.4",
     "react-easy-crop": "^5.0.4"
-  },
-  "overrides": {
-    "fork-ts-checker-webpack-plugin": {
-      "ajv": "6.12.6",
-      "ajv-keywords": "3.5.2"
-    }
   },
   "devDependencies": {
     "@types/react": "19.0.0",
