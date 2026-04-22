@@ -8598,6 +8598,27 @@ function LocationsModule({
     return groups;
   }, {});
 
+  // Sort groups chronologically by the lowest scene number in each group
+  const sortedGroupEntries = Object.entries(groupedLocations).sort(
+    ([, aLocs], [, bLocs]) => {
+      const aMin = Math.min(
+        ...aLocs.flatMap((l) =>
+          l.scenes.map(
+            (s) => parseFloat(String(s).replace(/[^0-9.]/g, "")) || 9999
+          )
+        )
+      );
+      const bMin = Math.min(
+        ...bLocs.flatMap((l) =>
+          l.scenes.map(
+            (s) => parseFloat(String(s).replace(/[^0-9.]/g, "")) || 9999
+          )
+        )
+      );
+      return aMin - bMin;
+    }
+  );
+
   // Compute unassigned scenes
   const assignedSceneNumbers = new Set(
     scriptLocations.flatMap((loc) => loc.scenes.map((s) => String(s)))
@@ -9046,104 +9067,415 @@ function LocationsModule({
           </div>
 
           <div style={{ flex: 1, overflowY: "auto", paddingBottom: "30px" }}>
-            {Object.entries(groupedLocations).map(
-              ([parentLocation, subLocations]) => {
-                const isExpanded = expandedGroups[parentLocation];
-                const totalScenes = subLocations.reduce(
-                  (total, loc) => total + loc.scenes.length,
-                  0
-                );
-                const assignedActual = actualLocations.find(
-                  (actual) => actual.id === subLocations[0]?.actualLocationId
-                );
+            {sortedGroupEntries.map(([parentLocation, subLocations]) => {
+              const isExpanded = expandedGroups[parentLocation];
+              const totalScenes = subLocations.reduce(
+                (total, loc) => total + loc.scenes.length,
+                0
+              );
+              const assignedActual = actualLocations.find(
+                (actual) => actual.id === subLocations[0]?.actualLocationId
+              );
 
-                return (
-                  <div key={parentLocation} style={{ marginBottom: "15px" }}>
-                    {/* Parent Location Header */}
+              return (
+                <div key={parentLocation} style={{ marginBottom: "15px" }}>
+                  {/* Parent Location Header */}
+                  <div
+                    style={{
+                      backgroundColor: manualLocationIds.has(
+                        subLocations[0]?.id
+                      )
+                        ? "#fde8e8"
+                        : assignedActual
+                        ? "#e8f5e8"
+                        : "#f0f0f0",
+                      border: `2px solid ${
+                        manualLocationIds.has(subLocations[0]?.id)
+                          ? "#e57373"
+                          : "#ddd"
+                      }`,
+                      borderRadius: "6px",
+                      padding: "12px",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => toggleGroup(parentLocation)}
+                  >
                     <div
                       style={{
-                        backgroundColor: manualLocationIds.has(
-                          subLocations[0]?.id
-                        )
-                          ? "#fde8e8"
-                          : assignedActual
-                          ? "#e8f5e8"
-                          : "#f0f0f0",
-                        border: `2px solid ${
-                          manualLocationIds.has(subLocations[0]?.id)
-                            ? "#e57373"
-                            : "#ddd"
-                        }`,
-                        borderRadius: "6px",
-                        padding: "12px",
-                        cursor: "pointer",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
                       }}
-                      onClick={() => toggleGroup(parentLocation)}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                        }}
-                      >
-                        {editingParentName === parentLocation ? (
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "8px",
-                              flex: 1,
-                            }}
-                          >
-                            <input
-                              type="text"
-                              value={editParentValue}
-                              onChange={(e) =>
-                                setEditParentValue(e.target.value)
-                              }
-                              onBlur={saveParentNameEdit}
-                              onKeyPress={(e) => {
-                                if (e.key === "Enter") saveParentNameEdit();
-                                if (e.key === "Escape") cancelParentNameEdit();
-                              }}
-                              autoFocus
-                              style={{
-                                fontSize: "16px",
-                                fontWeight: "bold",
-                                border: "2px solid #2196F3",
-                                borderRadius: "3px",
-                                padding: "4px 8px",
-                                flex: 1,
-                              }}
-                            />
-                          </div>
-                        ) : (
-                          <h4
-                            style={{ margin: 0, fontSize: "16px", flex: 1 }}
-                            onDoubleClick={() =>
-                              startEditingParentName(parentLocation)
-                            }
-                          >
-                            {isExpanded ? "▼" : "▶"} {parentLocation}
-                          </h4>
-                        )}
-
+                      {editingParentName === parentLocation ? (
                         <div
                           style={{
                             display: "flex",
                             alignItems: "center",
                             gap: "8px",
+                            flex: 1,
                           }}
                         >
-                          <span style={{ fontSize: "12px", color: "#666" }}>
-                            {subLocations.length} locations, {totalScenes}{" "}
-                            scenes
-                          </span>
+                          <input
+                            type="text"
+                            value={editParentValue}
+                            onChange={(e) => setEditParentValue(e.target.value)}
+                            onBlur={saveParentNameEdit}
+                            onKeyPress={(e) => {
+                              if (e.key === "Enter") saveParentNameEdit();
+                              if (e.key === "Escape") cancelParentNameEdit();
+                            }}
+                            autoFocus
+                            style={{
+                              fontSize: "16px",
+                              fontWeight: "bold",
+                              border: "2px solid #2196F3",
+                              borderRadius: "3px",
+                              padding: "4px 8px",
+                              flex: 1,
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <h4
+                          style={{ margin: 0, fontSize: "16px", flex: 1 }}
+                          onDoubleClick={() =>
+                            startEditingParentName(parentLocation)
+                          }
+                        >
+                          {isExpanded ? "▼" : "▶"} {parentLocation}
+                        </h4>
+                      )}
+
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <span style={{ fontSize: "12px", color: "#666" }}>
+                          {subLocations.length} locations, {totalScenes} scenes
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startReassignParent(parentLocation);
+                          }}
+                          style={{
+                            backgroundColor: "#FF9800",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "3px",
+                            padding: "2px 6px",
+                            cursor: "pointer",
+                            fontSize: "10px",
+                          }}
+                        >
+                          Reassign
+                        </button>
+                        {subLocations.some(
+                          (loc) => loc.scenes && loc.scenes.length > 0
+                        ) && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              startReassignParent(parentLocation);
+                              const allScenes = subLocations.flatMap(
+                                (loc) => loc.scenes || []
+                              );
+                              setLocationSceneIndex(0);
+                              setShowLocationScenesPopup(allScenes);
+                            }}
+                            style={{
+                              backgroundColor: "#2196F3",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "3px",
+                              padding: "2px 6px",
+                              cursor: "pointer",
+                              fontSize: "10px",
+                              marginLeft: "6px",
+                            }}
+                          >
+                            📄 Scenes
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: "10px" }}>
+                      <label
+                        style={{
+                          display: "block",
+                          marginBottom: "5px",
+                          fontSize: "12px",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        Assign all to location:
+                      </label>
+                      <select
+                        value={assignedActual?.id || ""}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          assignActualToGroup(parentLocation, e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          width: "100%",
+                          padding: "4px",
+                          border: "1px solid #ccc",
+                          borderRadius: "3px",
+                          fontSize: "12px",
+                        }}
+                      >
+                        <option value="">Select actual location...</option>
+                        {actualLocations.map((actual) => (
+                          <option key={actual.id} value={actual.id}>
+                            {actual.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {assignedActual && (
+                      <div
+                        style={{
+                          backgroundColor: "#f0f8f0",
+                          padding: "8px",
+                          borderRadius: "3px",
+                          fontSize: "12px",
+                          marginTop: "8px",
+                        }}
+                      >
+                        <strong>Assigned to:</strong> {assignedActual.name}
+                        <br />
+                        <strong>Address:</strong> {assignedActual.address}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Sub-locations (when expanded) */}
+                  {isExpanded && (
+                    <div style={{ marginLeft: "20px", marginTop: "10px" }}>
+                      {subLocations.map((location) => (
+                        <div
+                          key={location.id}
+                          style={{
+                            border: "1px solid #ddd",
+                            margin: "8px 0",
+                            padding: "10px",
+                            backgroundColor: "#fff",
+                            borderRadius: "4px",
+                            fontSize: "14px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: "bold",
+                              marginBottom: "5px",
+                            }}
+                          >
+                            {location.intExt}{" "}
+                            {editingSubLocation === location.id ? (
+                              <input
+                                type="text"
+                                value={editSubLocationValue}
+                                onChange={(e) =>
+                                  setEditSubLocationValue(e.target.value)
+                                }
+                                onBlur={saveSubLocationEdit}
+                                onKeyPress={(e) => {
+                                  if (e.key === "Enter") saveSubLocationEdit();
+                                  if (e.key === "Escape")
+                                    cancelSubLocationEdit();
+                                }}
+                                autoFocus
+                                style={{
+                                  fontSize: "14px",
+                                  fontWeight: "bold",
+                                  border: "2px solid #2196F3",
+                                  borderRadius: "3px",
+                                  padding: "2px 6px",
+                                  minWidth: "120px",
+                                }}
+                              />
+                            ) : (
+                              <span
+                                onDoubleClick={() =>
+                                  startEditingSubLocation(
+                                    location.id,
+                                    location.subLocation
+                                  )
+                                }
+                                style={{
+                                  cursor: "pointer",
+                                  padding: "2px 4px",
+                                  borderRadius: "3px",
+                                }}
+                                onMouseOver={(e) =>
+                                  (e.target.style.backgroundColor = "#f0f0f0")
+                                }
+                                onMouseOut={(e) =>
+                                  (e.target.style.backgroundColor =
+                                    "transparent")
+                                }
+                                title="Double-click to edit sub-location name"
+                              >
+                                {location.subLocation}
+                              </span>
+                            )}
+                          </div>
+                          {/* Assigned Scenes */}
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              color: "#666",
+                              marginBottom: "8px",
+                            }}
+                          >
+                            <strong>Assigned Scenes:</strong>{" "}
+                            {location.scenes.length > 0 ? (
+                              <>
+                                {location.scenes.map((sceneNum, index) => {
+                                  const scene = scenes.find(
+                                    (s) => s.sceneNumber == sceneNum
+                                  );
+                                  const status =
+                                    scene?.status || "Not Scheduled";
+                                  const statusColor =
+                                    status === "Scheduled"
+                                      ? "#2196F3"
+                                      : status === "Shot"
+                                      ? "#4CAF50"
+                                      : status === "Pickups"
+                                      ? "#FFC107"
+                                      : status === "Reshoot"
+                                      ? "#F44336"
+                                      : "#f0f0f0";
+                                  const textColor =
+                                    status === "Pickups"
+                                      ? "black"
+                                      : status === "Not Scheduled"
+                                      ? "#666"
+                                      : "white";
+
+                                  return (
+                                    <span key={sceneNum}>
+                                      <span
+                                        style={{
+                                          backgroundColor: statusColor,
+                                          color: textColor,
+                                          padding: "2px 6px",
+                                          borderRadius: "3px",
+                                          marginRight: "4px",
+                                          fontSize: "11px",
+                                          fontWeight: "bold",
+                                          cursor: "pointer",
+                                          border: "1px solid #ddd",
+                                        }}
+                                        title={`Scene ${sceneNum} - ${status} (click to manage)`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSceneBadgeReassignTarget("");
+                                          setShowSceneBadgePopup({
+                                            sceneNumber: sceneNum,
+                                            locationId: location.id,
+                                            parentLocation:
+                                              location.parentLocation,
+                                          });
+                                        }}
+                                      >
+                                        {sceneNum}
+                                      </span>
+                                      {index < location.scenes.length - 1
+                                        ? " "
+                                        : ""}
+                                    </span>
+                                  );
+                                })}{" "}
+                                ({location.scenes.length} scenes)
+                              </>
+                            ) : (
+                              <span
+                                style={{ color: "#999", fontStyle: "italic" }}
+                              >
+                                No scenes assigned
+                              </span>
+                            )}
+                          </div>
+
+                          {/* All Available Scenes for Manual Assignment */}
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              marginBottom: "8px",
+                              padding: "8px",
+                              backgroundColor: "#f9f9f9",
+                              borderRadius: "4px",
+                              border: "1px solid #e0e0e0",
+                            }}
+                          >
+                            <strong>
+                              All Scenes (Double-click to add/remove):
+                            </strong>
+                            <div
+                              style={{ marginTop: "4px", lineHeight: "1.8" }}
+                            >
+                              {allSceneNumbers.map((sceneNum) => {
+                                const isAssigned =
+                                  location.scenes.includes(sceneNum);
+                                const scene = scenes.find(
+                                  (s) => s.sceneNumber == sceneNum
+                                );
+                                const status = scene?.status || "Not Scheduled";
+
+                                return (
+                                  <span
+                                    key={sceneNum}
+                                    style={{
+                                      backgroundColor: isAssigned
+                                        ? "#4CAF50"
+                                        : "#f0f0f0",
+                                      color: isAssigned ? "white" : "#666",
+                                      padding: "2px 6px",
+                                      borderRadius: "3px",
+                                      marginRight: "4px",
+                                      marginBottom: "3px",
+                                      fontSize: "11px",
+                                      fontWeight: "bold",
+                                      cursor: "pointer",
+                                      border: isAssigned
+                                        ? "1px solid #4CAF50"
+                                        : "1px solid #ddd",
+                                      display: "inline-block",
+                                    }}
+                                    title={
+                                      isAssigned
+                                        ? `Scene ${sceneNum} - ASSIGNED (Double-click to remove)`
+                                        : `Scene ${sceneNum} - Available (Double-click to add)`
+                                    }
+                                    onDoubleClick={() => {
+                                      toggleSceneAssignment(
+                                        location.id,
+                                        sceneNum
+                                      );
+                                    }}
+                                  >
+                                    {sceneNum}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startReassignSubLocation(
+                                location.id,
+                                location.subLocation
+                              );
                             }}
                             style={{
                               backgroundColor: "#FF9800",
@@ -9153,361 +9485,128 @@ function LocationsModule({
                               padding: "2px 6px",
                               cursor: "pointer",
                               fontSize: "10px",
+                              marginBottom: "8px",
                             }}
                           >
-                            Reassign
+                            Reassign Sub-Location
                           </button>
-                          {subLocations.some(
-                            (loc) => loc.scenes && loc.scenes.length > 0
-                          ) && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const allScenes = subLocations.flatMap(
-                                  (loc) => loc.scenes || []
-                                );
-                                setLocationSceneIndex(0);
-                                setShowLocationScenesPopup(allScenes);
-                              }}
-                              style={{
-                                backgroundColor: "#2196F3",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "3px",
-                                padding: "2px 6px",
-                                cursor: "pointer",
-                                fontSize: "10px",
-                                marginLeft: "6px",
-                              }}
-                            >
-                              📄 Scenes
-                            </button>
-                          )}
-                        </div>
-                      </div>
 
-                      <div style={{ marginTop: "10px" }}>
-                        <label
-                          style={{
-                            display: "block",
-                            marginBottom: "5px",
-                            fontSize: "12px",
-                            fontWeight: "bold",
-                          }}
-                        >
-                          Assign all to location:
-                        </label>
-                        <select
-                          value={assignedActual?.id || ""}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            assignActualToGroup(parentLocation, e.target.value);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          style={{
-                            width: "100%",
-                            padding: "4px",
-                            border: "1px solid #ccc",
-                            borderRadius: "3px",
-                            fontSize: "12px",
-                          }}
-                        >
-                          <option value="">Select actual location...</option>
-                          {actualLocations.map((actual) => (
-                            <option key={actual.id} value={actual.id}>
-                              {actual.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {assignedActual && (
-                        <div
-                          style={{
-                            backgroundColor: "#f0f8f0",
-                            padding: "8px",
-                            borderRadius: "3px",
-                            fontSize: "12px",
-                            marginTop: "8px",
-                          }}
-                        >
-                          <strong>Assigned to:</strong> {assignedActual.name}
-                          <br />
-                          <strong>Address:</strong> {assignedActual.address}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Sub-locations (when expanded) */}
-                    {isExpanded && (
-                      <div style={{ marginLeft: "20px", marginTop: "10px" }}>
-                        {subLocations.map((location) => (
-                          <div
-                            key={location.id}
+                          <select
+                            value={location.actualLocationId || ""}
+                            onChange={(e) =>
+                              assignActualLocation(location.id, e.target.value)
+                            }
                             style={{
-                              border: "1px solid #ddd",
-                              margin: "8px 0",
-                              padding: "10px",
-                              backgroundColor: "#fff",
-                              borderRadius: "4px",
-                              fontSize: "14px",
+                              width: "100%",
+                              padding: "4px",
+                              border: "1px solid #ccc",
+                              borderRadius: "3px",
+                              fontSize: "11px",
                             }}
                           >
-                            <div
-                              style={{
-                                fontWeight: "bold",
-                                marginBottom: "5px",
-                              }}
-                            >
-                              {location.intExt}{" "}
-                              {editingSubLocation === location.id ? (
-                                <input
-                                  type="text"
-                                  value={editSubLocationValue}
-                                  onChange={(e) =>
-                                    setEditSubLocationValue(e.target.value)
-                                  }
-                                  onBlur={saveSubLocationEdit}
-                                  onKeyPress={(e) => {
-                                    if (e.key === "Enter")
-                                      saveSubLocationEdit();
-                                    if (e.key === "Escape")
-                                      cancelSubLocationEdit();
-                                  }}
-                                  autoFocus
-                                  style={{
-                                    fontSize: "14px",
-                                    fontWeight: "bold",
-                                    border: "2px solid #2196F3",
-                                    borderRadius: "3px",
-                                    padding: "2px 6px",
-                                    minWidth: "120px",
-                                  }}
-                                />
-                              ) : (
-                                <span
-                                  onDoubleClick={() =>
-                                    startEditingSubLocation(
-                                      location.id,
-                                      location.subLocation
-                                    )
-                                  }
-                                  style={{
-                                    cursor: "pointer",
-                                    padding: "2px 4px",
-                                    borderRadius: "3px",
-                                  }}
-                                  onMouseOver={(e) =>
-                                    (e.target.style.backgroundColor = "#f0f0f0")
-                                  }
-                                  onMouseOut={(e) =>
-                                    (e.target.style.backgroundColor =
-                                      "transparent")
-                                  }
-                                  title="Double-click to edit sub-location name"
-                                >
-                                  {location.subLocation}
-                                </span>
-                              )}
-                            </div>
-                            {/* Assigned Scenes */}
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                color: "#666",
-                                marginBottom: "8px",
-                              }}
-                            >
-                              <strong>Assigned Scenes:</strong>{" "}
-                              {location.scenes.length > 0 ? (
-                                <>
-                                  {location.scenes.map((sceneNum, index) => {
-                                    const scene = scenes.find(
-                                      (s) => s.sceneNumber == sceneNum
-                                    );
-                                    const status =
-                                      scene?.status || "Not Scheduled";
-                                    const statusColor =
-                                      status === "Scheduled"
-                                        ? "#2196F3"
-                                        : status === "Shot"
-                                        ? "#4CAF50"
-                                        : status === "Pickups"
-                                        ? "#FFC107"
-                                        : status === "Reshoot"
-                                        ? "#F44336"
-                                        : "#f0f0f0";
-                                    const textColor =
-                                      status === "Pickups"
-                                        ? "black"
-                                        : status === "Not Scheduled"
-                                        ? "#666"
-                                        : "white";
-
-                                    return (
-                                      <span key={sceneNum}>
-                                        <span
-                                          style={{
-                                            backgroundColor: statusColor,
-                                            color: textColor,
-                                            padding: "2px 6px",
-                                            borderRadius: "3px",
-                                            marginRight: "4px",
-                                            fontSize: "11px",
-                                            fontWeight: "bold",
-                                            cursor: "pointer",
-                                            border: "1px solid #ddd",
-                                          }}
-                                          title={`Scene ${sceneNum} - ${status} (click to manage)`}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSceneBadgeReassignTarget("");
-                                            setShowSceneBadgePopup({
-                                              sceneNumber: sceneNum,
-                                              locationId: location.id,
-                                              parentLocation:
-                                                location.parentLocation,
-                                            });
-                                          }}
-                                        >
-                                          {sceneNum}
-                                        </span>
-                                        {index < location.scenes.length - 1
-                                          ? " "
-                                          : ""}
-                                      </span>
-                                    );
-                                  })}{" "}
-                                  ({location.scenes.length} scenes)
-                                </>
-                              ) : (
-                                <span
-                                  style={{ color: "#999", fontStyle: "italic" }}
-                                >
-                                  No scenes assigned
-                                </span>
-                              )}
-                            </div>
-
-                            {/* All Available Scenes for Manual Assignment */}
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                marginBottom: "8px",
-                                padding: "8px",
-                                backgroundColor: "#f9f9f9",
-                                borderRadius: "4px",
-                                border: "1px solid #e0e0e0",
-                              }}
-                            >
-                              <strong>
-                                All Scenes (Double-click to add/remove):
-                              </strong>
-                              <div
-                                style={{ marginTop: "4px", lineHeight: "1.8" }}
-                              >
-                                {allSceneNumbers.map((sceneNum) => {
-                                  const isAssigned =
-                                    location.scenes.includes(sceneNum);
-                                  const scene = scenes.find(
-                                    (s) => s.sceneNumber == sceneNum
-                                  );
-                                  const status =
-                                    scene?.status || "Not Scheduled";
-
-                                  return (
-                                    <span
-                                      key={sceneNum}
-                                      style={{
-                                        backgroundColor: isAssigned
-                                          ? "#4CAF50"
-                                          : "#f0f0f0",
-                                        color: isAssigned ? "white" : "#666",
-                                        padding: "2px 6px",
-                                        borderRadius: "3px",
-                                        marginRight: "4px",
-                                        marginBottom: "3px",
-                                        fontSize: "11px",
-                                        fontWeight: "bold",
-                                        cursor: "pointer",
-                                        border: isAssigned
-                                          ? "1px solid #4CAF50"
-                                          : "1px solid #ddd",
-                                        display: "inline-block",
-                                      }}
-                                      title={
-                                        isAssigned
-                                          ? `Scene ${sceneNum} - ASSIGNED (Double-click to remove)`
-                                          : `Scene ${sceneNum} - Available (Double-click to add)`
-                                      }
-                                      onDoubleClick={() => {
-                                        toggleSceneAssignment(
-                                          location.id,
-                                          sceneNum
-                                        );
-                                      }}
-                                    >
-                                      {sceneNum}
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            </div>
-
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                startReassignSubLocation(
-                                  location.id,
-                                  location.subLocation
-                                );
-                              }}
-                              style={{
-                                backgroundColor: "#FF9800",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "3px",
-                                padding: "2px 6px",
-                                cursor: "pointer",
-                                fontSize: "10px",
-                                marginBottom: "8px",
-                              }}
-                            >
-                              Reassign Sub-Location
-                            </button>
-
-                            <select
-                              value={location.actualLocationId || ""}
-                              onChange={(e) =>
-                                assignActualLocation(
-                                  location.id,
-                                  e.target.value
-                                )
-                              }
-                              style={{
-                                width: "100%",
-                                padding: "4px",
-                                border: "1px solid #ccc",
-                                borderRadius: "3px",
-                                fontSize: "11px",
-                              }}
-                            >
-                              <option value="">
-                                Override group assignment...
+                            <option value="">
+                              Override group assignment...
+                            </option>
+                            {actualLocations.map((actual) => (
+                              <option key={actual.id} value={actual.id}>
+                                {actual.name}
                               </option>
-                              {actualLocations.map((actual) => (
-                                <option key={actual.id} value={actual.id}>
-                                  {actual.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Unassigned Scenes Group */}
+            {unassignedScenes.length > 0 && (
+              <div
+                style={{
+                  marginTop: "15px",
+                  border: "2px solid #FF9800",
+                  borderRadius: "6px",
+                  padding: "12px",
+                  backgroundColor: "#fff8e1",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "10px",
+                  }}
+                >
+                  <strong style={{ fontSize: "14px" }}>
+                    ⚠️ Unassigned Scenes ({unassignedScenes.length})
+                  </strong>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      onClick={() => {
+                        setUnassignedSceneIndex(0);
+                        setUnassignedScenesPopupScenes(
+                          unassignedScenes.map((s) => s.sceneNumber)
+                        );
+                      }}
+                      style={{
+                        backgroundColor: "#2196F3",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "3px",
+                        padding: "4px 10px",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                      }}
+                    >
+                      📄 Scenes
+                    </button>
+                    <button
+                      onClick={() => {
+                        setNewLocationHeading("");
+                        setShowAddLocationDialog(true);
+                      }}
+                      style={{
+                        backgroundColor: "#4CAF50",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "3px",
+                        padding: "4px 10px",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                      }}
+                    >
+                      + Add Location
+                    </button>
                   </div>
-                );
-              }
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {unassignedScenes.map((scene) => (
+                    <span
+                      key={scene.sceneNumber}
+                      onClick={() => {
+                        setUnassignedReassignTarget("");
+                        setUnassignedReassignScene(scene.sceneNumber);
+                      }}
+                      style={{
+                        backgroundColor: "#FF9800",
+                        color: "white",
+                        padding: "4px 10px",
+                        borderRadius: "4px",
+                        fontSize: "12px",
+                        fontWeight: "bold",
+                        cursor: "pointer",
+                        border: "1px solid #F57C00",
+                      }}
+                      title={`Scene ${scene.sceneNumber} - click to assign`}
+                    >
+                      {scene.sceneNumber}
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -9655,94 +9754,6 @@ function LocationsModule({
                 )}
               </div>
             ))}
-
-            {/* Unassigned Scenes Group */}
-            {unassignedScenes.length > 0 && (
-              <div
-                style={{
-                  marginTop: "15px",
-                  border: "2px solid #FF9800",
-                  borderRadius: "6px",
-                  padding: "12px",
-                  backgroundColor: "#fff8e1",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "10px",
-                  }}
-                >
-                  <strong style={{ fontSize: "14px" }}>
-                    ⚠️ Unassigned Scenes ({unassignedScenes.length})
-                  </strong>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <button
-                      onClick={() => {
-                        setUnassignedSceneIndex(0);
-                        setUnassignedScenesPopupScenes(
-                          unassignedScenes.map((s) => s.sceneNumber)
-                        );
-                      }}
-                      style={{
-                        backgroundColor: "#2196F3",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "3px",
-                        padding: "4px 10px",
-                        cursor: "pointer",
-                        fontSize: "12px",
-                      }}
-                    >
-                      📄 Scenes
-                    </button>
-                    <button
-                      onClick={() => {
-                        setNewLocationHeading("");
-                        setShowAddLocationDialog(true);
-                      }}
-                      style={{
-                        backgroundColor: "#4CAF50",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "3px",
-                        padding: "4px 10px",
-                        cursor: "pointer",
-                        fontSize: "12px",
-                      }}
-                    >
-                      + Add Location
-                    </button>
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                  {unassignedScenes.map((scene) => (
-                    <span
-                      key={scene.sceneNumber}
-                      onClick={() => {
-                        setUnassignedReassignTarget("");
-                        setUnassignedReassignScene(scene.sceneNumber);
-                      }}
-                      style={{
-                        backgroundColor: "#FF9800",
-                        color: "white",
-                        padding: "4px 10px",
-                        borderRadius: "4px",
-                        fontSize: "12px",
-                        fontWeight: "bold",
-                        cursor: "pointer",
-                        border: "1px solid #F57C00",
-                      }}
-                      title={`Scene ${scene.sceneNumber} - click to assign`}
-                    >
-                      {scene.sceneNumber}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
