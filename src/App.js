@@ -6893,7 +6893,7 @@ function StripboardScheduleModule({
   );
 }
 
-function DayBlock(
+function DayBlock({
   day,
   timeOptions,
   onDrop,
@@ -6912,8 +6912,8 @@ function DayBlock(
   getSceneBlockTextColor,
   updateDayCollapse,
   handleSceneDoubleClick,
-  syncShootingDays
-) {
+  syncShootingDays,
+}) {
   const [editingBlock, setEditingBlock] = React.useState(null);
   const [editValue, setEditValue] = React.useState("");
 
@@ -6982,6 +6982,7 @@ function DayBlock(
         <div style={{ flex: 1, textAlign: "center" }}>
           DAY {day.dayNumber} -{" "}
           {(() => {
+            if (!day.date) return null;
             const [year, month, dayNum] = day.date.split("-");
             const date = new Date(
               parseInt(year),
@@ -7040,7 +7041,7 @@ function DayBlock(
 
       {/* Schedule Blocks - only show if not collapsed */}
       {!isCollapsed &&
-        day.scheduleBlocks.map((block, index) => {
+        (day.scheduleBlocks || []).map((block, index) => {
           if (block.isEndOfDay) {
             return (
               <div
