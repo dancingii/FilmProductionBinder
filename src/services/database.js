@@ -926,6 +926,37 @@ export const updateSceneStatus = async (
 };
 
 /**
+ * Update full scene heading (atomic)
+ */
+export const updateSceneHeading = async (
+  selectedProject,
+  sceneNumber,
+  heading,
+  intExt,
+  location,
+  timeOfDay,
+  modifier
+) => {
+  try {
+    console.log(`🔄 Updating scene ${sceneNumber} heading to: ${heading}`);
+    const { error } = await supabase.rpc("update_scene_heading", {
+      p_project_id: selectedProject.id,
+      p_scene_number: sceneNumber.toString(),
+      p_heading: heading,
+      p_int_ext: intExt,
+      p_location: location,
+      p_time_of_day: timeOfDay,
+      p_modifier: modifier,
+    });
+    if (error) throw error;
+    console.log(`✅ Scene ${sceneNumber} heading updated successfully`);
+  } catch (error) {
+    console.error(`❌ Failed to update scene heading:`, error);
+    throw error;
+  }
+};
+
+/**
  * Update manual time of day for a single scene (atomic)
  */
 export const updateSceneTimeOfDay = async (
@@ -2286,20 +2317,34 @@ export const syncWardrobeItemsToDatabase = async (
   try {
     console.log("Syncing wardrobe items to database...");
 
-    const wardrobeData = updatedWardrobeItems.map((item) => ({
-      project_id: selectedProject.id,
-      item_data: item,
-    }));
+    // Deduplicate by characterName — one row per character
+    const seen = new Set();
+    const wardrobeData = updatedWardrobeItems
+      .filter((item) => {
+        const key = item.characterName || item.id || "unknown";
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((item) => ({
+        project_id: selectedProject.id,
+        item_id: item.characterName || item.id || `wardrobe_${Date.now()}`,
+        item_data: item,
+      }));
 
+    // Delete items no longer present
+    const currentIds = wardrobeData.map((d) => d.item_id);
     await supabase
       .from("wardrobe_items")
       .delete()
-      .eq("project_id", selectedProject.id);
+      .eq("project_id", selectedProject.id)
+      .not("item_id", "in", `(${currentIds.join(",")})`);
 
+    // Upsert remaining items
     if (wardrobeData.length > 0) {
       const { error } = await supabase
         .from("wardrobe_items")
-        .insert(wardrobeData);
+        .upsert(wardrobeData, { onConflict: "project_id,item_id" });
 
       if (error) throw error;
     }

@@ -3712,8 +3712,10 @@ function StripboardModule({
   const [selectedScenes, setSelectedScenes] = React.useState([]);
   const [editingTime, setEditingTime] = React.useState(null);
   const [editingStatus, setEditingStatus] = React.useState(null);
-  const [editingDescription, setEditingDescription] = React.useState(null);
-  const [editingNotes, setEditingNotes] = React.useState(null);
+  const [editingDescription, setEditingDescription] = useState(null);
+  const [editingNotes, setEditingNotes] = useState(null);
+  const [editingHeadingScene, setEditingHeadingScene] = useState(null);
+  const [headingForm, setHeadingForm] = useState({ intExt: "EXT.", location: "", timeOfDay: "DAY", modifier: "" });
   const [showLocationPopup, setShowLocationPopup] = React.useState(null);
   const [showScriptPopup, setShowScriptPopup] = React.useState(false);
   const [selectedSceneForScript, setSelectedSceneForScript] =
@@ -4273,7 +4275,33 @@ function StripboardModule({
                   <option value="Removed">Removed</option>
                 </select>
               </div>
-              <div style={{ fontWeight: "bold" }}>{scene.sceneNumber}</div>
+              <div style={{ fontWeight: "bold" }}>
+                {scene.sceneNumber}
+                <button
+                  onClick={() => {
+                    setHeadingForm({
+                      intExt: scene.metadata?.intExt || "EXT.",
+                      location: scene.metadata?.location || "",
+                      timeOfDay: scene.metadata?.timeOfDay || scene.manualTimeOfDay || "DAY",
+                      modifier: scene.metadata?.modifier || "",
+                    });
+                    setEditingHeadingScene(index);
+                  }}
+                  style={{
+                    backgroundColor: "#2196F3",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "2px",
+                    padding: "1px 4px",
+                    fontSize: "7px",
+                    cursor: "pointer",
+                    marginLeft: "3px",
+                    verticalAlign: "middle",
+                  }}
+                >
+                  ✎
+                </button>
+              </div>
               <div>{scene.metadata?.intExt || ""}</div>
               <div>{scene.metadata?.location || ""}</div>
               <div style={{ lineHeight: "1.3" }}>
@@ -4586,6 +4614,94 @@ function StripboardModule({
             </div>
           </div>
         </>
+      )}
+
+      {editingHeadingScene !== null && (
+        <>
+          <div
+            style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }}
+            onClick={() => setEditingHeadingScene(null)}
+          />
+          <div
+            style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", backgroundColor: "white", border: "2px solid #ccc", borderRadius: "8px", padding: "24px", boxShadow: "0 4px 20px rgba(0,0,0,0.3)", zIndex: 1000, minWidth: "420px" }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "20px" }}>
+              Edit Scene {scenes[editingHeadingScene]?.sceneNumber} Heading
+            </h3>
+            <div style={{ display: "flex", gap: "10px", marginBottom: "16px", alignItems: "center" }}>
+              <div>
+                <label style={{ fontSize: "11px", color: "#666", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>INT/EXT</label>
+                <select
+                  value={headingForm.intExt}
+                  onChange={(e) => setHeadingForm(prev => ({ ...prev, intExt: e.target.value }))}
+                  style={{ padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", fontWeight: "bold" }}
+                >
+                  <option value="INT.">INT.</option>
+                  <option value="EXT.">EXT.</option>
+                  <option value="I/E">I/E</option>
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: "11px", color: "#666", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Location</label>
+                <input
+                  type="text"
+                  value={headingForm.location}
+                  onChange={(e) => setHeadingForm(prev => ({ ...prev, location: e.target.value.toUpperCase() }))}
+                  style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  placeholder="LOCATION NAME"
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "10px", marginBottom: "20px", alignItems: "center" }}>
+              <div>
+                <label style={{ fontSize: "11px", color: "#666", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Time of Day</label>
+                <select
+                  value={headingForm.timeOfDay}
+                  onChange={(e) => setHeadingForm(prev => ({ ...prev, timeOfDay: e.target.value }))}
+                  style={{ padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", fontWeight: "bold" }}
+                >
+                  <option value="DAY">DAY</option>
+                  <option value="NIGHT">NIGHT</option>
+                  <option value="DAWN">DAWN</option>
+                  <option value="DUSK">DUSK</option>
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: "11px", color: "#666", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Modifier</label>
+                <input
+                  type="text"
+                  value={headingForm.modifier}
+                  onChange={(e) => setHeadingForm(prev => ({ ...prev, modifier: e.target.value.toUpperCase() }))}
+                  style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  placeholder="e.g. CONTINUOUS, LATER"
+                />
+              </div>
+            </div>
+            <div style={{ backgroundColor: "#f5f5f5", padding: "10px 14px", borderRadius: "4px", marginBottom: "20px", fontSize: "13px", fontWeight: "bold", fontFamily: "monospace" }}>
+              {headingForm.intExt} {headingForm.location}{headingForm.timeOfDay ? ` - ${headingForm.timeOfDay}` : ""}{headingForm.modifier ? ` - ${headingForm.modifier}` : ""}
+            </div>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setEditingHeadingScene(null)}
+                style={{ padding: "8px 16px", border: "1px solid #ccc", borderRadius: "4px", cursor: "pointer", backgroundColor: "white", fontSize: "13px" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (onUpdateScene) {
+                    onUpdateScene(editingHeadingScene, "heading", headingForm);
+                  }
+                  setEditingHeadingScene(null);
+                }}
+                style={{ padding: "8px 20px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "13px", fontWeight: "bold" }}
+              >
+                ✓ Save
+              </button>
+            </div>
+          </div>
+      </>
       )}
     </div>
   );
@@ -6889,6 +7005,8 @@ function StripboardScheduleModule({
           </>
         )}
       </div>
+
+
     </div>
   );
 }
@@ -11899,6 +12017,7 @@ function LocationsModule({
             </>
           );
         })()}
+
     </div>
   );
 }
@@ -13052,10 +13171,14 @@ function App({ selectedProject, userRole, user }) {
   };
 
   const syncWardrobeItemsToDatabase = async (updatedWardrobeItems) => {
+    syncLocks.current.wardrobeItems = true;
+    console.log("🔒 Wardrobe sync lock ENABLED");
     await database.syncWardrobeItemsToDatabase(
       selectedProject,
       updatedWardrobeItems
     );
+    syncLocks.current.wardrobeItems = false;
+    console.log("🔓 Wardrobe sync lock RELEASED");
   };
 
   const syncGarmentInventoryToDatabase = async (updatedGarmentInventory) => {
@@ -14903,13 +15026,30 @@ function App({ selectedProject, userRole, user }) {
         field === "status" ||
         field === "manualTimeOfDay" ||
         field === "description" ||
-        field === "notes"
+        field === "notes" ||
+        field === "heading"
       ) {
         console.log(`🔄 Updating scene ${sceneIndex} ${field} to: ${value}`);
         setScenes((prevMainScenes) => {
           const updatedMainScenes = [...prevMainScenes];
 
-          if (field === "status") {
+          if (field === "heading") {
+            const intExt = value.intExt || "";
+            const location = value.location || "";
+            const timeOfDay = value.timeOfDay || "";
+            const modifier = value.modifier || "";
+            const fullHeading = `${intExt} ${location}${timeOfDay ? ` - ${timeOfDay}` : ""}${modifier ? ` - ${modifier}` : ""}`.trim();
+            updatedScenes[sceneIndex] = {
+              ...updatedScenes[sceneIndex],
+              heading: fullHeading,
+              metadata: {
+                ...updatedScenes[sceneIndex].metadata,
+                intExt,
+                location,
+                timeOfDay,
+              },
+            };
+          } else if (field === "status") {
             updatedMainScenes[sceneIndex] = {
               ...updatedMainScenes[sceneIndex],
               status: value,
@@ -14976,16 +15116,49 @@ function App({ selectedProject, userRole, user }) {
                 );
                 alert("⚠️ Failed to save description. Please try again.");
               });
-          } else if (field === "notes") {
-            database
-              .updateSceneNotes(selectedProject, sceneNumber, value)
-              .catch((error) => {
-                console.error("❌ Atomic scene notes update failed:", error);
-                alert("⚠️ Failed to save notes. Please try again.");
-              });
-          }
-
-          return updatedMainScenes;
+            } else if (field === "notes") {
+              database
+                .updateSceneNotes(selectedProject, sceneNumber, value)
+                .catch((error) => {
+                  console.error(
+                    "❌ Atomic scene notes update failed:",
+                    error
+                  );
+                  alert("⚠️ Failed to save notes. Please try again.");
+                });
+            } else if (field === "heading") {
+              const intExt = value.intExt || "";
+              const location = value.location || "";
+              const timeOfDay = value.timeOfDay || "";
+              const modifier = value.modifier || "";
+              const fullHeading = `${intExt} ${location}${timeOfDay ? ` - ${timeOfDay}` : ""}${modifier ? ` - ${modifier}` : ""}`.trim();
+              updatedMainScenes[sceneIndex] = {
+                ...updatedMainScenes[sceneIndex],
+                heading: fullHeading,
+                metadata: {
+                  ...updatedMainScenes[sceneIndex].metadata,
+                  intExt,
+                  location,
+                  timeOfDay,
+                },
+              };
+              database
+                .updateSceneHeading(
+                  selectedProject,
+                  sceneNumber,
+                  fullHeading,
+                  intExt,
+                  location,
+                  timeOfDay,
+                  modifier
+                )
+                .catch((error) => {
+                  console.error("❌ Atomic scene heading update failed:", error);
+                  alert("⚠️ Failed to save heading. Please try again.");
+                });
+            }
+  
+            return updatedMainScenes;
         });
       }
 
@@ -26208,7 +26381,7 @@ function WardrobeModule({
   selectedProject,
 }) {
   const [selectedCharacter, setSelectedCharacter] = React.useState("");
-  const [viewMode, setViewMode] = React.useState("scenes"); // "scenes" or "characters"
+  const [viewMode, setViewMode] = React.useState("characters"); // "scenes" or "characters"
   const [savedScrollPositions, setSavedScrollPositions] = React.useState({
     scenes: 0,
     characters: 0,
@@ -26332,7 +26505,7 @@ function WardrobeModule({
       if (!existingCharacter) {
         const newCharacter = {
           characterName: characterName,
-          items: Array.from({ length: 10 }, (_, index) => ({
+          items: Array.from({ length: 1 }, (_, index) => ({
             id: `${characterName}_${index + 1}`,
             number: index + 1,
             description: "",
@@ -26759,7 +26932,7 @@ function WardrobeModule({
                       marginLeft: "20px",
                     }}
                   >
-                    Add Row
+                    Add Look
                   </button>
                   <button
                     onClick={removeWardrobeRow}
@@ -26772,7 +26945,7 @@ function WardrobeModule({
                       cursor: "pointer",
                     }}
                   >
-                    Remove Row
+                    Remove Look
                   </button>
                   <button
                     onClick={() => setShowCategoryModal(true)}
