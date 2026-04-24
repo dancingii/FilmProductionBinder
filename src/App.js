@@ -20,6 +20,11 @@ import ShotListModule from "./components/modules/ShotList/ShotList";
 import TimelineModule from "./components/modules/Timeline/Timeline";
 import Dashboard from "./components/modules/Dashboard/Dashboard";
 import CostReportModule from "./components/modules/CostReport/CostReport";
+import {
+  btlDepartments,
+  legalDepartments,
+  additionalCategories,
+} from "./components/modules/Budget/stockCategories.js";
 import EditableInput from "./components/shared/EditableInput";
 import ImageUpload from "./components/shared/ImageUpload";
 import MultiImageUpload from "./components/shared/MultiImageUpload";
@@ -84,6 +89,16 @@ function Script({
   };
   const [isEditMode, setIsEditMode] = useState(false);
   const [showFullScript, setShowFullScript] = useState(false);
+
+  // ESC key closes all popups
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key !== "Escape") return;
+      setShowFullScript(false);
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
 
   return (
     <>
@@ -552,6 +567,16 @@ function MakeupModule({
       </div>
     );
   }
+
+  // ESC key closes all popups
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key !== "Escape") return;
+      setShowScenePreview(false);
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
 
   return (
     <div
@@ -1865,6 +1890,16 @@ function ProductionDesignModule({
       </div>
     );
   }
+
+  // ESC key closes all popups
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key !== "Escape") return;
+      setShowScenePreview(false);
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
 
   return (
     <div
@@ -3715,7 +3750,12 @@ function StripboardModule({
   const [editingDescription, setEditingDescription] = useState(null);
   const [editingNotes, setEditingNotes] = useState(null);
   const [editingHeadingScene, setEditingHeadingScene] = useState(null);
-  const [headingForm, setHeadingForm] = useState({ intExt: "EXT.", location: "", timeOfDay: "DAY", modifier: "" });
+  const [headingForm, setHeadingForm] = useState({
+    intExt: "EXT.",
+    location: "",
+    timeOfDay: "DAY",
+    modifier: "",
+  });
   const [showLocationPopup, setShowLocationPopup] = React.useState(null);
   const [showScriptPopup, setShowScriptPopup] = React.useState(false);
   const [selectedSceneForScript, setSelectedSceneForScript] =
@@ -3939,71 +3979,76 @@ function StripboardModule({
   };
 
   const getSceneCastCrew = (sceneNumber) => {
-    if (!castCrew || !characters) {
-      return [];
-    }
+    if (!castCrew || !characters) return [];
 
-    const result = castCrew
+    const sceneStr = String(sceneNumber);
+
+    // Case-insensitive character lookup helper
+    const findCharData = (characterName) => {
+      if (!characterName) return null;
+      // Try exact match first
+      if (characters[characterName]) return characters[characterName];
+      // Fall back to case-insensitive match
+      const lc = characterName.toLowerCase();
+      const entry = Object.entries(characters).find(
+        ([key]) => key.toLowerCase() === lc
+      );
+      return entry ? entry[1] : null;
+    };
+
+    return castCrew
       .filter((person) => {
-        if (person.type !== "cast") {
-          return false;
-        }
-        const characterName = person.character;
-
-        if (characterName && characters[characterName]) {
-          const hasScene =
-            characters[characterName].scenes &&
-            characters[characterName].scenes.includes(sceneNumber);
-          return hasScene;
-        }
-        return false;
+        if (person.type !== "cast") return false;
+        const charData = findCharData(person.character);
+        if (!charData) return false;
+        return (
+          charData.scenes && charData.scenes.some((s) => String(s) === sceneStr)
+        );
       })
       .map((person) => {
-        const character = characters[person.character];
-        const characterNumber = character ? character.chronologicalNumber : "";
+        const charData = findCharData(person.character);
+        const characterNumber = charData ? charData.chronologicalNumber : "";
         return {
           name: person.displayName,
           character: person.character,
-          characterNumber: characterNumber,
+          characterNumber,
           displayText: characterNumber
             ? `${characterNumber}. ${person.displayName}`
             : person.displayName,
         };
       })
       .sort((a, b) => (a.characterNumber || 999) - (b.characterNumber || 999));
-
-    return result;
   };
 
   const getStatusColor = (status, isScheduled = false) => {
     // For scheduled Pickups and Reshoots, use blue background with colored border
     if (isScheduled && (status === "Pickups" || status === "Reshoot")) {
-      return "#2196F3"; // Blue background for scheduled items
+      return "#8fb8d4"; // Muted steel blue for scheduled items
     }
 
     switch (status) {
       case "Scheduled":
-        return "#2196F3"; // Vivid blue
+        return "#8fb8d4"; // Muted steel blue
       case "Shot":
-        return "#4CAF50"; // Vivid green
+        return "#8aba8a"; // Muted sage green
       case "Pickups":
-        return "#FFC107"; // Vivid yellow/amber
+        return "#d4bc7a"; // Muted dusty amber
       case "Reshoot":
-        return "#F44336"; // Vivid red
+        return "#d49494"; // Muted dusty rose
       case "Removed":
-        return "#FF00FF"; // Magenta for removed scenes
+        return "#c4a0c4"; // Muted mauve
       default:
-        return "#f0f0f0"; // Light gray for "Not Scheduled"
+        return "#e8e8e8"; // Soft gray for "Not Scheduled"
     }
   };
 
   const getStatusBorder = (status, isScheduled = false) => {
     // For scheduled Pickups and Reshoots, add colored border
     if (isScheduled && status === "Pickups") {
-      return "5px solid #FFC107"; // Yellow border for Pickups (increased from 3px to 5px)
+      return "5px solid #c4a040"; // Muted amber border for Pickups
     }
     if (isScheduled && status === "Reshoot") {
-      return "5px solid #F44336"; // Red border for Reshoots (increased from 3px to 5px)
+      return "5px solid #c06060"; // Muted rose border for Reshoots
     }
     return "1px solid #ddd"; // Default border
   };
@@ -4061,6 +4106,18 @@ function StripboardModule({
   const handleLocationClick = (location, scene) => {
     setShowLocationPopup({ location, scene });
   };
+
+  // ESC key closes all popups
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key !== "Escape") return;
+      setEditingHeadingScene(null);
+      setShowScriptPopup(false);
+      setShowLocationPopup(null);
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
 
   return (
     <div
@@ -4282,7 +4339,10 @@ function StripboardModule({
                     setHeadingForm({
                       intExt: scene.metadata?.intExt || "EXT.",
                       location: scene.metadata?.location || "",
-                      timeOfDay: scene.metadata?.timeOfDay || scene.manualTimeOfDay || "DAY",
+                      timeOfDay:
+                        scene.metadata?.timeOfDay ||
+                        scene.manualTimeOfDay ||
+                        "DAY",
                       modifier: scene.metadata?.modifier || "",
                     });
                     setEditingHeadingScene(index);
@@ -4619,22 +4679,71 @@ function StripboardModule({
       {editingHeadingScene !== null && (
         <>
           <div
-            style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }}
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              backgroundColor: "rgba(0,0,0,0.5)",
+              zIndex: 999,
+            }}
             onClick={() => setEditingHeadingScene(null)}
           />
           <div
-            style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", backgroundColor: "white", border: "2px solid #ccc", borderRadius: "8px", padding: "24px", boxShadow: "0 4px 20px rgba(0,0,0,0.3)", zIndex: 1000, minWidth: "420px" }}
+            style={{
+              position: "fixed",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              backgroundColor: "white",
+              border: "2px solid #ccc",
+              borderRadius: "8px",
+              padding: "24px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+              zIndex: 1000,
+              minWidth: "420px",
+            }}
           >
             <h3 style={{ marginTop: 0, marginBottom: "20px" }}>
               Edit Scene {scenes[editingHeadingScene]?.sceneNumber} Heading
             </h3>
-            <div style={{ display: "flex", gap: "10px", marginBottom: "16px", alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                marginBottom: "16px",
+                alignItems: "center",
+              }}
+            >
               <div>
-                <label style={{ fontSize: "11px", color: "#666", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>INT/EXT</label>
+                <label
+                  style={{
+                    fontSize: "11px",
+                    color: "#666",
+                    display: "block",
+                    marginBottom: "4px",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  INT/EXT
+                </label>
                 <select
                   value={headingForm.intExt}
-                  onChange={(e) => setHeadingForm(prev => ({ ...prev, intExt: e.target.value }))}
-                  style={{ padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", fontWeight: "bold" }}
+                  onChange={(e) =>
+                    setHeadingForm((prev) => ({
+                      ...prev,
+                      intExt: e.target.value,
+                    }))
+                  }
+                  style={{
+                    padding: "8px",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                    fontSize: "13px",
+                    fontWeight: "bold",
+                  }}
                 >
                   <option value="INT.">INT.</option>
                   <option value="EXT.">EXT.</option>
@@ -4642,24 +4751,76 @@ function StripboardModule({
                 </select>
               </div>
               <div style={{ flex: 1 }}>
-                <label style={{ fontSize: "11px", color: "#666", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Location</label>
+                <label
+                  style={{
+                    fontSize: "11px",
+                    color: "#666",
+                    display: "block",
+                    marginBottom: "4px",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  Location
+                </label>
                 <input
                   type="text"
                   value={headingForm.location}
-                  onChange={(e) => setHeadingForm(prev => ({ ...prev, location: e.target.value.toUpperCase() }))}
-                  style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  onChange={(e) =>
+                    setHeadingForm((prev) => ({
+                      ...prev,
+                      location: e.target.value.toUpperCase(),
+                    }))
+                  }
+                  style={{
+                    width: "100%",
+                    padding: "8px",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                    fontSize: "13px",
+                    boxSizing: "border-box",
+                  }}
                   placeholder="LOCATION NAME"
                   autoFocus
                 />
               </div>
             </div>
-            <div style={{ display: "flex", gap: "10px", marginBottom: "20px", alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                marginBottom: "20px",
+                alignItems: "center",
+              }}
+            >
               <div>
-                <label style={{ fontSize: "11px", color: "#666", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Time of Day</label>
+                <label
+                  style={{
+                    fontSize: "11px",
+                    color: "#666",
+                    display: "block",
+                    marginBottom: "4px",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  Time of Day
+                </label>
                 <select
                   value={headingForm.timeOfDay}
-                  onChange={(e) => setHeadingForm(prev => ({ ...prev, timeOfDay: e.target.value }))}
-                  style={{ padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", fontWeight: "bold" }}
+                  onChange={(e) =>
+                    setHeadingForm((prev) => ({
+                      ...prev,
+                      timeOfDay: e.target.value,
+                    }))
+                  }
+                  style={{
+                    padding: "8px",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                    fontSize: "13px",
+                    fontWeight: "bold",
+                  }}
                 >
                   <option value="DAY">DAY</option>
                   <option value="NIGHT">NIGHT</option>
@@ -4668,23 +4829,71 @@ function StripboardModule({
                 </select>
               </div>
               <div style={{ flex: 1 }}>
-                <label style={{ fontSize: "11px", color: "#666", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Modifier</label>
+                <label
+                  style={{
+                    fontSize: "11px",
+                    color: "#666",
+                    display: "block",
+                    marginBottom: "4px",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  Modifier
+                </label>
                 <input
                   type="text"
                   value={headingForm.modifier}
-                  onChange={(e) => setHeadingForm(prev => ({ ...prev, modifier: e.target.value.toUpperCase() }))}
-                  style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  onChange={(e) =>
+                    setHeadingForm((prev) => ({
+                      ...prev,
+                      modifier: e.target.value.toUpperCase(),
+                    }))
+                  }
+                  style={{
+                    width: "100%",
+                    padding: "8px",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                    fontSize: "13px",
+                    boxSizing: "border-box",
+                  }}
                   placeholder="e.g. CONTINUOUS, LATER"
                 />
               </div>
             </div>
-            <div style={{ backgroundColor: "#f5f5f5", padding: "10px 14px", borderRadius: "4px", marginBottom: "20px", fontSize: "13px", fontWeight: "bold", fontFamily: "monospace" }}>
-              {headingForm.intExt} {headingForm.location}{headingForm.timeOfDay ? ` - ${headingForm.timeOfDay}` : ""}{headingForm.modifier ? ` - ${headingForm.modifier}` : ""}
+            <div
+              style={{
+                backgroundColor: "#f5f5f5",
+                padding: "10px 14px",
+                borderRadius: "4px",
+                marginBottom: "20px",
+                fontSize: "13px",
+                fontWeight: "bold",
+                fontFamily: "monospace",
+              }}
+            >
+              {headingForm.intExt} {headingForm.location}
+              {headingForm.timeOfDay ? ` - ${headingForm.timeOfDay}` : ""}
+              {headingForm.modifier ? ` - ${headingForm.modifier}` : ""}
             </div>
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                justifyContent: "flex-end",
+              }}
+            >
               <button
                 onClick={() => setEditingHeadingScene(null)}
-                style={{ padding: "8px 16px", border: "1px solid #ccc", borderRadius: "4px", cursor: "pointer", backgroundColor: "white", fontSize: "13px" }}
+                style={{
+                  padding: "8px 16px",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  backgroundColor: "white",
+                  fontSize: "13px",
+                }}
               >
                 Cancel
               </button>
@@ -4695,13 +4904,22 @@ function StripboardModule({
                   }
                   setEditingHeadingScene(null);
                 }}
-                style={{ padding: "8px 20px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "13px", fontWeight: "bold" }}
+                style={{
+                  padding: "8px 20px",
+                  backgroundColor: "#4CAF50",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                }}
               >
                 ✓ Save
               </button>
             </div>
           </div>
-      </>
+        </>
       )}
     </div>
   );
@@ -6412,6 +6630,19 @@ function StripboardScheduleModule({
     }
   };
 
+  // ESC key closes all popups
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key !== "Escape") return;
+      setShowScriptPopup(false);
+      setSelectedSceneForScript(null);
+      setShowStatusDropdown(false);
+      setShowLocationDropdown(false);
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
+
   return (
     <div
       style={{
@@ -7005,8 +7236,6 @@ function StripboardScheduleModule({
           </>
         )}
       </div>
-
-
     </div>
   );
 }
@@ -9250,6 +9479,24 @@ function LocationsModule({
     "Backlot",
   ];
 
+  // ESC key closes all popups
+  React.useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key !== "Escape") return;
+      setShowAddLocationDialog(false);
+      setShowEditLocationDialog(false);
+      setShowReassignDialog(null);
+      setShowReassignSubDialog(null);
+      setShowLocationScenesPopup(null);
+      setShowSceneBadgePopup(null);
+      setShowAddActualLocation(false);
+      setUnassignedScenesPopupScenes(null);
+      setUnassignedReassignScene(null);
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
+
   return (
     <div
       style={{
@@ -9270,19 +9517,6 @@ function LocationsModule({
         }}
       >
         <h2>Locations</h2>
-        <button
-          onClick={() => autoExtractAndGroupLocations()}
-          style={{
-            backgroundColor: "#2196F3",
-            color: "white",
-            padding: "8px 16px",
-            border: "none",
-            borderRadius: "4px",
-            cursor: "pointer",
-          }}
-        >
-          Refresh Location Detection
-        </button>
       </div>
 
       <div
@@ -12017,7 +12251,6 @@ function LocationsModule({
             </>
           );
         })()}
-
     </div>
   );
 }
@@ -12446,7 +12679,16 @@ function App({ selectedProject, userRole, user }) {
             console.log("⏭️ SKIPPING Characters reload - sync lock active");
             return;
           }
-          database.loadCharactersFromDatabase(selectedProject, setCharacters);
+          if (window.charactersReloadTimeout) {
+            clearTimeout(window.charactersReloadTimeout);
+          }
+          window.charactersReloadTimeout = setTimeout(() => {
+            console.log(
+              "✅ Loading Characters from database (after 500ms debounce)"
+            );
+            database.loadCharactersFromDatabase(selectedProject, setCharacters);
+            window.charactersReloadTimeout = null;
+          }, 500);
         }
       )
       .subscribe();
@@ -13163,6 +13405,27 @@ function App({ selectedProject, userRole, user }) {
     console.log("🔓 Characters sync lock RELEASED");
   };
 
+  const handleDeleteCharacter = async (characterName, updatedCharacters) => {
+    syncLocks.current.characters = true;
+    console.log("🔒 Characters sync lock ENABLED (delete:", characterName, ")");
+    try {
+      // Atomically delete the character row from the database
+      await database.deleteCharacter(selectedProject, characterName);
+      // If scenes were reassigned, sync the updated characters state
+      if (updatedCharacters && Object.keys(updatedCharacters).length > 0) {
+        await database.syncCharactersToDatabase(
+          selectedProject,
+          updatedCharacters
+        );
+      }
+    } catch (error) {
+      console.error("❌ Failed to delete character:", error);
+    } finally {
+      syncLocks.current.characters = false;
+      console.log("🔓 Characters sync lock RELEASED (delete)");
+    }
+  };
+
   const syncCharacterOverridesToDatabase = async (updatedOverrides) => {
     await database.syncCharacterOverridesToDatabase(
       selectedProject,
@@ -13232,11 +13495,149 @@ function App({ selectedProject, userRole, user }) {
         selectedProject,
         updatedBudgetData
       );
+      // Sync budget departments to cost categories
+      const updatedCostCats = syncBudgetToCostCategories(
+        updatedBudgetData,
+        costCategories
+      );
+      setCostCategories(updatedCostCats);
+      await database.syncCostCategoriesToDatabase(
+        selectedProject,
+        updatedCostCats
+      );
     } finally {
       syncLocks.current.budget = false;
       console.log("🔓 Budget sync lock RELEASED");
     }
   };
+
+  // Sync budget departments to cost categories (budget → cost report)
+  const syncBudgetToCostCategories = React.useCallback(
+    (updatedBudgetData, currentCostCategories) => {
+      const allSections = [
+        { items: updatedBudgetData.btlItems || [], prefix: "btl" },
+        { items: updatedBudgetData.legalItems || [], prefix: "legal" },
+        { items: updatedBudgetData.marketingItems || [], prefix: "marketing" },
+        { items: updatedBudgetData.postItems || [], prefix: "post" },
+      ];
+
+      const departmentBudgets = updatedBudgetData.departmentBudgets || {};
+      const existingCategories = [...(currentCostCategories || [])];
+
+      // Build a map of department keys that should exist
+      const budgetDeptKeys = new Set();
+
+      allSections.forEach(({ items, prefix }) => {
+        items
+          .filter((item) => item.type === "non-personnel")
+          .forEach((item) => {
+            if (!item.category) return;
+            // Derive department name from item category by matching stockCategories
+            const deptKey = `${prefix}_${item.category}`;
+            budgetDeptKeys.add(deptKey);
+          });
+      });
+
+      // For each btl department in stockCategories, create/update parent category
+      const allDeptMaps = [
+        { map: btlDepartments, prefix: "btl" },
+        { map: legalDepartments, prefix: "legal" },
+        ...Object.entries(additionalCategories || {}).map(([k, v]) => ({
+          map: { [k]: v },
+          prefix: k === "MARKETING, EPK, & PR" ? "marketing" : "post",
+        })),
+      ];
+
+      let updatedCategories = [...existingCategories];
+
+      allDeptMaps.forEach(({ map, prefix }) => {
+        Object.entries(map).forEach(([deptName, deptItems]) => {
+          const deptKey = `${prefix}_${deptName}`;
+          const deptBudget = departmentBudgets[`${prefix}_${deptName}`] || 0;
+
+          // Get all non-personnel items in this dept from budget
+          const itemsKey = `${prefix}Items`;
+          const budgetItems = (updatedBudgetData[itemsKey] || []).filter(
+            (item) => {
+              if (item.type !== "non-personnel") return false;
+              const stockItems = Array.isArray(deptItems)
+                ? deptItems
+                : Object.values(deptItems).flat();
+              return stockItems.some((s) => s.category === item.category);
+            }
+          );
+
+          if (budgetItems.length === 0 && deptBudget === 0) return;
+
+          // Find or create parent category
+          let parentCat = updatedCategories.find(
+            (c) => c.departmentKey === deptKey
+          );
+          if (!parentCat) {
+            parentCat = {
+              id: `dept_${deptKey}_${Date.now()}`,
+              name: deptName,
+              color: "#2196F3",
+              expenses: [],
+              budget: deptBudget,
+              budgetSource: "budget",
+              departmentKey: deptKey,
+              description: "",
+              subCategories: [],
+            };
+            updatedCategories.push(parentCat);
+          } else {
+            // Update budget from budget module
+            parentCat = { ...parentCat, budget: deptBudget };
+            updatedCategories = updatedCategories.map((c) =>
+              c.departmentKey === deptKey ? parentCat : c
+            );
+          }
+
+          // Sync sub-categories from budget line items
+          const existingParent = updatedCategories.find(
+            (c) => c.departmentKey === deptKey
+          );
+          const existingSubs = existingParent?.subCategories || [];
+
+          const newSubs = budgetItems.map((item) => {
+            const existing = existingSubs.find(
+              (s) => s.budgetLineId === item.id
+            );
+            return existing
+              ? {
+                  ...existing,
+                  name: item.name || item.category,
+                  budget: item.budgetAmount || 0,
+                }
+              : {
+                  id: `sub_${item.id || Date.now()}_${Math.random()
+                    .toString(36)
+                    .substr(2, 5)}`,
+                  name: item.name || item.category,
+                  color: "#64B5F6",
+                  expenses: [],
+                  budget: item.budgetAmount || 0,
+                  budgetLineId: item.id,
+                  budgetSource: "budget",
+                  description: item.notes || "",
+                  parentId: existingParent?.id,
+                };
+          });
+
+          updatedCategories = updatedCategories.map((c) =>
+            c.departmentKey === deptKey
+              ? { ...c, budget: deptBudget, subCategories: newSubs }
+              : c
+          );
+        });
+      });
+
+      // Keep manual (non-budget) categories unchanged
+      return updatedCategories;
+    },
+    []
+  );
 
   const syncShotListDataToDatabase = async (
     updatedShotListData,
@@ -15038,7 +15439,9 @@ function App({ selectedProject, userRole, user }) {
             const location = value.location || "";
             const timeOfDay = value.timeOfDay || "";
             const modifier = value.modifier || "";
-            const fullHeading = `${intExt} ${location}${timeOfDay ? ` - ${timeOfDay}` : ""}${modifier ? ` - ${modifier}` : ""}`.trim();
+            const fullHeading = `${intExt} ${location}${
+              timeOfDay ? ` - ${timeOfDay}` : ""
+            }${modifier ? ` - ${modifier}` : ""}`.trim();
             updatedScenes[sceneIndex] = {
               ...updatedScenes[sceneIndex],
               heading: fullHeading,
@@ -15116,49 +15519,48 @@ function App({ selectedProject, userRole, user }) {
                 );
                 alert("⚠️ Failed to save description. Please try again.");
               });
-            } else if (field === "notes") {
-              database
-                .updateSceneNotes(selectedProject, sceneNumber, value)
-                .catch((error) => {
-                  console.error(
-                    "❌ Atomic scene notes update failed:",
-                    error
-                  );
-                  alert("⚠️ Failed to save notes. Please try again.");
-                });
-            } else if (field === "heading") {
-              const intExt = value.intExt || "";
-              const location = value.location || "";
-              const timeOfDay = value.timeOfDay || "";
-              const modifier = value.modifier || "";
-              const fullHeading = `${intExt} ${location}${timeOfDay ? ` - ${timeOfDay}` : ""}${modifier ? ` - ${modifier}` : ""}`.trim();
-              updatedMainScenes[sceneIndex] = {
-                ...updatedMainScenes[sceneIndex],
-                heading: fullHeading,
-                metadata: {
-                  ...updatedMainScenes[sceneIndex].metadata,
-                  intExt,
-                  location,
-                  timeOfDay,
-                },
-              };
-              database
-                .updateSceneHeading(
-                  selectedProject,
-                  sceneNumber,
-                  fullHeading,
-                  intExt,
-                  location,
-                  timeOfDay,
-                  modifier
-                )
-                .catch((error) => {
-                  console.error("❌ Atomic scene heading update failed:", error);
-                  alert("⚠️ Failed to save heading. Please try again.");
-                });
-            }
-  
-            return updatedMainScenes;
+          } else if (field === "notes") {
+            database
+              .updateSceneNotes(selectedProject, sceneNumber, value)
+              .catch((error) => {
+                console.error("❌ Atomic scene notes update failed:", error);
+                alert("⚠️ Failed to save notes. Please try again.");
+              });
+          } else if (field === "heading") {
+            const intExt = value.intExt || "";
+            const location = value.location || "";
+            const timeOfDay = value.timeOfDay || "";
+            const modifier = value.modifier || "";
+            const fullHeading = `${intExt} ${location}${
+              timeOfDay ? ` - ${timeOfDay}` : ""
+            }${modifier ? ` - ${modifier}` : ""}`.trim();
+            updatedMainScenes[sceneIndex] = {
+              ...updatedMainScenes[sceneIndex],
+              heading: fullHeading,
+              metadata: {
+                ...updatedMainScenes[sceneIndex].metadata,
+                intExt,
+                location,
+                timeOfDay,
+              },
+            };
+            database
+              .updateSceneHeading(
+                selectedProject,
+                sceneNumber,
+                fullHeading,
+                intExt,
+                location,
+                timeOfDay,
+                modifier
+              )
+              .catch((error) => {
+                console.error("❌ Atomic scene heading update failed:", error);
+                alert("⚠️ Failed to save heading. Please try again.");
+              });
+          }
+
+          return updatedMainScenes;
         });
       }
 
@@ -15755,6 +16157,16 @@ function App({ selectedProject, userRole, user }) {
     syncCallSheetDataToDatabase(newCallSheetData);
   };
 
+  // ESC key closes tag dropdown
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key !== "Escape") return;
+      setShowTagDropdown(null);
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
+
   const renderModule = () => {
     if (!activeModule || activeModule === "Dashboard") {
       return (
@@ -15960,6 +16372,7 @@ function App({ selectedProject, userRole, user }) {
             setActiveModule={setActiveModule}
             setCurrentIndex={setCurrentIndex}
             onUpdateCharacters={syncCharactersToDatabase}
+            onDeleteCharacter={handleDeleteCharacter}
             onUpdateCharacterOverrides={syncCharacterOverridesToDatabase}
             syncCastCrewToDatabase={syncCastCrewToDatabase}
             selectedProject={selectedProject}
@@ -16077,6 +16490,10 @@ function App({ selectedProject, userRole, user }) {
             setCostCategories={setCostCategories}
             costVendors={costVendors}
             setCostVendors={setCostVendors}
+            budgetData={budgetData}
+            setBudgetData={setBudgetData}
+            onSyncBudgetData={syncBudgetDataToDatabase}
+            selectedProject={selectedProject}
             scenes={scenes}
             shootingDays={shootingDays}
             castCrew={castCrew}
@@ -16727,6 +17144,16 @@ function PropsModule({
       </div>
     );
   }
+
+  // ESC key closes all popups
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key !== "Escape") return;
+      setShowScenePreview(false);
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
 
   return (
     <div
@@ -17944,6 +18371,7 @@ function CharactersModule({
   setActiveModule,
   setCurrentIndex,
   onUpdateCharacters,
+  onDeleteCharacter,
   onUpdateCharacterOverrides,
   syncCastCrewToDatabase,
   selectedProject,
@@ -17951,10 +18379,6 @@ function CharactersModule({
   canEdit,
   isViewOnly,
 }) {
-  console.log("👤 CHARACTERS MODULE LOADED");
-  console.log("👤 Characters data:", characters);
-  console.log("👤 Characters count:", Object.keys(characters || {}).length);
-
   const [showDeleteDialog, setShowDeleteDialog] = useState(null);
   const [reassignTarget, setReassignTarget] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -18040,8 +18464,8 @@ function CharactersModule({
       const updated = { ...characters };
       delete updated[characterName];
       setCharacters(updated);
-      if (onUpdateCharacters) {
-        onUpdateCharacters(updated);
+      if (onDeleteCharacter) {
+        onDeleteCharacter(characterName, updated);
       }
     }
   };
@@ -18109,8 +18533,8 @@ function CharactersModule({
 
     setCharacters(updated);
 
-    if (onUpdateCharacters) {
-      onUpdateCharacters(updated);
+    if (onDeleteCharacter) {
+      onDeleteCharacter(characterName, updated);
     }
 
     setShowDeleteDialog(null);
@@ -18369,13 +18793,26 @@ function CharactersModule({
     );
   };
 
-  const characterList = Object.values(characters).sort(
-    (a, b) => (a.chronologicalNumber || 999) - (b.chronologicalNumber || 999)
+  const characterList = Object.values(characters).sort((a, b) =>
+    (a.name || "").localeCompare(b.name || "")
   );
 
   const existingCharacters = Object.keys(characters).filter(
     (name) => name !== showDeleteDialog?.characterName
   );
+
+  // ESC key closes all popups
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key !== "Escape") return;
+      setShowAddDialog(false);
+      setShowDeleteDialog(null);
+      setShowDetailsPopup(null);
+      setShowScenesPopup(null);
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
 
   return (
     <div
@@ -18426,20 +18863,6 @@ function CharactersModule({
                 >
                   + Add Character
                 </button>
-                <button
-                  onClick={refreshCharacterDetection}
-                  style={{
-                    backgroundColor: "#2196F3",
-                    color: "white",
-                    padding: "8px 16px",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    fontWeight: "bold",
-                  }}
-                >
-                  Refresh Detection
-                </button>
               </>
             )}
           </div>
@@ -18473,10 +18896,10 @@ function CharactersModule({
               <div
                 key={`${character.name}-${actor?.photoUrl || "no-photo"}`}
                 style={{
-                  border: "1px solid #ddd",
+                  border: actor ? "1px solid #b2d8b2" : "1px solid #ddd",
                   borderRadius: "8px",
                   padding: "15px",
-                  backgroundColor: "#fff",
+                  backgroundColor: actor ? "#edf7ed" : "#fff",
                   position: "relative",
                   display: "flex",
                   flexDirection: "column",
@@ -18620,8 +19043,7 @@ function CharactersModule({
               fontSize: "16px",
             }}
           >
-            No characters detected. Click "Refresh Detection" to scan your
-            script.
+            No characters detected. Parse your script to auto-detect characters.
           </div>
         )}
       </div>
@@ -21926,6 +22348,17 @@ function CastCrewModule({
         return lastNameA.localeCompare(lastNameB);
       }),
   };
+
+  // ESC key closes all popups
+  React.useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key !== "Escape") return;
+      setShowAddPersonModal(false);
+      setShowDatePicker(null);
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
 
   return (
     <div
@@ -26803,6 +27236,7 @@ function WardrobeModule({
       >
         <h2>Wardrobe</h2>
         <p>Please parse a script first to detect characters.</p>
+        REPLACE:
         <button
           onClick={() => setActiveModule("script")}
           style={{
@@ -26819,6 +27253,19 @@ function WardrobeModule({
       </div>
     );
   }
+
+  // ESC key closes all popups
+  React.useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key !== "Escape") return;
+      setShowGarmentModal(false);
+      setShowCategoryModal(false);
+      setShowUsageModal(false);
+      setShowImageViewer(false);
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, []);
 
   return (
     <div

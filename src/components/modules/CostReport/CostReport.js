@@ -6,16 +6,23 @@ function CostReport({
   setCostCategories,
   costVendors,
   setCostVendors,
+  budgetData,
+  setBudgetData,
+  onSyncBudgetData,
+  selectedProject,
   scenes,
   shootingDays,
   castCrew,
   crewSortOrder,
   onSyncCostCategories,
-  onSyncCostVendors,
   userRole,
   canEdit,
   isViewOnly,
 }) {
+  const [expandedSubCategories, setExpandedSubCategories] = useState({});
+  const [showAddSubCategory, setShowAddSubCategory] = useState(null); // parentId
+  const [newSubCategoryName, setNewSubCategoryName] = useState("");
+  const [newSubCategoryDesc, setNewSubCategoryDesc] = useState("");
   const [expandedCategories, setExpandedCategories] = useState({});
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
@@ -23,6 +30,11 @@ function CostReport({
   const [newCategoryColor, setNewCategoryColor] = useState("#2196F3");
   const [newVendorName, setNewVendorName] = useState("");
   const [editingExpense, setEditingExpense] = useState(null);
+  const [receiptPopup, setReceiptPopup] = useState(null); // {categoryId, subId, expenseId, currentUrl}
+  const [receiptViewerUrl, setReceiptViewerUrl] = useState(null);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const receiptCameraRef = React.useRef(null);
+  const receiptLibraryRef = React.useRef(null);
 
   // Default crew sort order if not provided
   const defaultCrewSortOrder = [
@@ -63,12 +75,23 @@ function CostReport({
 
   // Calculate totals
   const getCategoryTotal = (category) => {
-    return category.expenses.reduce(
+    const directExpenses = (category.expenses || []).reduce(
       (total, expense) =>
         total +
         (parseFloat(expense.cost) || 0) * (parseFloat(expense.quantity) || 1),
       0
     );
+    const subExpenses = (category.subCategories || []).reduce(
+      (total, sub) =>
+        total +
+        (sub.expenses || []).reduce(
+          (t, e) =>
+            t + (parseFloat(e.cost) || 0) * (parseFloat(e.quantity) || 1),
+          0
+        ),
+      0
+    );
+    return directExpenses + subExpenses;
   };
 
   const getCategoryRemaining = (category) => {
@@ -113,6 +136,165 @@ function CostReport({
     setNewCategoryName("");
     setNewCategoryColor("#2196F3");
     setShowAddCategory(false);
+  };
+
+  const addSubCategory = (parentId) => {
+    if (!newSubCategoryName.trim()) return;
+    const parent = costCategories.find((c) => c.id === parentId);
+    if (!parent) return;
+
+    const newSub = {
+      id: `sub_manual_${Date.now()}`,
+      name: newSubCategoryName.trim(),
+      color: parent.color,
+      expenses: [],
+      budget: 0,
+      budgetLineId: null,
+      budgetSource: "manual",
+      description: newSubCategoryDesc,
+      parentId,
+    };
+
+    const updated = costCategories.map((c) =>
+      c.id === parentId
+        ? { ...c, subCategories: [...(c.subCategories || []), newSub] }
+        : c
+    );
+    setCostCategories(updated);
+    if (onSyncCostCategories) onSyncCostCategories(updated);
+
+    // Also add to budget as misc item if budgetData available
+    if (setBudgetData && budgetData) {
+      const miscItem = {
+        id: `misc_${Date.now()}`,
+        code: "",
+        category: newSubCategoryName.trim(),
+        name: newSubCategoryName.trim(),
+        quantity: 1,
+        rateType: "Flat",
+        rate: 0,
+        budgetAmount: 0,
+        paid: 0,
+        isPaid: false,
+        type: "non-personnel",
+        notes: newSubCategoryDesc,
+        isMiscFromCostReport: true,
+      };
+      const updatedBudget = {
+        ...budgetData,
+        btlItems: [...(budgetData.btlItems || []), miscItem],
+      };
+      setBudgetData(updatedBudget);
+      if (onSyncBudgetData) onSyncBudgetData(updatedBudget);
+    }
+
+    setNewSubCategoryName("");
+    setNewSubCategoryDesc("");
+    setShowAddSubCategory(null);
+  };
+
+  const deleteSubCategory = (parentId, subId) => {
+    if (!window.confirm("Delete this sub-category and all its expenses?"))
+      return;
+    const updated = costCategories.map((c) =>
+      c.id === parentId
+        ? {
+            ...c,
+            subCategories: (c.subCategories || []).filter(
+              (s) => s.id !== subId
+            ),
+          }
+        : c
+    );
+    setCostCategories(updated);
+    if (onSyncCostCategories) onSyncCostCategories(updated);
+  };
+
+  const addExpenseToSub = (parentId, subId) => {
+    const newExpense = {
+      id: Date.now().toString(),
+      description: "",
+      vendor: "",
+      cost: 0,
+      quantity: 1,
+      date: new Date().toISOString().split("T")[0],
+      notes: "",
+      receipt: "",
+    };
+    const updated = costCategories.map((c) =>
+      c.id === parentId
+        ? {
+            ...c,
+            subCategories: (c.subCategories || []).map((s) =>
+              s.id === subId
+                ? { ...s, expenses: [...(s.expenses || []), newExpense] }
+                : s
+            ),
+          }
+        : c
+    );
+    setCostCategories(updated);
+    if (onSyncCostCategories) onSyncCostCategories(updated);
+  };
+
+  const updateSubExpense = (parentId, subId, expenseId, field, value) => {
+    const updated = costCategories.map((c) =>
+      c.id === parentId
+        ? {
+            ...c,
+            subCategories: (c.subCategories || []).map((s) =>
+              s.id === subId
+                ? {
+                    ...s,
+                    expenses: s.expenses.map((e) =>
+                      e.id === expenseId ? { ...e, [field]: value } : e
+                    ),
+                  }
+                : s
+            ),
+          }
+        : c
+    );
+    setCostCategories(updated);
+    if (onSyncCostCategories) onSyncCostCategories(updated);
+  };
+
+  const deleteSubExpense = (parentId, subId, expenseId) => {
+    const updated = costCategories.map((c) =>
+      c.id === parentId
+        ? {
+            ...c,
+            subCategories: (c.subCategories || []).map((s) =>
+              s.id === subId
+                ? {
+                    ...s,
+                    expenses: s.expenses.filter((e) => e.id !== expenseId),
+                  }
+                : s
+            ),
+          }
+        : c
+    );
+    setCostCategories(updated);
+    if (onSyncCostCategories) onSyncCostCategories(updated);
+  };
+
+  const getSubCategoryTotal = (sub) =>
+    (sub.expenses || []).reduce(
+      (t, e) => t + (parseFloat(e.cost) || 0) * (parseFloat(e.quantity) || 1),
+      0
+    );
+
+  const getCategorySpent = (category) => {
+    const directExpenses = (category.expenses || []).reduce(
+      (t, e) => t + (parseFloat(e.cost) || 0) * (parseFloat(e.quantity) || 1),
+      0
+    );
+    const subExpenses = (category.subCategories || []).reduce(
+      (t, sub) => t + getSubCategoryTotal(sub),
+      0
+    );
+    return directExpenses + subExpenses;
   };
 
   const deleteCategory = (categoryId) => {
@@ -243,6 +425,36 @@ function CostReport({
     if (onSyncCostVendors) {
       onSyncCostVendors(updatedVendors);
     }
+  };
+
+  // Receipt upload handler
+  const handleReceiptUpload = async (file, categoryId, subId, expenseId) => {
+    if (!file || !selectedProject) return;
+    setUploadingReceipt(true);
+    try {
+      const { uploadImage } = await import("../../../utils/imageStorage");
+      const safeName = `receipt_${expenseId}_${Date.now()}.jpg`;
+      const result = await uploadImage(
+        file,
+        selectedProject.id,
+        "receipts",
+        categoryId,
+        safeName
+      );
+      if (result && result.url) {
+        if (subId) {
+          updateSubExpense(categoryId, subId, expenseId, "receipt", result.url);
+        } else {
+          updateExpense(categoryId, expenseId, "receipt", result.url);
+        }
+        setReceiptPopup((prev) =>
+          prev ? { ...prev, currentUrl: result.url } : null
+        );
+      }
+    } catch (e) {
+      console.error("Receipt upload error:", e);
+    }
+    setUploadingReceipt(false);
   };
 
   // Toggle category expansion
@@ -729,10 +941,23 @@ function CostReport({
                     {((expense.cost || 0) * (expense.quantity || 1)).toFixed(2)}
                   </div>
                   <button
+                    onClick={() =>
+                      setReceiptPopup({
+                        categoryId: category.id,
+                        subId: null,
+                        expenseId: expense.id,
+                        currentUrl: expense.receipt || null,
+                      })
+                    }
+                    title={
+                      expense.receipt
+                        ? "View/Replace Receipt"
+                        : "Upload Receipt"
+                    }
                     style={{
                       padding: "2px 6px",
                       fontSize: "10px",
-                      backgroundColor: "#2196F3",
+                      backgroundColor: expense.receipt ? "#4CAF50" : "#bdbdbd",
                       color: "white",
                       border: "none",
                       borderRadius: "2px",
@@ -952,6 +1177,201 @@ function CostReport({
             </div>
           </div>
         </>
+      )}
+
+      {/* Receipt Upload Popup */}
+      {receiptPopup && (
+        <>
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              backgroundColor: "rgba(0,0,0,0.5)",
+              zIndex: 999,
+            }}
+            onClick={() => setReceiptPopup(null)}
+          />
+          <div
+            style={{
+              position: "fixed",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              backgroundColor: "white",
+              borderRadius: "8px",
+              padding: "24px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+              zIndex: 1000,
+              minWidth: "320px",
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>
+              {receiptPopup.currentUrl ? "Receipt" : "Upload Receipt"}
+            </h3>
+            {receiptPopup.currentUrl && (
+              <div style={{ marginBottom: "16px", textAlign: "center" }}>
+                <img
+                  src={receiptPopup.currentUrl}
+                  alt="receipt"
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "300px",
+                    objectFit: "contain",
+                    borderRadius: "4px",
+                    border: "1px solid #ddd",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setReceiptViewerUrl(receiptPopup.currentUrl)}
+                />
+                <div
+                  style={{ fontSize: "11px", color: "#888", marginTop: "4px" }}
+                >
+                  Click image to view full size
+                </div>
+              </div>
+            )}
+            <input
+              ref={receiptCameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                if (e.target.files[0]) {
+                  handleReceiptUpload(
+                    e.target.files[0],
+                    receiptPopup.categoryId,
+                    receiptPopup.subId,
+                    receiptPopup.expenseId
+                  );
+                }
+                e.target.value = "";
+              }}
+            />
+            <input
+              ref={receiptLibraryRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                if (e.target.files[0]) {
+                  handleReceiptUpload(
+                    e.target.files[0],
+                    receiptPopup.categoryId,
+                    receiptPopup.subId,
+                    receiptPopup.expenseId
+                  );
+                }
+                e.target.value = "";
+              }}
+            />
+            <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+              <button
+                onClick={() => receiptCameraRef.current?.click()}
+                disabled={uploadingReceipt}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#2196F3",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  padding: "8px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                }}
+              >
+                📷 Camera
+              </button>
+              <button
+                onClick={() => receiptLibraryRef.current?.click()}
+                disabled={uploadingReceipt}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#607D8B",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  padding: "8px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                }}
+              >
+                🖼 Library
+              </button>
+            </div>
+            {uploadingReceipt && (
+              <div
+                style={{
+                  textAlign: "center",
+                  color: "#2196F3",
+                  fontSize: "13px",
+                  marginBottom: "8px",
+                }}
+              >
+                Uploading...
+              </div>
+            )}
+            <button
+              onClick={() => setReceiptPopup(null)}
+              style={{
+                width: "100%",
+                backgroundColor: "#ccc",
+                border: "none",
+                borderRadius: "4px",
+                padding: "8px",
+                cursor: "pointer",
+                fontSize: "13px",
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Receipt Lightbox */}
+      {receiptViewerUrl && (
+        <div
+          onClick={() => setReceiptViewerUrl(null)}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            backgroundColor: "rgba(0,0,0,0.92)",
+            zIndex: 2000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+          }}
+        >
+          <img
+            src={receiptViewerUrl}
+            alt="receipt full"
+            style={{
+              maxWidth: "90vw",
+              maxHeight: "90vh",
+              objectFit: "contain",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: "20px",
+              right: "20px",
+              color: "white",
+              fontSize: "24px",
+              cursor: "pointer",
+            }}
+          >
+            ✕
+          </div>
+        </div>
       )}
     </div>
   );

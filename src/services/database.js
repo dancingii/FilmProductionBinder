@@ -487,12 +487,32 @@ export const loadCostCategoriesFromDatabase = async (
 
     if (error) throw error;
 
-    const formattedCategories = (data || []).map((category) => ({
+    const allRows = data || [];
+    const parents = allRows.filter((r) => !r.parent_id);
+    const children = allRows.filter((r) => r.parent_id);
+
+    const formattedCategories = parents.map((category) => ({
       id: category.category_id,
       name: category.name,
       color: category.color,
       expenses: category.expenses || [],
       budget: category.budget || 0,
+      budgetSource: category.budget_source || "manual",
+      departmentKey: category.department_key || null,
+      description: category.description || "",
+      subCategories: children
+        .filter((c) => c.parent_id === category.category_id)
+        .map((sub) => ({
+          id: sub.category_id,
+          name: sub.name,
+          color: sub.color,
+          expenses: sub.expenses || [],
+          budget: sub.budget || 0,
+          budgetLineId: sub.budget_line_id || null,
+          budgetSource: sub.budget_source || "budget",
+          description: sub.description || "",
+          parentId: sub.parent_id,
+        })),
     }));
 
     setCostCategories(formattedCategories);
@@ -2390,18 +2410,44 @@ export const syncCostCategoriesToDatabase = async (
   try {
     console.log("Syncing cost categories to database...");
 
-    const costData = updatedCostCategories.map((category) => ({
-      project_id: selectedProject.id,
-      category_id: category.id,
-      name: category.name,
-      color: category.color,
-      expenses: category.expenses || [],
-      budget: category.budget || 0,
-    }));
+    // Flatten hierarchy: parents + sub-categories
+    const flatRows = [];
+    updatedCostCategories.forEach((category) => {
+      flatRows.push({
+        project_id: selectedProject.id,
+        category_id: category.id,
+        name: category.name,
+        color: category.color || "#2196F3",
+        expenses: category.expenses || [],
+        budget: category.budget || 0,
+        parent_id: null,
+        budget_line_id: null,
+        budget_source: category.budgetSource || "manual",
+        description: category.description || "",
+        allocated_budget: 0,
+        department_key: category.departmentKey || null,
+      });
+      (category.subCategories || []).forEach((sub) => {
+        flatRows.push({
+          project_id: selectedProject.id,
+          category_id: sub.id,
+          name: sub.name,
+          color: sub.color || category.color || "#2196F3",
+          expenses: sub.expenses || [],
+          budget: sub.budget || 0,
+          parent_id: category.id,
+          budget_line_id: sub.budgetLineId || null,
+          budget_source: sub.budgetSource || "budget",
+          description: sub.description || "",
+          allocated_budget: 0,
+          department_key: category.departmentKey || null,
+        });
+      });
+    });
 
-    const { error: rpcError } = await supabase.rpc("sync_cost_categories", {
+    const { error: rpcError } = await supabase.rpc("sync_cost_categories_v2", {
       p_project_id: selectedProject.id,
-      p_categories_data: costData,
+      p_categories: flatRows,
     });
     if (rpcError) throw rpcError;
 
