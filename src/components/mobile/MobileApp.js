@@ -1104,6 +1104,9 @@ function WardrobeItemCard({
   onCreateGarment,
   selectedProject,
   garmentInventory = [],
+  characterScenes = [],
+  scriptScenes = [],
+  onToggleScene,
 }) {
   const [expanded, setExpanded] = useState(false);
   const [locked, setLocked] = useState(true);
@@ -1111,6 +1114,11 @@ function WardrobeItemCard({
   const [localData, setLocalData] = useState(item);
   const [lightboxImg, setLightboxImg] = useState(null);
   const [showGarmentPicker, setShowGarmentPicker] = useState(false);
+  const [scenesExpanded, setScenesExpanded] = useState(false);
+  const [showScriptViewer, setShowScriptViewer] = useState(false);
+  const [scriptViewerIndex, setScriptViewerIndex] = useState(0);
+  const [scriptFullMode, setScriptFullMode] = useState(false);
+  const [scriptFullIndex, setScriptFullIndex] = useState(0);
   const lockTimerRef = useRef(null);
 
   const resetLockTimer = useCallback(() => {
@@ -1230,8 +1238,8 @@ function WardrobeItemCard({
             </div>
             <div style={styles.cardSubtitle}>
               {photos.length} photo{photos.length !== 1 ? "s" : ""}
-              {localData.sceneRanges
-                ? ` · Scenes: ${localData.sceneRanges}`
+              {(localData.scenes || []).length > 0
+                ? ` · ${(localData.scenes || []).length} scene${(localData.scenes || []).length !== 1 ? "s" : ""}`
                 : ""}
             </div>
           </div>
@@ -1326,15 +1334,230 @@ function WardrobeItemCard({
             placeholder="Look description"
           />
 
-          <label style={styles.label}>Scene Ranges</label>
-          <input
-            style={{ ...styles.input, opacity: locked ? 0.5 : 1 }}
-            value={localData.sceneRanges || ""}
-            onChange={(e) => handleChange("sceneRanges", e.target.value)}
-            disabled={locked}
-            onClick={locked ? unlock : undefined}
-            placeholder="e.g. 1-5, 10, 15-20"
-          />
+          {/* Scene Assignment */}
+          <div style={styles.divider} />
+
+          {/* Accordion header */}
+          <div
+            onClick={() => setScenesExpanded((v) => !v)}
+            style={{
+              display: "flex", justifyContent: "space-between",
+              alignItems: "center", cursor: "pointer", padding: "4px 0",
+              marginBottom: "6px",
+            }}
+          >
+            <label style={{ ...styles.label, marginBottom: 0, cursor: "pointer" }}>
+              🎬 Scenes ({(localData.scenes || []).length} assigned)
+            </label>
+            <span style={{ fontSize: "12px", color: "#888" }}>
+              {scenesExpanded ? "▲" : "▼"}
+            </span>
+          </div>
+
+          {/* Assigned badges — always visible */}
+          {(localData.scenes || []).length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "3px", marginBottom: "8px" }}>
+              {[...(localData.scenes || [])].map(Number).filter((n) => !isNaN(n))
+                .sort((a, b) => a - b).map((n) => (
+                  <span key={n} style={{
+                    backgroundColor: "#c8e6c9", border: "1px solid #a5d6a7",
+                    borderRadius: "3px", padding: "1px 6px",
+                    fontSize: "11px", fontWeight: "600", color: "#1b5e20",
+                  }}>
+                    {n}
+                  </span>
+                ))}
+            </div>
+          )}
+
+          {/* Expanded: scene toggles + View Script button */}
+          {scenesExpanded && (
+            <div style={{
+              backgroundColor: "#f9f9f9", border: "1px solid #e0e0e0",
+              borderRadius: "6px", padding: "10px", marginBottom: "8px",
+            }}>
+              {characterScenes.length === 0 ? (
+                <div style={{ color: "#aaa", fontSize: "12px", fontStyle: "italic" }}>
+                  No scenes found for {characterName}
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
+                    {characterScenes.map((sceneNum) => {
+                      const isAssigned = (localData.scenes || []).map(Number).includes(sceneNum);
+                      return (
+                        <button
+                          key={sceneNum}
+                          onClick={() => {
+                            if (onToggleScene) onToggleScene(localData.id, sceneNum);
+                            const cur = (localData.scenes || []).map(Number);
+                            const buildR = (arr) => {
+                              if (!arr.length) return "";
+                              const s = [...arr].sort((a, b) => a - b);
+                              const r = []; let st = s[0], en = s[0];
+                              for (let i = 1; i <= s.length; i++) {
+                                if (s[i] === en + 1) { en = s[i]; }
+                                else { r.push(st === en ? `${st}` : `${st}-${en}`); st = en = s[i]; }
+                              }
+                              return r.join(", ");
+                            };
+                            const ns = cur.includes(sceneNum)
+                              ? cur.filter((x) => x !== sceneNum)
+                              : [...cur, sceneNum].sort((a, b) => a - b);
+                            const updated = { ...localData, scenes: ns, sceneRanges: buildR(ns) };
+                            setLocalData(updated);
+                            onUpdate(updated);
+                          }}
+                          style={{
+                            padding: "6px 12px", borderRadius: "4px",
+                            border: isAssigned ? "1px solid #388E3C" : "1px solid #bdbdbd",
+                            backgroundColor: isAssigned ? "#4CAF50" : "#f5f5f5",
+                            color: isAssigned ? "white" : "#444",
+                            fontWeight: isAssigned ? "bold" : "normal",
+                            cursor: "pointer", fontSize: "14px", minWidth: "40px",
+                          }}
+                        >
+                          {sceneNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {characterScenes.length > 0 && (
+                    <button
+                      onClick={() => { setScriptViewerIndex(0); setShowScriptViewer(true); }}
+                      style={{
+                        ...styles.btn("default"), fontSize: "12px",
+                        justifyContent: "center", width: "100%",
+                      }}
+                    >
+                      📄 View Script ({characterScenes.length} scene{characterScenes.length !== 1 ? "s" : ""})
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Mobile Script Viewer — all character scenes with assigned indicator */}
+          {showScriptViewer && (() => {
+            const allSceneData = characterScenes
+              .map((n) => scriptScenes.find((s) => parseInt(s.sceneNumber) === n))
+              .filter(Boolean);
+            if (allSceneData.length === 0) return null;
+            const assignedNums = (localData.scenes || []).map(Number);
+            const filteredIdx = Math.min(scriptViewerIndex, allSceneData.length - 1);
+            const activeIdx = scriptFullMode ? Math.min(scriptFullIndex, scriptScenes.length - 1) : filteredIdx;
+            const sd = scriptFullMode ? (scriptScenes[activeIdx] || allSceneData[filteredIdx]) : allSceneData[filteredIdx];
+            const isAssigned = assignedNums.includes(parseInt(sd.sceneNumber));
+            return (
+              <>
+                <div
+                  onClick={() => { setShowScriptViewer(false); setScriptFullMode(false); }}
+                  style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 300 }}
+                />
+                <div style={{
+                  position: "fixed", left: 0, right: 0, bottom: 0,
+                  backgroundColor: "#fff", borderRadius: "16px 16px 0 0",
+                  zIndex: 301, height: "88vh", display: "flex",
+                  flexDirection: "column", boxShadow: "0 -4px 20px rgba(0,0,0,0.2)",
+                }}>
+                  <div style={{
+                    padding: "12px 16px", backgroundColor: "#4CAF50",
+                    color: "white", borderRadius: "16px 16px 0 0",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    flexShrink: 0,
+                  }}>
+                    <button
+                      onClick={() => scriptFullMode ? setScriptFullIndex(Math.max(0, activeIdx - 1)) : setScriptViewerIndex(Math.max(0, filteredIdx - 1))}
+                      disabled={scriptFullMode ? activeIdx === 0 : filteredIdx === 0}
+                      style={{
+                        backgroundColor: (scriptFullMode ? activeIdx === 0 : filteredIdx === 0) ? "rgba(255,255,255,0.3)" : "white",
+                        color: (scriptFullMode ? activeIdx === 0 : filteredIdx === 0) ? "rgba(255,255,255,0.6)" : "#4CAF50",
+                        border: "none", padding: "6px 10px", borderRadius: "4px",
+                        cursor: (scriptFullMode ? activeIdx === 0 : filteredIdx === 0) ? "not-allowed" : "pointer",
+                        fontWeight: "bold", fontSize: "12px",
+                      }}
+                    >
+                      ← Prev
+                    </button>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                      <div style={{ fontWeight: "bold", fontSize: "13px" }}>
+                        Scene {sd.sceneNumber} ({scriptFullMode ? `${activeIdx + 1}/${scriptScenes.length}` : `${filteredIdx + 1}/${allSceneData.length}`})
+                      </div>
+                      <div style={{
+                        fontSize: "9px", fontWeight: "bold", padding: "1px 6px",
+                        borderRadius: "8px",
+                        backgroundColor: isAssigned ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.2)",
+                        color: "white",
+                      }}>
+                        {isAssigned ? "✓ In this look" : "○ Not in this look"}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                      <button
+                        onClick={() => scriptFullMode ? setScriptFullIndex(Math.min(scriptScenes.length - 1, activeIdx + 1)) : setScriptViewerIndex(Math.min(allSceneData.length - 1, filteredIdx + 1))}
+                        disabled={scriptFullMode ? activeIdx === scriptScenes.length - 1 : filteredIdx === allSceneData.length - 1}
+                        style={{
+                          backgroundColor: (scriptFullMode ? activeIdx === scriptScenes.length - 1 : filteredIdx === allSceneData.length - 1) ? "rgba(255,255,255,0.3)" : "white",
+                          color: (scriptFullMode ? activeIdx === scriptScenes.length - 1 : filteredIdx === allSceneData.length - 1) ? "rgba(255,255,255,0.6)" : "#4CAF50",
+                          border: "none", padding: "6px 10px", borderRadius: "4px",
+                          cursor: (scriptFullMode ? activeIdx === scriptScenes.length - 1 : filteredIdx === allSceneData.length - 1) ? "not-allowed" : "pointer",
+                          fontWeight: "bold", fontSize: "12px",
+                        }}
+                      >
+                        Next →
+                      </button>
+                      <label style={{ display: "flex", alignItems: "center", gap: "3px", cursor: "pointer", fontSize: "10px", userSelect: "none", color: "white" }}>
+                        <input
+                          type="checkbox"
+                          checked={scriptFullMode}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const fi = scriptScenes.findIndex(s => String(s.sceneNumber) === String(sd.sceneNumber));
+                              setScriptFullIndex(fi >= 0 ? fi : 0);
+                            } else {
+                              const curNum = scriptScenes[activeIdx]?.sceneNumber;
+                              const fi = allSceneData.findIndex(s => String(s.sceneNumber) === String(curNum));
+                              setScriptViewerIndex(fi >= 0 ? fi : 0);
+                            }
+                            setScriptFullMode(e.target.checked);
+                          }}
+                          style={{ cursor: "pointer", accentColor: "white" }}
+                        />
+                        Full
+                      </label>
+                      <button
+                        onClick={() => { setShowScriptViewer(false); setScriptFullMode(false); }}
+                        style={{
+                          background: "none", border: "none", color: "white",
+                          fontSize: "22px", cursor: "pointer", lineHeight: 1, padding: "0 4px",
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{
+                    padding: "8px 16px", backgroundColor: "#f5f5f5",
+                    borderBottom: "1px solid #ddd", flexShrink: 0,
+                    fontFamily: "Courier New, monospace",
+                    fontSize: "10pt", fontWeight: "bold", textTransform: "uppercase",
+                  }}>
+                    {sd.heading}
+                  </div>
+                  <div style={{
+                    flex: 1, overflowY: "auto", padding: "16px",
+                    fontFamily: "Courier New, monospace", fontSize: "12px", lineHeight: "1.6",
+                  }}>
+                    {(sd.content || []).map((block, i) => (
+                      <div key={i} style={{ marginBottom: "8px" }}>{block.text}</div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            );
+          })()}
 
           {/* Garments */}
           {(() => {
@@ -1522,9 +1745,19 @@ function WardrobeItemCard({
 }
 
 // ─── Mobile Wardrobe Module ───────────────────────────────────────────────────
-function MobileWardrobeModule({ selectedProject, characters }) {
+const SIZING_FIELDS = [
+  { key: "pants", label: "Pants" },
+  { key: "shirt", label: "Shirt" },
+  { key: "dress", label: "Dress" },
+  { key: "shoe", label: "Shoe" },
+  { key: "chest", label: "Chest" },
+  { key: "waist", label: "Waist" },
+];
+
+function MobileWardrobeModule({ selectedProject, characters, castCrew = [], setCastCrew }) {
   const [wardrobeItems, setWardrobeItems] = useState([]);
   const [garmentInventory, setGarmentInventory] = useState([]);
+  const [scriptScenes, setScriptScenes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCharacterName, setSelectedCharacterName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1540,6 +1773,12 @@ function MobileWardrobeModule({ selectedProject, characters }) {
     database.loadGarmentInventoryFromDatabase(
       selectedProject,
       setGarmentInventory
+    );
+    database.loadScenesFromDatabase(
+      selectedProject,
+      setScriptScenes,
+      () => {},
+      null
     );
   }, [selectedProject?.id]);
 
@@ -1791,6 +2030,117 @@ function MobileWardrobeModule({ selectedProject, characters }) {
         </div>
       ) : (
         <>
+          {/* Sizing Row */}
+          {(() => {
+            const actor = castCrew.find(
+              (p) => p.type === "cast" && p.character === selectedCharacterName
+            );
+            const sizing = actor?.wardrobe || {};
+            return (
+              <div style={{
+                backgroundColor: "#f0f4ff", border: "1px solid #c5d0e8",
+                borderRadius: "6px", padding: "8px 12px", marginBottom: "10px",
+                fontSize: "12px",
+              }}>
+                <div style={{ fontWeight: "bold", color: "#3a4a7a", marginBottom: "6px" }}>
+                  👔 {selectedCharacterName} sizing
+                </div>
+                {!actor ? (
+                  <div style={{ color: "#aaa", fontStyle: "italic", fontSize: "11px" }}>
+                    No cast member assigned — add in Cast &amp; Crew to edit sizing
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    {SIZING_FIELDS.map(({ key, label }) => (
+                      <div key={key} style={{ display: "flex", flexDirection: "column", minWidth: "60px" }}>
+                        <span style={{ fontSize: "10px", color: "#888", marginBottom: "1px" }}>{label}</span>
+                        <input
+                          value={sizing[key] || ""}
+                          onChange={(e) => {
+                            const newVal = e.target.value;
+                            const updated = castCrew.map((p) =>
+                              p.id === actor.id
+                                ? { ...p, wardrobe: { ...p.wardrobe, [key]: newVal } }
+                                : p
+                            );
+                            setCastCrew(updated);
+                          }}
+                          onBlur={(e) => {
+                            const updated = castCrew.map((p) =>
+                              p.id === actor.id
+                                ? { ...p, wardrobe: { ...p.wardrobe, [key]: e.target.value } }
+                                : p
+                            );
+                            const updatedPerson = updated.find((p) => p.id === actor.id);
+                            database.updateSingleCastCrewPerson(selectedProject, updatedPerson)
+                              .catch((err) => console.error("Sizing save failed:", err));
+                          }}
+                          placeholder="—"
+                          style={{
+                            width: "100%", fontSize: "12px", padding: "3px 6px",
+                            border: "1px solid #c5d0e8", borderRadius: "4px",
+                            backgroundColor: "white", boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Character scene reference — above all looks */}
+          {(() => {
+            const charObj = characters.find
+              ? characters.find((c) => c.name === selectedCharacterName)
+              : characters[selectedCharacterName];
+            const charScenes = (charObj?.scenes || [])
+              .map((s) => parseInt(s))
+              .filter((n) => !isNaN(n))
+              .sort((a, b) => a - b);
+            return (
+              <div style={{
+                backgroundColor: charScenes.length > 0 ? "#e8f5e9" : "#f5f5f5",
+                border: `1px solid ${charScenes.length > 0 ? "#c8e6c9" : "#e0e0e0"}`,
+                borderRadius: "6px",
+                padding: "8px 12px",
+                marginBottom: "12px",
+                fontSize: "12px",
+              }}>
+                <span style={{ fontWeight: "bold", color: "#2e7d32", marginRight: "6px" }}>
+                  📋 {selectedCharacterName} appears in:
+                </span>
+                {charScenes.length === 0 ? (
+                  <span style={{ color: "#aaa", fontStyle: "italic" }}>
+                    No scenes detected in script yet
+                  </span>
+                ) : (
+                  <>
+                    <span style={{ display: "inline-flex", flexWrap: "wrap", gap: "3px" }}>
+                      {charScenes.map((n) => (
+                        <span key={n} style={{
+                          backgroundColor: "#fff",
+                          border: "1px solid #a5d6a7",
+                          borderRadius: "3px",
+                          padding: "0 5px",
+                          color: "#1b5e20",
+                          fontWeight: "600",
+                          fontSize: "11px",
+                        }}>
+                          {n}
+                        </span>
+                      ))}
+                    </span>
+                    <span style={{ color: "#888", marginLeft: "6px" }}>
+                      ({charScenes.length} scene{charScenes.length !== 1 ? "s" : ""})
+                    </span>
+                  </>
+                )}
+              </div>
+            );
+          })()}
+
           <div
             style={{ fontSize: "12px", color: "#888", marginBottom: "12px" }}
           >
@@ -1798,28 +2148,70 @@ function MobileWardrobeModule({ selectedProject, characters }) {
             {selectedCharacterName}
           </div>
 
-          {currentItems.map((item) => (
-            <WardrobeItemCard
-              key={item.id}
-              item={item}
-              characterName={selectedCharacterName}
-              onUpdate={(updated) =>
-                updateItem(selectedCharacterName, item.id, updated)
-              }
-              onDelete={(itemId) => deleteItem(selectedCharacterName, itemId)}
-              onAddGarment={(lookId, garmentId) =>
-                addGarmentToLook(selectedCharacterName, lookId, garmentId)
-              }
-              onRemoveGarment={(lookId, garmentId) =>
-                removeGarmentFromLook(selectedCharacterName, lookId, garmentId)
-              }
-              onCreateGarment={(lookId, garmentData) =>
-                createGarment(lookId, garmentData)
-              }
-              selectedProject={selectedProject}
+          {currentItems.map((item) => {
+            const charObj = characters.find
+              ? characters.find((c) => c.name === selectedCharacterName)
+              : characters[selectedCharacterName];
+            const rawScenes = charObj?.scenes || [];
+            const charScenes = rawScenes
+              .map((s) => parseInt(s))
+              .filter((n) => !isNaN(n))
+              .sort((a, b) => a - b);
+            return (
+              <WardrobeItemCard
+                key={item.id}
+                item={item}
+                characterName={selectedCharacterName}
+                onUpdate={(updated) =>
+                  updateItem(selectedCharacterName, item.id, updated)
+                }
+                onDelete={(itemId) => deleteItem(selectedCharacterName, itemId)}
+                onAddGarment={(lookId, garmentId) =>
+                  addGarmentToLook(selectedCharacterName, lookId, garmentId)
+                }
+                onRemoveGarment={(lookId, garmentId) =>
+                  removeGarmentFromLook(selectedCharacterName, lookId, garmentId)
+                }
+                onCreateGarment={(lookId, garmentData) =>
+                  createGarment(lookId, garmentData)
+                }
+                selectedProject={selectedProject}
               garmentInventory={garmentInventory}
+              characterScenes={charScenes}
+              scriptScenes={scriptScenes}
+              onToggleScene={(lookId, sceneNum) => {
+                const buildRanges = (arr) => {
+                  if (!arr || arr.length === 0) return "";
+                  const s = [...arr].sort((a, b) => a - b);
+                  const r = [];
+                  let st = s[0], en = s[0];
+                  for (let i = 1; i <= s.length; i++) {
+                    if (s[i] === en + 1) { en = s[i]; }
+                    else { r.push(st === en ? `${st}` : `${st}-${en}`); st = en = s[i]; }
+                  }
+                  return r.join(", ");
+                };
+                const updated = wardrobeItems.map((c) =>
+                  c.characterName === selectedCharacterName
+                    ? {
+                        ...c,
+                        items: c.items.map((it) => {
+                          if (it.id !== lookId) return it;
+                          const cur = (it.scenes || []).map(Number);
+                          const ns = cur.includes(sceneNum)
+                            ? cur.filter((x) => x !== sceneNum)
+                            : [...cur, sceneNum].sort((a, b) => a - b);
+                          return { ...it, scenes: ns, sceneRanges: buildRanges(ns) };
+                        }),
+                      }
+                    : c
+                );
+                setWardrobeItems(updated);
+                saveWardrobe(updated);
+              }}
             />
-          ))}
+            );
+          })}
 
           <button
             onClick={addLook}
@@ -2576,8 +2968,8 @@ export default function MobileApp() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [activeModule, setActiveModule] = useState("Wardrobe");
   const [characters, setCharacters] = useState([]);
+  const [castCrew, setCastCrew] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
-
   // Auth
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -2609,6 +3001,12 @@ export default function MobileApp() {
       }
     };
     loadChars();
+  }, [selectedProject?.id]);
+
+  // Load cast crew when project selected
+  useEffect(() => {
+    if (!selectedProject) return;
+    database.loadCastCrewFromDatabase(selectedProject, setCastCrew);
   }, [selectedProject?.id]);
 
   const handleSignOut = async () => {
@@ -2683,9 +3081,11 @@ export default function MobileApp() {
       <div style={styles.content}>
         {activeModule === "Wardrobe" && (
           <MobileWardrobeModule
-            selectedProject={selectedProject}
-            characters={characters}
-          />
+          selectedProject={selectedProject}
+          characters={characters}
+          castCrew={castCrew}
+          setCastCrew={setCastCrew}
+        />
         )}
         {activeModule === "Cost Report" && (
           <MobileCostReportModule selectedProject={selectedProject} />
