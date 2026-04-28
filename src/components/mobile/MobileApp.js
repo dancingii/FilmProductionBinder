@@ -9,11 +9,12 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MODULES = [
+  { name: "Dashboard", active: true },
   { name: "Wardrobe", active: true },
   { name: "Script", active: false },
   { name: "Stripboard", active: false },
   { name: "Shot List", active: false },
-  { name: "Call Sheet", active: false },
+  { name: "Call Sheet", active: true },
   { name: "Cast & Crew", active: false },
   { name: "Characters", active: false },
   { name: "Locations", active: false },
@@ -26,7 +27,6 @@ const MODULES = [
   { name: "Day Out of Days", active: false },
   { name: "Production Design", active: false },
   { name: "Reports", active: false },
-  { name: "Dashboard", active: false },
 ];
 
 const AUTO_LOCK_MS = 5 * 60 * 1000; // 5 minutes
@@ -1239,7 +1239,9 @@ function WardrobeItemCard({
             <div style={styles.cardSubtitle}>
               {photos.length} photo{photos.length !== 1 ? "s" : ""}
               {(localData.scenes || []).length > 0
-                ? ` · ${(localData.scenes || []).length} scene${(localData.scenes || []).length !== 1 ? "s" : ""}`
+                ? ` · ${(localData.scenes || []).length} scene${
+                    (localData.scenes || []).length !== 1 ? "s" : ""
+                  }`
                 : ""}
             </div>
           </div>
@@ -1341,12 +1343,17 @@ function WardrobeItemCard({
           <div
             onClick={() => setScenesExpanded((v) => !v)}
             style={{
-              display: "flex", justifyContent: "space-between",
-              alignItems: "center", cursor: "pointer", padding: "4px 0",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              cursor: "pointer",
+              padding: "4px 0",
               marginBottom: "6px",
             }}
           >
-            <label style={{ ...styles.label, marginBottom: 0, cursor: "pointer" }}>
+            <label
+              style={{ ...styles.label, marginBottom: 0, cursor: "pointer" }}
+            >
               🎬 Scenes ({(localData.scenes || []).length} assigned)
             </label>
             <span style={{ fontSize: "12px", color: "#888" }}>
@@ -1356,14 +1363,31 @@ function WardrobeItemCard({
 
           {/* Assigned badges — always visible */}
           {(localData.scenes || []).length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "3px", marginBottom: "8px" }}>
-              {[...(localData.scenes || [])].map(Number).filter((n) => !isNaN(n))
-                .sort((a, b) => a - b).map((n) => (
-                  <span key={n} style={{
-                    backgroundColor: "#c8e6c9", border: "1px solid #a5d6a7",
-                    borderRadius: "3px", padding: "1px 6px",
-                    fontSize: "11px", fontWeight: "600", color: "#1b5e20",
-                  }}>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "3px",
+                marginBottom: "8px",
+              }}
+            >
+              {[...(localData.scenes || [])]
+                .map(Number)
+                .filter((n) => !isNaN(n))
+                .sort((a, b) => a - b)
+                .map((n) => (
+                  <span
+                    key={n}
+                    style={{
+                      backgroundColor: "#c8e6c9",
+                      border: "1px solid #a5d6a7",
+                      borderRadius: "3px",
+                      padding: "1px 6px",
+                      fontSize: "11px",
+                      fontWeight: "600",
+                      color: "#1b5e20",
+                    }}
+                  >
                     {n}
                   </span>
                 ))}
@@ -1372,49 +1396,85 @@ function WardrobeItemCard({
 
           {/* Expanded: scene toggles + View Script button */}
           {scenesExpanded && (
-            <div style={{
-              backgroundColor: "#f9f9f9", border: "1px solid #e0e0e0",
-              borderRadius: "6px", padding: "10px", marginBottom: "8px",
-            }}>
+            <div
+              style={{
+                backgroundColor: "#f9f9f9",
+                border: "1px solid #e0e0e0",
+                borderRadius: "6px",
+                padding: "10px",
+                marginBottom: "8px",
+              }}
+            >
               {characterScenes.length === 0 ? (
-                <div style={{ color: "#aaa", fontSize: "12px", fontStyle: "italic" }}>
+                <div
+                  style={{
+                    color: "#aaa",
+                    fontSize: "12px",
+                    fontStyle: "italic",
+                  }}
+                >
                   No scenes found for {characterName}
                 </div>
               ) : (
                 <>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "6px",
+                      marginBottom: "10px",
+                    }}
+                  >
                     {characterScenes.map((sceneNum) => {
-                      const isAssigned = (localData.scenes || []).map(Number).includes(sceneNum);
+                      const isAssigned = (localData.scenes || [])
+                        .map(Number)
+                        .includes(sceneNum);
                       return (
                         <button
                           key={sceneNum}
                           onClick={() => {
-                            if (onToggleScene) onToggleScene(localData.id, sceneNum);
+                            if (onToggleScene)
+                              onToggleScene(localData.id, sceneNum);
                             const cur = (localData.scenes || []).map(Number);
                             const buildR = (arr) => {
                               if (!arr.length) return "";
                               const s = [...arr].sort((a, b) => a - b);
-                              const r = []; let st = s[0], en = s[0];
+                              const r = [];
+                              let st = s[0],
+                                en = s[0];
                               for (let i = 1; i <= s.length; i++) {
-                                if (s[i] === en + 1) { en = s[i]; }
-                                else { r.push(st === en ? `${st}` : `${st}-${en}`); st = en = s[i]; }
+                                if (s[i] === en + 1) {
+                                  en = s[i];
+                                } else {
+                                  r.push(st === en ? `${st}` : `${st}-${en}`);
+                                  st = en = s[i];
+                                }
                               }
                               return r.join(", ");
                             };
                             const ns = cur.includes(sceneNum)
                               ? cur.filter((x) => x !== sceneNum)
                               : [...cur, sceneNum].sort((a, b) => a - b);
-                            const updated = { ...localData, scenes: ns, sceneRanges: buildR(ns) };
+                            const updated = {
+                              ...localData,
+                              scenes: ns,
+                              sceneRanges: buildR(ns),
+                            };
                             setLocalData(updated);
                             onUpdate(updated);
                           }}
                           style={{
-                            padding: "6px 12px", borderRadius: "4px",
-                            border: isAssigned ? "1px solid #388E3C" : "1px solid #bdbdbd",
+                            padding: "6px 12px",
+                            borderRadius: "4px",
+                            border: isAssigned
+                              ? "1px solid #388E3C"
+                              : "1px solid #bdbdbd",
                             backgroundColor: isAssigned ? "#4CAF50" : "#f5f5f5",
                             color: isAssigned ? "white" : "#444",
                             fontWeight: isAssigned ? "bold" : "normal",
-                            cursor: "pointer", fontSize: "14px", minWidth: "40px",
+                            cursor: "pointer",
+                            fontSize: "14px",
+                            minWidth: "40px",
                           }}
                         >
                           {sceneNum}
@@ -1425,13 +1485,19 @@ function WardrobeItemCard({
 
                   {characterScenes.length > 0 && (
                     <button
-                      onClick={() => { setScriptViewerIndex(0); setShowScriptViewer(true); }}
+                      onClick={() => {
+                        setScriptViewerIndex(0);
+                        setShowScriptViewer(true);
+                      }}
                       style={{
-                        ...styles.btn("default"), fontSize: "12px",
-                        justifyContent: "center", width: "100%",
+                        ...styles.btn("default"),
+                        fontSize: "12px",
+                        justifyContent: "center",
+                        width: "100%",
                       }}
                     >
-                      📄 View Script ({characterScenes.length} scene{characterScenes.length !== 1 ? "s" : ""})
+                      📄 View Script ({characterScenes.length} scene
+                      {characterScenes.length !== 1 ? "s" : ""})
                     </button>
                   )}
                 </>
@@ -1440,124 +1506,285 @@ function WardrobeItemCard({
           )}
 
           {/* Mobile Script Viewer — all character scenes with assigned indicator */}
-          {showScriptViewer && (() => {
-            const allSceneData = characterScenes
-              .map((n) => scriptScenes.find((s) => parseInt(s.sceneNumber) === n))
-              .filter(Boolean);
-            if (allSceneData.length === 0) return null;
-            const assignedNums = (localData.scenes || []).map(Number);
-            const filteredIdx = Math.min(scriptViewerIndex, allSceneData.length - 1);
-            const activeIdx = scriptFullMode ? Math.min(scriptFullIndex, scriptScenes.length - 1) : filteredIdx;
-            const sd = scriptFullMode ? (scriptScenes[activeIdx] || allSceneData[filteredIdx]) : allSceneData[filteredIdx];
-            const isAssigned = assignedNums.includes(parseInt(sd.sceneNumber));
-            return (
-              <>
-                <div
-                  onClick={() => { setShowScriptViewer(false); setScriptFullMode(false); }}
-                  style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 300 }}
-                />
-                <div style={{
-                  position: "fixed", left: 0, right: 0, bottom: 0,
-                  backgroundColor: "#fff", borderRadius: "16px 16px 0 0",
-                  zIndex: 301, height: "88vh", display: "flex",
-                  flexDirection: "column", boxShadow: "0 -4px 20px rgba(0,0,0,0.2)",
-                }}>
-                  <div style={{
-                    padding: "12px 16px", backgroundColor: "#4CAF50",
-                    color: "white", borderRadius: "16px 16px 0 0",
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                    flexShrink: 0,
-                  }}>
-                    <button
-                      onClick={() => scriptFullMode ? setScriptFullIndex(Math.max(0, activeIdx - 1)) : setScriptViewerIndex(Math.max(0, filteredIdx - 1))}
-                      disabled={scriptFullMode ? activeIdx === 0 : filteredIdx === 0}
+          {showScriptViewer &&
+            (() => {
+              const allSceneData = characterScenes
+                .map((n) =>
+                  scriptScenes.find((s) => parseInt(s.sceneNumber) === n)
+                )
+                .filter(Boolean);
+              if (allSceneData.length === 0) return null;
+              const assignedNums = (localData.scenes || []).map(Number);
+              const filteredIdx = Math.min(
+                scriptViewerIndex,
+                allSceneData.length - 1
+              );
+              const activeIdx = scriptFullMode
+                ? Math.min(scriptFullIndex, scriptScenes.length - 1)
+                : filteredIdx;
+              const sd = scriptFullMode
+                ? scriptScenes[activeIdx] || allSceneData[filteredIdx]
+                : allSceneData[filteredIdx];
+              const isAssigned = assignedNums.includes(
+                parseInt(sd.sceneNumber)
+              );
+              return (
+                <>
+                  <div
+                    onClick={() => {
+                      setShowScriptViewer(false);
+                      setScriptFullMode(false);
+                    }}
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: "rgba(0,0,0,0.5)",
+                      zIndex: 300,
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "fixed",
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: "#fff",
+                      borderRadius: "16px 16px 0 0",
+                      zIndex: 301,
+                      height: "88vh",
+                      display: "flex",
+                      flexDirection: "column",
+                      boxShadow: "0 -4px 20px rgba(0,0,0,0.2)",
+                    }}
+                  >
+                    <div
                       style={{
-                        backgroundColor: (scriptFullMode ? activeIdx === 0 : filteredIdx === 0) ? "rgba(255,255,255,0.3)" : "white",
-                        color: (scriptFullMode ? activeIdx === 0 : filteredIdx === 0) ? "rgba(255,255,255,0.6)" : "#4CAF50",
-                        border: "none", padding: "6px 10px", borderRadius: "4px",
-                        cursor: (scriptFullMode ? activeIdx === 0 : filteredIdx === 0) ? "not-allowed" : "pointer",
-                        fontWeight: "bold", fontSize: "12px",
+                        padding: "12px 16px",
+                        backgroundColor: "#4CAF50",
+                        color: "white",
+                        borderRadius: "16px 16px 0 0",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        flexShrink: 0,
                       }}
                     >
-                      ← Prev
-                    </button>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
-                      <div style={{ fontWeight: "bold", fontSize: "13px" }}>
-                        Scene {sd.sceneNumber} ({scriptFullMode ? `${activeIdx + 1}/${scriptScenes.length}` : `${filteredIdx + 1}/${allSceneData.length}`})
-                      </div>
-                      <div style={{
-                        fontSize: "9px", fontWeight: "bold", padding: "1px 6px",
-                        borderRadius: "8px",
-                        backgroundColor: isAssigned ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.2)",
-                        color: "white",
-                      }}>
-                        {isAssigned ? "✓ In this look" : "○ Not in this look"}
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
                       <button
-                        onClick={() => scriptFullMode ? setScriptFullIndex(Math.min(scriptScenes.length - 1, activeIdx + 1)) : setScriptViewerIndex(Math.min(allSceneData.length - 1, filteredIdx + 1))}
-                        disabled={scriptFullMode ? activeIdx === scriptScenes.length - 1 : filteredIdx === allSceneData.length - 1}
+                        onClick={() =>
+                          scriptFullMode
+                            ? setScriptFullIndex(Math.max(0, activeIdx - 1))
+                            : setScriptViewerIndex(Math.max(0, filteredIdx - 1))
+                        }
+                        disabled={
+                          scriptFullMode ? activeIdx === 0 : filteredIdx === 0
+                        }
                         style={{
-                          backgroundColor: (scriptFullMode ? activeIdx === scriptScenes.length - 1 : filteredIdx === allSceneData.length - 1) ? "rgba(255,255,255,0.3)" : "white",
-                          color: (scriptFullMode ? activeIdx === scriptScenes.length - 1 : filteredIdx === allSceneData.length - 1) ? "rgba(255,255,255,0.6)" : "#4CAF50",
-                          border: "none", padding: "6px 10px", borderRadius: "4px",
-                          cursor: (scriptFullMode ? activeIdx === scriptScenes.length - 1 : filteredIdx === allSceneData.length - 1) ? "not-allowed" : "pointer",
-                          fontWeight: "bold", fontSize: "12px",
+                          backgroundColor: (
+                            scriptFullMode ? activeIdx === 0 : filteredIdx === 0
+                          )
+                            ? "rgba(255,255,255,0.3)"
+                            : "white",
+                          color: (
+                            scriptFullMode ? activeIdx === 0 : filteredIdx === 0
+                          )
+                            ? "rgba(255,255,255,0.6)"
+                            : "#4CAF50",
+                          border: "none",
+                          padding: "6px 10px",
+                          borderRadius: "4px",
+                          cursor: (
+                            scriptFullMode ? activeIdx === 0 : filteredIdx === 0
+                          )
+                            ? "not-allowed"
+                            : "pointer",
+                          fontWeight: "bold",
+                          fontSize: "12px",
                         }}
                       >
-                        Next →
+                        ← Prev
                       </button>
-                      <label style={{ display: "flex", alignItems: "center", gap: "3px", cursor: "pointer", fontSize: "10px", userSelect: "none", color: "white" }}>
-                        <input
-                          type="checkbox"
-                          checked={scriptFullMode}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              const fi = scriptScenes.findIndex(s => String(s.sceneNumber) === String(sd.sceneNumber));
-                              setScriptFullIndex(fi >= 0 ? fi : 0);
-                            } else {
-                              const curNum = scriptScenes[activeIdx]?.sceneNumber;
-                              const fi = allSceneData.findIndex(s => String(s.sceneNumber) === String(curNum));
-                              setScriptViewerIndex(fi >= 0 ? fi : 0);
-                            }
-                            setScriptFullMode(e.target.checked);
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: "2px",
+                        }}
+                      >
+                        <div style={{ fontWeight: "bold", fontSize: "13px" }}>
+                          Scene {sd.sceneNumber} (
+                          {scriptFullMode
+                            ? `${activeIdx + 1}/${scriptScenes.length}`
+                            : `${filteredIdx + 1}/${allSceneData.length}`}
+                          )
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "9px",
+                            fontWeight: "bold",
+                            padding: "1px 6px",
+                            borderRadius: "8px",
+                            backgroundColor: isAssigned
+                              ? "rgba(255,255,255,0.3)"
+                              : "rgba(0,0,0,0.2)",
+                            color: "white",
                           }}
-                          style={{ cursor: "pointer", accentColor: "white" }}
-                        />
-                        Full
-                      </label>
-                      <button
-                        onClick={() => { setShowScriptViewer(false); setScriptFullMode(false); }}
+                        >
+                          {isAssigned ? "✓ In this look" : "○ Not in this look"}
+                        </div>
+                      </div>
+                      <div
                         style={{
-                          background: "none", border: "none", color: "white",
-                          fontSize: "22px", cursor: "pointer", lineHeight: 1, padding: "0 4px",
+                          display: "flex",
+                          gap: "4px",
+                          alignItems: "center",
                         }}
                       >
-                        ✕
-                      </button>
+                        <button
+                          onClick={() =>
+                            scriptFullMode
+                              ? setScriptFullIndex(
+                                  Math.min(
+                                    scriptScenes.length - 1,
+                                    activeIdx + 1
+                                  )
+                                )
+                              : setScriptViewerIndex(
+                                  Math.min(
+                                    allSceneData.length - 1,
+                                    filteredIdx + 1
+                                  )
+                                )
+                          }
+                          disabled={
+                            scriptFullMode
+                              ? activeIdx === scriptScenes.length - 1
+                              : filteredIdx === allSceneData.length - 1
+                          }
+                          style={{
+                            backgroundColor: (
+                              scriptFullMode
+                                ? activeIdx === scriptScenes.length - 1
+                                : filteredIdx === allSceneData.length - 1
+                            )
+                              ? "rgba(255,255,255,0.3)"
+                              : "white",
+                            color: (
+                              scriptFullMode
+                                ? activeIdx === scriptScenes.length - 1
+                                : filteredIdx === allSceneData.length - 1
+                            )
+                              ? "rgba(255,255,255,0.6)"
+                              : "#4CAF50",
+                            border: "none",
+                            padding: "6px 10px",
+                            borderRadius: "4px",
+                            cursor: (
+                              scriptFullMode
+                                ? activeIdx === scriptScenes.length - 1
+                                : filteredIdx === allSceneData.length - 1
+                            )
+                              ? "not-allowed"
+                              : "pointer",
+                            fontWeight: "bold",
+                            fontSize: "12px",
+                          }}
+                        >
+                          Next →
+                        </button>
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "3px",
+                            cursor: "pointer",
+                            fontSize: "10px",
+                            userSelect: "none",
+                            color: "white",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={scriptFullMode}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                const fi = scriptScenes.findIndex(
+                                  (s) =>
+                                    String(s.sceneNumber) ===
+                                    String(sd.sceneNumber)
+                                );
+                                setScriptFullIndex(fi >= 0 ? fi : 0);
+                              } else {
+                                const curNum =
+                                  scriptScenes[activeIdx]?.sceneNumber;
+                                const fi = allSceneData.findIndex(
+                                  (s) =>
+                                    String(s.sceneNumber) === String(curNum)
+                                );
+                                setScriptViewerIndex(fi >= 0 ? fi : 0);
+                              }
+                              setScriptFullMode(e.target.checked);
+                            }}
+                            style={{ cursor: "pointer", accentColor: "white" }}
+                          />
+                          Full
+                        </label>
+                        <button
+                          onClick={() => {
+                            setShowScriptViewer(false);
+                            setScriptFullMode(false);
+                          }}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: "white",
+                            fontSize: "22px",
+                            cursor: "pointer",
+                            lineHeight: 1,
+                            padding: "0 4px",
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        padding: "8px 16px",
+                        backgroundColor: "#f5f5f5",
+                        borderBottom: "1px solid #ddd",
+                        flexShrink: 0,
+                        fontFamily: "Courier New, monospace",
+                        fontSize: "10pt",
+                        fontWeight: "bold",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {sd.heading}
+                    </div>
+                    <div
+                      style={{
+                        flex: 1,
+                        overflowY: "auto",
+                        padding: "16px",
+                        fontFamily: "Courier New, monospace",
+                        fontSize: "12px",
+                        lineHeight: "1.6",
+                      }}
+                    >
+                      {(sd.content || []).map((block, i) => (
+                        <div key={i} style={{ marginBottom: "8px" }}>
+                          {block.text}
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <div style={{
-                    padding: "8px 16px", backgroundColor: "#f5f5f5",
-                    borderBottom: "1px solid #ddd", flexShrink: 0,
-                    fontFamily: "Courier New, monospace",
-                    fontSize: "10pt", fontWeight: "bold", textTransform: "uppercase",
-                  }}>
-                    {sd.heading}
-                  </div>
-                  <div style={{
-                    flex: 1, overflowY: "auto", padding: "16px",
-                    fontFamily: "Courier New, monospace", fontSize: "12px", lineHeight: "1.6",
-                  }}>
-                    {(sd.content || []).map((block, i) => (
-                      <div key={i} style={{ marginBottom: "8px" }}>{block.text}</div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            );
-          })()}
+                </>
+              );
+            })()}
 
           {/* Garments */}
           {(() => {
@@ -1754,7 +1981,12 @@ const SIZING_FIELDS = [
   { key: "waist", label: "Waist" },
 ];
 
-function MobileWardrobeModule({ selectedProject, characters, castCrew = [], setCastCrew }) {
+function MobileWardrobeModule({
+  selectedProject,
+  characters,
+  castCrew = [],
+  setCastCrew,
+}) {
   const [wardrobeItems, setWardrobeItems] = useState([]);
   const [garmentInventory, setGarmentInventory] = useState([]);
   const [scriptScenes, setScriptScenes] = useState([]);
@@ -1962,7 +2194,9 @@ function MobileWardrobeModule({ selectedProject, characters, castCrew = [], setC
     await saveGarmentInventory(updatedInventory);
   };
 
-  const safeCharacters = Array.isArray(characters) ? characters : [];
+  const safeCharacters = Array.isArray(characters)
+    ? characters
+    : Object.values(characters || {});
   const selectedCharacter = safeCharacters.find(
     (c) => c.name === selectedCharacterName
   );
@@ -2037,30 +2271,68 @@ function MobileWardrobeModule({ selectedProject, characters, castCrew = [], setC
             );
             const sizing = actor?.wardrobe || {};
             return (
-              <div style={{
-                backgroundColor: "#f0f4ff", border: "1px solid #c5d0e8",
-                borderRadius: "6px", padding: "8px 12px", marginBottom: "10px",
-                fontSize: "12px",
-              }}>
-                <div style={{ fontWeight: "bold", color: "#3a4a7a", marginBottom: "6px" }}>
+              <div
+                style={{
+                  backgroundColor: "#f0f4ff",
+                  border: "1px solid #c5d0e8",
+                  borderRadius: "6px",
+                  padding: "8px 12px",
+                  marginBottom: "10px",
+                  fontSize: "12px",
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: "bold",
+                    color: "#3a4a7a",
+                    marginBottom: "6px",
+                  }}
+                >
                   👔 {selectedCharacterName} sizing
                 </div>
                 {!actor ? (
-                  <div style={{ color: "#aaa", fontStyle: "italic", fontSize: "11px" }}>
-                    No cast member assigned — add in Cast &amp; Crew to edit sizing
+                  <div
+                    style={{
+                      color: "#aaa",
+                      fontStyle: "italic",
+                      fontSize: "11px",
+                    }}
+                  >
+                    No cast member assigned — add in Cast &amp; Crew to edit
+                    sizing
                   </div>
                 ) : (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  <div
+                    style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}
+                  >
                     {SIZING_FIELDS.map(({ key, label }) => (
-                      <div key={key} style={{ display: "flex", flexDirection: "column", minWidth: "60px" }}>
-                        <span style={{ fontSize: "10px", color: "#888", marginBottom: "1px" }}>{label}</span>
+                      <div
+                        key={key}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          minWidth: "60px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "10px",
+                            color: "#888",
+                            marginBottom: "1px",
+                          }}
+                        >
+                          {label}
+                        </span>
                         <input
                           value={sizing[key] || ""}
                           onChange={(e) => {
                             const newVal = e.target.value;
                             const updated = castCrew.map((p) =>
                               p.id === actor.id
-                                ? { ...p, wardrobe: { ...p.wardrobe, [key]: newVal } }
+                                ? {
+                                    ...p,
+                                    wardrobe: { ...p.wardrobe, [key]: newVal },
+                                  }
                                 : p
                             );
                             setCastCrew(updated);
@@ -2068,18 +2340,36 @@ function MobileWardrobeModule({ selectedProject, characters, castCrew = [], setC
                           onBlur={(e) => {
                             const updated = castCrew.map((p) =>
                               p.id === actor.id
-                                ? { ...p, wardrobe: { ...p.wardrobe, [key]: e.target.value } }
+                                ? {
+                                    ...p,
+                                    wardrobe: {
+                                      ...p.wardrobe,
+                                      [key]: e.target.value,
+                                    },
+                                  }
                                 : p
                             );
-                            const updatedPerson = updated.find((p) => p.id === actor.id);
-                            database.updateSingleCastCrewPerson(selectedProject, updatedPerson)
-                              .catch((err) => console.error("Sizing save failed:", err));
+                            const updatedPerson = updated.find(
+                              (p) => p.id === actor.id
+                            );
+                            database
+                              .updateSingleCastCrewPerson(
+                                selectedProject,
+                                updatedPerson
+                              )
+                              .catch((err) =>
+                                console.error("Sizing save failed:", err)
+                              );
                           }}
                           placeholder="—"
                           style={{
-                            width: "100%", fontSize: "12px", padding: "3px 6px",
-                            border: "1px solid #c5d0e8", borderRadius: "4px",
-                            backgroundColor: "white", boxSizing: "border-box",
+                            width: "100%",
+                            fontSize: "12px",
+                            padding: "3px 6px",
+                            border: "1px solid #c5d0e8",
+                            borderRadius: "4px",
+                            backgroundColor: "white",
+                            boxSizing: "border-box",
                           }}
                         />
                       </div>
@@ -2100,15 +2390,26 @@ function MobileWardrobeModule({ selectedProject, characters, castCrew = [], setC
               .filter((n) => !isNaN(n))
               .sort((a, b) => a - b);
             return (
-              <div style={{
-                backgroundColor: charScenes.length > 0 ? "#e8f5e9" : "#f5f5f5",
-                border: `1px solid ${charScenes.length > 0 ? "#c8e6c9" : "#e0e0e0"}`,
-                borderRadius: "6px",
-                padding: "8px 12px",
-                marginBottom: "12px",
-                fontSize: "12px",
-              }}>
-                <span style={{ fontWeight: "bold", color: "#2e7d32", marginRight: "6px" }}>
+              <div
+                style={{
+                  backgroundColor:
+                    charScenes.length > 0 ? "#e8f5e9" : "#f5f5f5",
+                  border: `1px solid ${
+                    charScenes.length > 0 ? "#c8e6c9" : "#e0e0e0"
+                  }`,
+                  borderRadius: "6px",
+                  padding: "8px 12px",
+                  marginBottom: "12px",
+                  fontSize: "12px",
+                }}
+              >
+                <span
+                  style={{
+                    fontWeight: "bold",
+                    color: "#2e7d32",
+                    marginRight: "6px",
+                  }}
+                >
                   📋 {selectedCharacterName} appears in:
                 </span>
                 {charScenes.length === 0 ? (
@@ -2117,23 +2418,33 @@ function MobileWardrobeModule({ selectedProject, characters, castCrew = [], setC
                   </span>
                 ) : (
                   <>
-                    <span style={{ display: "inline-flex", flexWrap: "wrap", gap: "3px" }}>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        flexWrap: "wrap",
+                        gap: "3px",
+                      }}
+                    >
                       {charScenes.map((n) => (
-                        <span key={n} style={{
-                          backgroundColor: "#fff",
-                          border: "1px solid #a5d6a7",
-                          borderRadius: "3px",
-                          padding: "0 5px",
-                          color: "#1b5e20",
-                          fontWeight: "600",
-                          fontSize: "11px",
-                        }}>
+                        <span
+                          key={n}
+                          style={{
+                            backgroundColor: "#fff",
+                            border: "1px solid #a5d6a7",
+                            borderRadius: "3px",
+                            padding: "0 5px",
+                            color: "#1b5e20",
+                            fontWeight: "600",
+                            fontSize: "11px",
+                          }}
+                        >
                           {n}
                         </span>
                       ))}
                     </span>
                     <span style={{ color: "#888", marginLeft: "6px" }}>
-                      ({charScenes.length} scene{charScenes.length !== 1 ? "s" : ""})
+                      ({charScenes.length} scene
+                      {charScenes.length !== 1 ? "s" : ""})
                     </span>
                   </>
                 )}
@@ -2170,46 +2481,59 @@ function MobileWardrobeModule({ selectedProject, characters, castCrew = [], setC
                   addGarmentToLook(selectedCharacterName, lookId, garmentId)
                 }
                 onRemoveGarment={(lookId, garmentId) =>
-                  removeGarmentFromLook(selectedCharacterName, lookId, garmentId)
+                  removeGarmentFromLook(
+                    selectedCharacterName,
+                    lookId,
+                    garmentId
+                  )
                 }
                 onCreateGarment={(lookId, garmentData) =>
                   createGarment(lookId, garmentData)
                 }
                 selectedProject={selectedProject}
-              garmentInventory={garmentInventory}
-              characterScenes={charScenes}
-              scriptScenes={scriptScenes}
-              onToggleScene={(lookId, sceneNum) => {
-                const buildRanges = (arr) => {
-                  if (!arr || arr.length === 0) return "";
-                  const s = [...arr].sort((a, b) => a - b);
-                  const r = [];
-                  let st = s[0], en = s[0];
-                  for (let i = 1; i <= s.length; i++) {
-                    if (s[i] === en + 1) { en = s[i]; }
-                    else { r.push(st === en ? `${st}` : `${st}-${en}`); st = en = s[i]; }
-                  }
-                  return r.join(", ");
-                };
-                const updated = wardrobeItems.map((c) =>
-                  c.characterName === selectedCharacterName
-                    ? {
-                        ...c,
-                        items: c.items.map((it) => {
-                          if (it.id !== lookId) return it;
-                          const cur = (it.scenes || []).map(Number);
-                          const ns = cur.includes(sceneNum)
-                            ? cur.filter((x) => x !== sceneNum)
-                            : [...cur, sceneNum].sort((a, b) => a - b);
-                          return { ...it, scenes: ns, sceneRanges: buildRanges(ns) };
-                        }),
+                garmentInventory={garmentInventory}
+                characterScenes={charScenes}
+                scriptScenes={scriptScenes}
+                onToggleScene={(lookId, sceneNum) => {
+                  const buildRanges = (arr) => {
+                    if (!arr || arr.length === 0) return "";
+                    const s = [...arr].sort((a, b) => a - b);
+                    const r = [];
+                    let st = s[0],
+                      en = s[0];
+                    for (let i = 1; i <= s.length; i++) {
+                      if (s[i] === en + 1) {
+                        en = s[i];
+                      } else {
+                        r.push(st === en ? `${st}` : `${st}-${en}`);
+                        st = en = s[i];
                       }
-                    : c
-                );
-                setWardrobeItems(updated);
-                saveWardrobe(updated);
-              }}
-            />
+                    }
+                    return r.join(", ");
+                  };
+                  const updated = wardrobeItems.map((c) =>
+                    c.characterName === selectedCharacterName
+                      ? {
+                          ...c,
+                          items: c.items.map((it) => {
+                            if (it.id !== lookId) return it;
+                            const cur = (it.scenes || []).map(Number);
+                            const ns = cur.includes(sceneNum)
+                              ? cur.filter((x) => x !== sceneNum)
+                              : [...cur, sceneNum].sort((a, b) => a - b);
+                            return {
+                              ...it,
+                              scenes: ns,
+                              sceneRanges: buildRanges(ns),
+                            };
+                          }),
+                        }
+                      : c
+                  );
+                  setWardrobeItems(updated);
+                  saveWardrobe(updated);
+                }}
+              />
             );
           })}
 
@@ -2962,13 +3286,1098 @@ function MobileCostReportModule({ selectedProject }) {
 }
 
 // ─── Main Mobile App ──────────────────────────────────────────────────────────
+// ─── Mobile Call Sheet ────────────────────────────────────────────────────────
+function MobileCallSheetModule({
+  selectedProject,
+  shootingDays,
+  scheduledScenes,
+  scenes,
+  castCrew,
+  characters,
+  wardrobeItems,
+  actualLocations,
+  scriptLocations,
+  callSheetData,
+  projectSettings,
+}) {
+  const [selectedDay, setSelectedDay] = React.useState(null);
+  const [scale, setScale] = React.useState(1);
+  const containerRef = React.useRef(null);
+  const dropdownRef = React.useRef(null);
+
+  // Smart default day selection
+  React.useEffect(() => {
+    if (shootingDays.length > 0 && selectedDay === null) {
+      const today = new Date().toISOString().split("T")[0];
+      const todayMatch = shootingDays.find((d) => d.date === today);
+      if (todayMatch) {
+        setSelectedDay(todayMatch);
+        return;
+      }
+      const future = shootingDays
+        .filter((d) => d.date >= today)
+        .sort((a, b) => a.date.localeCompare(b.date));
+      if (future.length > 0) {
+        setSelectedDay(future[0]);
+        return;
+      }
+      const past = shootingDays
+        .filter((d) => d.date < today)
+        .sort((a, b) => b.date.localeCompare(a.date));
+      setSelectedDay(past.length > 0 ? past[0] : shootingDays[0]);
+    }
+  }, [shootingDays]);
+
+  // Compute scale so sheet fills the container with no scrolling
+  React.useEffect(() => {
+    const compute = () => {
+      if (!containerRef.current) return;
+      const containerW = containerRef.current.offsetWidth;
+      const dropdownH = dropdownRef.current
+        ? dropdownRef.current.offsetHeight + 12
+        : 70;
+      // Full available height: viewport minus sticky header (~60px) minus dropdown
+      const availableH = window.innerHeight - 60 - dropdownH - 8;
+      const sheetW = 816; // 8.5in @ 96dpi
+      const sheetH = 1056; // 11in @ 96dpi
+      const scaleW = containerW / sheetW;
+      const scaleH = availableH / sheetH;
+      setScale(Math.min(scaleW, scaleH));
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  }, [selectedDay]);
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "";
+    const date = new Date(dateStr + "T00:00:00");
+    return date.toLocaleDateString("en-US", {
+      month: "2-digit",
+      day: "2-digit",
+      year: "2-digit",
+    });
+  };
+
+  const formatDateLong = (dateStr) => {
+    if (!dateStr) return "";
+    const date = new Date(dateStr + "T00:00:00");
+    return date.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  const getSceneCast = (sceneNumber) => {
+    if (!characters) return "";
+    return Object.values(characters)
+      .filter((char) =>
+        (char.scenes || []).some((s) => parseInt(s) === parseInt(sceneNumber))
+      )
+      .sort((a, b) => a.chronologicalNumber - b.chronologicalNumber)
+      .map((char) => {
+        const actor = castCrew.find(
+          (p) => p.type === "cast" && p.character === char.name
+        );
+        return `${char.chronologicalNumber}. ${actor?.displayName || "TBD"}`;
+      })
+      .join(", ");
+  };
+
+  const getSceneWardrobe = (sceneNumber) => {
+    const result = [];
+    (wardrobeItems || []).forEach((char) => {
+      (char.items || []).forEach((item) => {
+        if ((item.scenes || []).includes(parseInt(sceneNumber)))
+          result.push(`${char.characterName} ${item.number}`);
+      });
+    });
+    return result.join(", ");
+  };
+
+  const getAddress = (sceneNumber) => {
+    const sl = scriptLocations.find(
+      (l) =>
+        l.scenes &&
+        (l.scenes.includes(parseInt(sceneNumber)) ||
+          l.scenes.includes(String(sceneNumber)))
+    );
+    if (sl?.actualLocationId) {
+      const a = actualLocations.find((x) => x.id === sl.actualLocationId);
+      if (a?.address)
+        return [a.address, a.city, a.state, a.zipCode]
+          .filter(Boolean)
+          .join(", ");
+    }
+    return null;
+  };
+
+  const getScheduledScenes = () => {
+    if (!selectedDay) return [];
+    if (selectedDay.scheduleBlocks && selectedDay.scheduleBlocks.length > 0) {
+      return selectedDay.scheduleBlocks
+        .filter((b) => b.scene || b.isLunch || b.customItem)
+        .map((b) => {
+          if (b.isLunch)
+            return {
+              scene: "LUNCH",
+              ie: "",
+              location: "LUNCH",
+              cast: "",
+              dn: "",
+              pages: "",
+              wardrobe: "",
+            };
+          if (b.customItem)
+            return {
+              scene: b.customItem.toUpperCase(),
+              ie: "",
+              location: b.customItem,
+              cast: "",
+              dn: "",
+              pages: "",
+              wardrobe: "",
+            };
+          const s = b.scene;
+          const mainScene = scenes.find(
+            (sc) => sc.sceneNumber == s.sceneNumber
+          );
+          return {
+            scene: s.sceneNumber,
+            ie: s.metadata?.intExt || "",
+            location: s.shootingLocation || s.metadata?.location || "",
+            cast: getSceneCast(s.sceneNumber),
+            dn: s.metadata?.timeOfDay || "",
+            pages: mainScene?.pageLength || s.pageLength || "1/8",
+            wardrobe: getSceneWardrobe(s.sceneNumber),
+          };
+        });
+    }
+    return (scheduledScenes[selectedDay.date] || []).map((item) => {
+      const sceneNum = typeof item === "string" ? item : item.sceneNumber;
+      const s = scenes.find(
+        (sc) => String(sc.sceneNumber) === String(sceneNum)
+      );
+      return {
+        scene: sceneNum,
+        ie: s?.metadata?.intExt || "",
+        location: s?.metadata?.location || "",
+        cast: getSceneCast(sceneNum),
+        dn: s?.metadata?.timeOfDay || "",
+        pages: s?.pageLength || "1/8",
+        wardrobe: getSceneWardrobe(sceneNum),
+      };
+    });
+  };
+
+  const currentDayId = selectedDay?.id;
+  const callTime =
+    callSheetData?.callTimeByDay?.[currentDayId] ||
+    callSheetData?.callTime ||
+    "TBD";
+  const dayNotes =
+    callSheetData?.notesByDay?.[currentDayId] || callSheetData?.notes || "";
+  const scheduledScenesForDay = getScheduledScenes();
+
+  // Build cast list for day
+  const castForDay = (() => {
+    const list = [];
+    const seen = new Set();
+    scheduledScenesForDay.forEach((scene) => {
+      if (!scene.cast) return;
+      scene.cast.split(", ").forEach((entry) => {
+        const match = entry.match(/^(\d+)\.\s*(.+)/);
+        if (match && !seen.has(match[1])) {
+          seen.add(match[1]);
+          const charNum = parseInt(match[1]);
+          const charEntry = Object.values(characters || {}).find(
+            (c) => c.chronologicalNumber === charNum
+          );
+          const actor = charEntry
+            ? castCrew.find(
+                (p) => p.type === "cast" && p.character === charEntry.name
+              )
+            : null;
+          const castTimes = callSheetData?.castCallTimes?.[charEntry?.name];
+          list.push({
+            num: charNum,
+            character: charEntry?.name || "",
+            actor: actor?.displayName || "TBD",
+            makeup: castTimes?.makeup || "",
+            onSet: castTimes?.set || callTime,
+          });
+        }
+      });
+    });
+    return list.sort((a, b) => a.num - b.num);
+  })();
+
+  // Build crew tables (left + right split)
+  const crewForDay = (() => {
+    const assigned =
+      callSheetData?.crewByDay?.[currentDayId]?.assignedCrew || [];
+    const grouped = {};
+    const deptOrder = [
+      "Principal Crew",
+      "Producer",
+      "Camera",
+      "G&E",
+      "Art",
+      "Wardrobe",
+      "Makeup",
+      "Sound",
+      "Script",
+      "Production",
+      "Transportation",
+      "Craft Services",
+      "Stunts",
+      "Other",
+    ];
+    assigned.forEach((crew) => {
+      const dept = crew.department || crew.crewDepartment || "Other";
+      if (!grouped[dept]) grouped[dept] = [];
+      grouped[dept].push(crew);
+    });
+    const leftRows = [];
+    const rightRows = [];
+    const allDepts = deptOrder.filter((d) => grouped[d]);
+    const half = Math.ceil(allDepts.length / 2);
+    allDepts.slice(0, half).forEach((dept) => {
+      leftRows.push({ type: "header", dept });
+      (grouped[dept] || []).forEach((m) =>
+        leftRows.push({ type: "member", ...m })
+      );
+    });
+    allDepts.slice(half).forEach((dept) => {
+      rightRows.push({ type: "header", dept });
+      (grouped[dept] || []).forEach((m) =>
+        rightRows.push({ type: "member", ...m })
+      );
+    });
+    return { leftRows, rightRows };
+  })();
+
+  const cellStyle = {
+    border: "1px solid black",
+    padding: "2px 3px",
+    fontSize: "8px",
+  };
+  const headerCellStyle = {
+    ...cellStyle,
+    backgroundColor: "#f0f0f0",
+    fontWeight: "bold",
+    textAlign: "center",
+  };
+
+  return (
+    <div ref={containerRef} style={{ width: "100%" }}>
+      {/* Day Selector */}
+      <div ref={dropdownRef} style={{ marginBottom: "12px" }}>
+        <label style={styles.label}>Shooting Day</label>
+        <select
+          style={{ ...styles.select, marginBottom: 0 }}
+          value={selectedDay?.id || ""}
+          onChange={(e) => {
+            const day = shootingDays.find(
+              (d) => String(d.id) === e.target.value
+            );
+            setSelectedDay(day || null);
+          }}
+        >
+          {shootingDays.map((day) => {
+            const date = new Date(day.date + "T00:00:00");
+            const dayName = date.toLocaleDateString("en-US", {
+              weekday: "short",
+            });
+            const formatted = date.toLocaleDateString("en-US", {
+              month: "2-digit",
+              day: "2-digit",
+              year: "numeric",
+            });
+            return (
+              <option key={day.id} value={day.id}>
+                Day {day.dayNumber} — {dayName} {formatted}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+
+      {!selectedDay ? (
+        <div
+          style={{
+            textAlign: "center",
+            color: "#aaa",
+            padding: "40px 0",
+            fontStyle: "italic",
+          }}
+        >
+          No shooting days available
+        </div>
+      ) : (
+        <div
+          style={{
+            width: "816px",
+            height: "1056px",
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+            marginBottom: `${1056 * scale - 1056}px`,
+            backgroundColor: "white",
+            border: "2px solid black",
+            boxSizing: "border-box",
+            padding: "0.2in",
+            fontFamily: "Arial, sans-serif",
+            overflow: "hidden",
+          }}
+        >
+          {/* Header */}
+          <div
+            style={{
+              display: "flex",
+              borderBottom: "2px solid black",
+              marginBottom: "4px",
+            }}
+          >
+            <div
+              style={{
+                flex: 1,
+                padding: "4px",
+                borderRight: "1px solid black",
+                fontSize: "8px",
+              }}
+            >
+              <div>
+                <strong>Producer:</strong>{" "}
+                {projectSettings?.producer ||
+                  selectedProject?.producer ||
+                  "TBD"}
+              </div>
+              <div>
+                <strong>Director:</strong>{" "}
+                {projectSettings?.director ||
+                  selectedProject?.director ||
+                  "TBD"}
+              </div>
+            </div>
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#ccc",
+                fontWeight: "bold",
+                fontSize: "14px",
+                padding: "4px",
+              }}
+            >
+              {projectSettings?.filmTitle ||
+                selectedProject?.name ||
+                "FILM TITLE"}
+            </div>
+            <div
+              style={{
+                flex: 1,
+                padding: "4px",
+                borderLeft: "1px solid black",
+                fontSize: "8px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: "12px", fontWeight: "bold" }}>
+                  {formatDate(selectedDay.date)}
+                </span>
+                <span>
+                  Day {selectedDay.dayNumber} of {shootingDays.length}
+                </span>
+              </div>
+              <div style={{ color: "#555", marginTop: "2px", fontSize: "7px" }}>
+                {formatDateLong(selectedDay.date)}
+              </div>
+            </div>
+          </div>
+
+          {/* Notes + General Call */}
+          <div
+            style={{
+              display: "flex",
+              borderBottom: "1px solid black",
+              marginBottom: "4px",
+            }}
+          >
+            <div
+              style={{
+                flex: 2,
+                padding: "4px",
+                borderRight: "1px solid black",
+                minHeight: "36px",
+              }}
+            >
+              <strong style={{ fontSize: "8px" }}>NOTES:</strong>
+              <div
+                style={{
+                  marginTop: "2px",
+                  fontSize: "8px",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {dayNotes || "—"}
+              </div>
+            </div>
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "4px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: "7px", fontWeight: "bold" }}>
+                GENERAL CALL
+              </div>
+              <div
+                style={{
+                  fontSize: "16px",
+                  fontWeight: "bold",
+                  border: "2px solid black",
+                  padding: "2px 8px",
+                  marginTop: "2px",
+                }}
+              >
+                {callTime}
+              </div>
+            </div>
+          </div>
+
+          {/* Scene Schedule */}
+          <div style={{ borderBottom: "1px solid black", marginBottom: "4px" }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "44px 28px 110px 60px 150px 170px 44px 44px",
+                backgroundColor: "#333",
+                color: "white",
+                fontWeight: "bold",
+                fontSize: "7px",
+                padding: "2px 3px",
+              }}
+            >
+              <div>SCENE</div>
+              <div>I/E</div>
+              <div>SET</div>
+              <div>D/N</div>
+              <div>CAST</div>
+              <div>LOCATION</div>
+              <div>PAGES</div>
+              <div>WD</div>
+            </div>
+            {scheduledScenesForDay.length === 0 ? (
+              <div
+                style={{
+                  padding: "6px",
+                  color: "#aaa",
+                  fontStyle: "italic",
+                  fontSize: "8px",
+                }}
+              >
+                No scenes scheduled
+              </div>
+            ) : (
+              scheduledScenesForDay.map((scene, i) => {
+                const isLunch = scene.scene === "LUNCH";
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "44px 28px 110px 60px 150px 170px 44px 44px",
+                      backgroundColor: isLunch
+                        ? "#e8e8e8"
+                        : i % 2 === 0
+                        ? "#fff"
+                        : "#f9f9f9",
+                      borderBottom: "1px solid #ccc",
+                      fontSize: "7px",
+                      padding: "2px 3px",
+                      fontWeight: isLunch ? "bold" : "normal",
+                      fontStyle: isLunch ? "italic" : "normal",
+                    }}
+                  >
+                    <div>{scene.scene}</div>
+                    <div>{scene.ie}</div>
+                    <div>{scene.location}</div>
+                    <div>{scene.dn}</div>
+                    <div>{scene.cast}</div>
+                    <div>
+                      {scene.scene !== "LUNCH"
+                        ? getAddress(scene.scene) || "—"
+                        : ""}
+                    </div>
+                    <div>{scene.pages}</div>
+                    <div>{scene.wardrobe}</div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Cast */}
+          {castForDay.length > 0 && (
+            <div
+              style={{ borderBottom: "1px solid black", marginBottom: "4px" }}
+            >
+              <div
+                style={{
+                  backgroundColor: "#333",
+                  color: "white",
+                  fontWeight: "bold",
+                  fontSize: "8px",
+                  padding: "2px 4px",
+                }}
+              >
+                CAST
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "24px 1fr 1fr 64px 64px",
+                  backgroundColor: "#888",
+                  color: "white",
+                  fontSize: "7px",
+                  fontWeight: "bold",
+                  padding: "1px 3px",
+                }}
+              >
+                <div>#</div>
+                <div>CHARACTER</div>
+                <div>ACTOR</div>
+                <div>MAKEUP</div>
+                <div>ON SET</div>
+              </div>
+              {castForDay.map((c, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "24px 1fr 1fr 64px 64px",
+                    backgroundColor: i % 2 === 0 ? "#fff" : "#f5f5f5",
+                    fontSize: "7px",
+                    padding: "1px 3px",
+                    borderBottom: "1px solid #eee",
+                  }}
+                >
+                  <div>{c.num}</div>
+                  <div>{c.character}</div>
+                  <div>{c.actor}</div>
+                  <div>{c.makeup || "—"}</div>
+                  <div>{c.onSet}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Crew — two column split */}
+          <div style={{ display: "flex", gap: "6px", marginBottom: "4px" }}>
+            {[crewForDay.leftRows, crewForDay.rightRows].map(
+              (rows, tableIdx) => (
+                <div key={tableIdx} style={{ flex: 1 }}>
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      fontSize: "7px",
+                    }}
+                  >
+                    <thead>
+                      <tr style={{ backgroundColor: "#f0f0f0" }}>
+                        <th style={headerCellStyle}>POSITION</th>
+                        <th style={headerCellStyle}>NAME</th>
+                        <th style={headerCellStyle}>PHONE</th>
+                        <th style={headerCellStyle}>CALL</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={4}
+                            style={{
+                              ...cellStyle,
+                              color: "#aaa",
+                              fontStyle: "italic",
+                              textAlign: "center",
+                            }}
+                          >
+                            No crew assigned
+                          </td>
+                        </tr>
+                      ) : (
+                        rows.map((row, i) =>
+                          row.type === "header" ? (
+                            <tr key={i} style={{ backgroundColor: "#e0e0e0" }}>
+                              <td
+                                colSpan={4}
+                                style={{
+                                  ...cellStyle,
+                                  fontWeight: "bold",
+                                  textAlign: "center",
+                                }}
+                              >
+                                {row.dept.toUpperCase()}
+                              </td>
+                            </tr>
+                          ) : (
+                            <tr
+                              key={i}
+                              style={{
+                                backgroundColor:
+                                  i % 2 === 0 ? "#fff" : "#fafafa",
+                              }}
+                            >
+                              <td style={cellStyle}>
+                                {row.position || row.crewDepartment || ""}
+                              </td>
+                              <td style={cellStyle}>
+                                {row.displayName || row.name || ""}
+                              </td>
+                              <td style={cellStyle}>{row.phone || "—"}</td>
+                              <td style={cellStyle}>
+                                {callSheetData?.crewCallTimes?.[row.id] ||
+                                  callSheetData?.crewCallTimes?.[
+                                    row.personId
+                                  ] ||
+                                  callTime}
+                              </td>
+                            </tr>
+                          )
+                        )
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            )}
+          </div>
+
+          {/* Footer */}
+          <div
+            style={{
+              fontSize: "7px",
+              color: "#888",
+              textAlign: "center",
+              borderTop: "1px solid #ccc",
+              paddingTop: "3px",
+            }}
+          >
+            View only — edit on desktop
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Mobile Dashboard ─────────────────────────────────────────────────────────
+function MobileDashboard({
+  todoItems,
+  shootingDays,
+  scheduledScenes,
+  scenes,
+  actualLocations,
+  scriptLocations,
+  callSheetData,
+  onToggleTodo,
+  onNavigate,
+}) {
+  const today = new Date();
+  const localToday = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
+  )
+    .toISOString()
+    .split("T")[0];
+
+  const nextShootDay = shootingDays
+    .filter((d) => d.date >= localToday && !d.isShot)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+
+  const nextShootScenesRaw = nextShootDay
+    ? scheduledScenes[nextShootDay.date] || []
+    : [];
+
+  const nextShootScenes = nextShootScenesRaw.map((item) =>
+    typeof item === "string" ? item : item.sceneNumber
+  );
+
+  const parseEighths = (pageStr) => {
+    if (!pageStr) return 0;
+    const parts = String(pageStr).trim().split(" ");
+    if (parts.length === 1) {
+      if (parts[0].includes("/")) return parseInt(parts[0].split("/")[0]);
+      return parseInt(parts[0]) * 8;
+    }
+    return parseInt(parts[0]) * 8 + parseInt(parts[1].split("/")[0]);
+  };
+
+  const eighthsToStr = (e) => {
+    const w = Math.floor(e / 8),
+      r = e % 8;
+    if (r === 0) return `${w}`;
+    if (w === 0) return `${r}/8`;
+    return `${w} ${r}/8`;
+  };
+
+  const totalEighths = nextShootScenes.reduce((total, sceneNum) => {
+    const scene = scenes.find(
+      (s) => String(s.sceneNumber) === String(sceneNum)
+    );
+    return total + parseEighths(scene?.pageLength || scene?.page_length);
+  }, 0);
+  const totalPages = eighthsToStr(totalEighths);
+
+  const getFirstAddress = () => {
+    for (const sceneNum of nextShootScenes) {
+      const scriptLoc = scriptLocations.find(
+        (sl) =>
+          sl.scenes &&
+          (sl.scenes.includes(parseInt(sceneNum)) ||
+            sl.scenes.includes(String(sceneNum)))
+      );
+      if (scriptLoc?.actualLocationId) {
+        const actual = actualLocations.find(
+          (a) => a.id === scriptLoc.actualLocationId
+        );
+        if (actual?.address) {
+          return [actual.address, actual.city, actual.state, actual.zipCode]
+            .filter(Boolean)
+            .join(", ");
+        }
+      }
+    }
+    return null;
+  };
+  const firstAddress = getFirstAddress();
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "";
+    const [y, m, d] = dateStr.split("-");
+    return new Date(
+      parseInt(y),
+      parseInt(m) - 1,
+      parseInt(d)
+    ).toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
+  const incompleteTodos = (todoItems || []).filter((t) => !t.completed);
+
+  return (
+    <div>
+      {/* Next Shoot Day */}
+      <div style={{ marginBottom: "14px" }}>
+        <div
+          style={{
+            fontSize: "10px",
+            fontWeight: "bold",
+            letterSpacing: "0.1em",
+            color: "#2196F3",
+            textTransform: "uppercase",
+            marginBottom: "8px",
+          }}
+        >
+          Next Shoot Day
+        </div>
+        {!nextShootDay ? (
+          <div
+            style={{
+              ...styles.card,
+              padding: "20px",
+              textAlign: "center",
+              color: "#aaa",
+              fontSize: "13px",
+              fontStyle: "italic",
+            }}
+          >
+            No upcoming shoot days scheduled
+          </div>
+        ) : (
+          <div style={{ ...styles.card, border: "2px solid #2196F3" }}>
+            <div
+              style={{
+                backgroundColor: "#2196F3",
+                padding: "10px 14px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    color: "white",
+                    fontWeight: "bold",
+                    fontSize: "14px",
+                  }}
+                >
+                  Day {nextShootDay.dayNumber}
+                </div>
+                <div
+                  style={{
+                    color: "rgba(255,255,255,0.85)",
+                    fontSize: "11px",
+                    marginTop: "2px",
+                  }}
+                >
+                  {formatDate(nextShootDay.date)}
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div
+                  style={{
+                    color: "white",
+                    fontSize: "12px",
+                    fontWeight: "bold",
+                  }}
+                >
+                  {nextShootScenes.length} scene
+                  {nextShootScenes.length !== 1 ? "s" : ""}
+                </div>
+                <div
+                  style={{ color: "rgba(255,255,255,0.85)", fontSize: "11px" }}
+                >
+                  {totalPages} pages
+                </div>
+              </div>
+            </div>
+            {firstAddress && (
+              <div
+                style={{
+                  padding: "10px 14px",
+                  borderBottom: "1px solid #e3f2fd",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "8px",
+                }}
+              >
+                <span style={{ fontSize: "14px", flexShrink: 0 }}>📍</span>
+                <div
+                  style={{ fontSize: "12px", color: "#333", lineHeight: "1.4" }}
+                >
+                  {firstAddress}
+                </div>
+              </div>
+            )}
+            {nextShootScenes.length > 0 && (
+              <div style={{ padding: "8px 14px" }}>
+                <div
+                  style={{
+                    fontSize: "10px",
+                    color: "#888",
+                    marginBottom: "5px",
+                    fontWeight: "bold",
+                  }}
+                >
+                  SCENES
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                  {nextShootScenes.map((s) => (
+                    <span
+                      key={s}
+                      style={{
+                        backgroundColor: "#e3f2fd",
+                        border: "1px solid #90caf9",
+                        borderRadius: "3px",
+                        padding: "2px 7px",
+                        fontSize: "11px",
+                        fontWeight: "600",
+                        color: "#1565c0",
+                      }}
+                    >
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Call Sheet */}
+      {nextShootDay && (
+        <div style={{ marginBottom: "14px" }}>
+          <div
+            style={{
+              fontSize: "10px",
+              fontWeight: "bold",
+              letterSpacing: "0.1em",
+              color: "#2196F3",
+              textTransform: "uppercase",
+              marginBottom: "8px",
+            }}
+          >
+            Call Sheet
+          </div>
+          <div
+            style={{ ...styles.card, cursor: "pointer" }}
+            onClick={() => onNavigate("Call Sheet")}
+          >
+            <div
+              style={{
+                ...styles.cardHeader,
+                justifyContent: "space-between",
+              }}
+            >
+              <div>
+                <div style={styles.cardTitle}>
+                  Day {nextShootDay.dayNumber} Call Sheet
+                </div>
+                <div style={styles.cardSubtitle}>
+                  {callSheetData?.callTime
+                    ? `General Call: ${callSheetData.callTime}`
+                    : "Tap to view call sheet"}
+                </div>
+              </div>
+              <span style={{ fontSize: "18px", color: "#2196F3" }}>→</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* To-Do */}
+      <div style={{ marginBottom: "14px" }}>
+        <div
+          style={{
+            fontSize: "10px",
+            fontWeight: "bold",
+            letterSpacing: "0.1em",
+            color: "#2196F3",
+            textTransform: "uppercase",
+            marginBottom: "8px",
+          }}
+        >
+          To-Do ({incompleteTodos.length})
+        </div>
+        {incompleteTodos.length === 0 ? (
+          <div
+            style={{
+              ...styles.card,
+              padding: "20px",
+              textAlign: "center",
+              color: "#aaa",
+              fontSize: "13px",
+              fontStyle: "italic",
+            }}
+          >
+            All tasks complete 🎉
+          </div>
+        ) : (
+          <div style={styles.card}>
+            {incompleteTodos.map((task, i) => (
+              <div
+                key={task.id}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "12px",
+                  padding: "12px 14px",
+                  borderBottom:
+                    i < incompleteTodos.length - 1 ? "1px solid #eee" : "none",
+                }}
+              >
+                <div
+                  onClick={() => onToggleTodo(task.id)}
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    borderRadius: "50%",
+                    border: "2px solid #2196F3",
+                    flexShrink: 0,
+                    marginTop: "1px",
+                    cursor: "pointer",
+                    backgroundColor: "white",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      color: "#222",
+                      marginBottom: "2px",
+                    }}
+                  >
+                    {task.title || task.task || "Untitled"}
+                  </div>
+                  {task.dueDate && (
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color:
+                          new Date(task.dueDate) < today ? "#e53935" : "#888",
+                      }}
+                    >
+                      Due {formatDate(task.dueDate)}
+                    </div>
+                  )}
+                  {task.priority && task.priority !== "Low" && (
+                    <span
+                      style={{
+                        fontSize: "9px",
+                        fontWeight: "bold",
+                        letterSpacing: "0.05em",
+                        padding: "1px 6px",
+                        borderRadius: "3px",
+                        marginTop: "3px",
+                        display: "inline-block",
+                        backgroundColor:
+                          task.priority === "High" ? "#ffebee" : "#fff8e1",
+                        color: task.priority === "High" ? "#c62828" : "#f57f17",
+                      }}
+                    >
+                      {task.priority.toUpperCase()}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function MobileApp() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState(null);
-  const [activeModule, setActiveModule] = useState("Wardrobe");
-  const [characters, setCharacters] = useState([]);
+  const [activeModule, setActiveModule] = useState("Dashboard");
   const [castCrew, setCastCrew] = useState([]);
+  const [todoItems, setTodoItems] = useState([]);
+  const [shootingDays, setShootingDays] = useState([]);
+  const [scheduledScenes, setScheduledScenes] = useState({});
+  const [scenes, setScenes] = useState([]);
+  const [actualLocations, setActualLocations] = useState([]);
+  const [scriptLocations, setScriptLocations] = useState([]);
+  const [callSheetData, setCallSheetData] = useState({});
+  const [characters, setCharacters] = useState({});
+  const [wardrobeItems, setWardrobeItems] = useState([]);
+  const [projectSettings, setProjectSettings] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   // Auth
   useEffect(() => {
@@ -2987,27 +4396,50 @@ export default function MobileApp() {
   // Load characters when project selected
   useEffect(() => {
     if (!selectedProject) return;
-    const loadChars = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("characters")
-          .select("*")
-          .eq("project_id", selectedProject.id);
-        if (!error && data) {
-          setCharacters(data.map((row) => row.character_data || row));
-        }
-      } catch (e) {
-        console.error("Error loading characters:", e);
-      }
-    };
-    loadChars();
+    database.loadCharactersFromDatabase(selectedProject, setCharacters);
   }, [selectedProject?.id]);
 
   // Load cast crew when project selected
   useEffect(() => {
     if (!selectedProject) return;
     database.loadCastCrewFromDatabase(selectedProject, setCastCrew);
+    database.loadTodoItemsFromDatabase(selectedProject, setTodoItems);
+    database.loadShootingDaysFromDatabase(selectedProject, setShootingDays);
+    database.loadScheduledScenesFromDatabase(
+      selectedProject,
+      setScheduledScenes
+    );
+    database.loadScenesFromDatabase(selectedProject, setScenes, () => {}, null);
+    database.loadActualLocationsFromDatabase(
+      selectedProject,
+      setActualLocations
+    );
+    database.loadScriptLocationsFromDatabase(
+      selectedProject,
+      setScriptLocations
+    );
+    database.loadCallSheetDataFromDatabase(selectedProject, setCallSheetData);
+    database.loadWardrobeItemsFromDatabase(selectedProject, (items) =>
+      setWardrobeItems(items || [])
+    );
+    database.loadProjectSettingsFromDatabase(
+      selectedProject,
+      setProjectSettings,
+      () => {}
+    );
   }, [selectedProject?.id]);
+
+  const handleToggleTodo = async (taskId) => {
+    const updated = todoItems.map((t) =>
+      t.id === taskId ? { ...t, completed: !t.completed } : t
+    );
+    setTodoItems(updated);
+    try {
+      await database.syncTodoItemsToDatabase(selectedProject, updated);
+    } catch (e) {
+      console.error("Failed to toggle todo:", e);
+    }
+  };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -3079,13 +4511,42 @@ export default function MobileApp() {
 
       {/* Content */}
       <div style={styles.content}>
+        {activeModule === "Dashboard" && (
+          <MobileDashboard
+            selectedProject={selectedProject}
+            todoItems={todoItems}
+            shootingDays={shootingDays}
+            scheduledScenes={scheduledScenes}
+            scenes={scenes}
+            actualLocations={actualLocations}
+            scriptLocations={scriptLocations}
+            callSheetData={callSheetData}
+            onToggleTodo={handleToggleTodo}
+            onNavigate={(module) => setActiveModule(module)}
+          />
+        )}
+        {activeModule === "Call Sheet" && (
+          <MobileCallSheetModule
+            selectedProject={selectedProject}
+            shootingDays={shootingDays}
+            scheduledScenes={scheduledScenes}
+            scenes={scenes}
+            castCrew={castCrew}
+            characters={characters}
+            wardrobeItems={wardrobeItems}
+            actualLocations={actualLocations}
+            scriptLocations={scriptLocations}
+            callSheetData={callSheetData}
+            projectSettings={projectSettings}
+          />
+        )}
         {activeModule === "Wardrobe" && (
           <MobileWardrobeModule
-          selectedProject={selectedProject}
-          characters={characters}
-          castCrew={castCrew}
-          setCastCrew={setCastCrew}
-        />
+            selectedProject={selectedProject}
+            characters={characters}
+            castCrew={castCrew}
+            setCastCrew={setCastCrew}
+          />
         )}
         {activeModule === "Cost Report" && (
           <MobileCostReportModule selectedProject={selectedProject} />

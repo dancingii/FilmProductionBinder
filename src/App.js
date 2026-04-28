@@ -41,10 +41,12 @@ import {
   uploadMultipleWardrobeImages,
   uploadMultipleGarmentImages,
   deleteMultipleImages,
+  uploadPropImage,
 } from "./utils/imageStorage";
 import { usePresence } from "./hooks/usePresence";
 import PresenceIndicator from "./components/shared/PresenceIndicator";
 import DayOutOfDaysModule from "./components/modules/DayOutOfDays/DayOutOfDays";
+import PropsModule from "./components/modules/Props/Props";
 
 // Script Component
 function Script({
@@ -4413,35 +4415,8 @@ function StripboardModule({
                   </div>
                 )}
               </div>
-              <div>
-                {scene.metadata?.timeOfDay ? (
-                  // Display the detected time of day
-                  scene.metadata.timeOfDay
-                ) : (
-                  // Show dropdown when no time of day is detected
-                  <select
-                    value={scene.manualTimeOfDay || ""}
-                    onChange={(e) => {
-                      if (onUpdateScene) {
-                        onUpdateScene(index, "manualTimeOfDay", e.target.value);
-                      }
-                    }}
-                    style={{
-                      width: "35px",
-                      fontSize: "9px",
-                      padding: "1px",
-                      border: "1px solid #ccc",
-                      borderRadius: "2px",
-                      backgroundColor: "white",
-                    }}
-                  >
-                    <option value="">--</option>
-                    <option value="DAY">DAY</option>
-                    <option value="NIGHT">NIGHT</option>
-                    <option value="DAWN">DAWN</option>
-                    <option value="DUSK">DUSK</option>
-                  </select>
-                )}
+              <div style={{ fontSize: "9px" }}>
+                {scene.manualTimeOfDay || scene.metadata?.timeOfDay || "--"}
               </div>
               <div style={{ lineHeight: "1.2" }}>
                 {sceneCastCrew.map((p, index) => (
@@ -4585,75 +4560,207 @@ function StripboardModule({
       )}
 
       {/* Script Popup Modal */}
-      {showScriptPopup && selectedSceneForScript && (() => {
-        const activeScene = scriptFullMode
-          ? (scenes[scriptFullIndex] || selectedSceneForScript)
-          : selectedSceneForScript;
-        return (
-          <>
-            <div
-              style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}
-              onClick={closeScriptPopup}
-            >
+      {showScriptPopup &&
+        selectedSceneForScript &&
+        (() => {
+          const activeScene = scriptFullMode
+            ? scenes[scriptFullIndex] || selectedSceneForScript
+            : selectedSceneForScript;
+          return (
+            <>
               <div
-                style={{ backgroundColor: "white", width: "90%", maxWidth: "9.28in", height: "85%", borderRadius: "8px", overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column" }}
-                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  backgroundColor: "rgba(0,0,0,0.7)",
+                  zIndex: 9999,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                onClick={closeScriptPopup}
               >
-                <div style={{ backgroundColor: "#2196F3", color: "white", padding: "15px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    {scriptFullMode && (
-                      <button
-                        onClick={() => setScriptFullIndex(Math.max(0, scriptFullIndex - 1))}
-                        disabled={scriptFullIndex === 0}
-                        style={{ backgroundColor: scriptFullIndex === 0 ? "#ccc" : "white", color: scriptFullIndex === 0 ? "#888" : "#2196F3", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: scriptFullIndex === 0 ? "not-allowed" : "pointer", fontWeight: "bold" }}
-                      >← Prev</button>
-                    )}
-                    <h3 style={{ margin: 0, fontSize: "16px" }}>
-                      Scene {activeScene.sceneNumber}
-                      {scriptFullMode && ` (${scriptFullIndex + 1} of ${scenes.length})`}
-                      {" — "}{activeScene.heading}
-                    </h3>
-                    {scriptFullMode && (
-                      <button
-                        onClick={() => setScriptFullIndex(Math.min(scenes.length - 1, scriptFullIndex + 1))}
-                        disabled={scriptFullIndex === scenes.length - 1}
-                        style={{ backgroundColor: scriptFullIndex === scenes.length - 1 ? "#ccc" : "white", color: scriptFullIndex === scenes.length - 1 ? "#888" : "#2196F3", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: scriptFullIndex === scenes.length - 1 ? "not-allowed" : "pointer", fontWeight: "bold" }}
-                      >Next →</button>
-                    )}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: "5px", cursor: "pointer", fontSize: "12px", userSelect: "none", color: "white" }}>
-                      <input
-                        type="checkbox"
-                        checked={scriptFullMode}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            const fi = (scenes || []).findIndex(s => String(s.sceneNumber) === String(selectedSceneForScript.sceneNumber));
-                            setScriptFullIndex(fi >= 0 ? fi : 0);
+                <div
+                  style={{
+                    backgroundColor: "white",
+                    width: "90%",
+                    maxWidth: "9.28in",
+                    height: "85%",
+                    borderRadius: "8px",
+                    overflow: "hidden",
+                    boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div
+                    style={{
+                      backgroundColor: "#2196F3",
+                      color: "white",
+                      padding: "15px 20px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                      }}
+                    >
+                      {scriptFullMode && (
+                        <button
+                          onClick={() =>
+                            setScriptFullIndex(Math.max(0, scriptFullIndex - 1))
                           }
-                          setScriptFullMode(e.target.checked);
+                          disabled={scriptFullIndex === 0}
+                          style={{
+                            backgroundColor:
+                              scriptFullIndex === 0 ? "#ccc" : "white",
+                            color: scriptFullIndex === 0 ? "#888" : "#2196F3",
+                            border: "none",
+                            padding: "6px 12px",
+                            borderRadius: "3px",
+                            cursor:
+                              scriptFullIndex === 0 ? "not-allowed" : "pointer",
+                            fontWeight: "bold",
+                          }}
+                        >
+                          ← Prev
+                        </button>
+                      )}
+                      <h3 style={{ margin: 0, fontSize: "16px" }}>
+                        Scene {activeScene.sceneNumber}
+                        {scriptFullMode &&
+                          ` (${scriptFullIndex + 1} of ${scenes.length})`}
+                        {" — "}
+                        {activeScene.heading}
+                      </h3>
+                      {scriptFullMode && (
+                        <button
+                          onClick={() =>
+                            setScriptFullIndex(
+                              Math.min(scenes.length - 1, scriptFullIndex + 1)
+                            )
+                          }
+                          disabled={scriptFullIndex === scenes.length - 1}
+                          style={{
+                            backgroundColor:
+                              scriptFullIndex === scenes.length - 1
+                                ? "#ccc"
+                                : "white",
+                            color:
+                              scriptFullIndex === scenes.length - 1
+                                ? "#888"
+                                : "#2196F3",
+                            border: "none",
+                            padding: "6px 12px",
+                            borderRadius: "3px",
+                            cursor:
+                              scriptFullIndex === scenes.length - 1
+                                ? "not-allowed"
+                                : "pointer",
+                            fontWeight: "bold",
+                          }}
+                        >
+                          Next →
+                        </button>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                      }}
+                    >
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          userSelect: "none",
+                          color: "white",
                         }}
-                        style={{ cursor: "pointer", accentColor: "white" }}
-                      />
-                      Full Script
-                    </label>
-                    <button onClick={closeScriptPopup} style={{ backgroundColor: "transparent", border: "none", color: "white", fontSize: "24px", cursor: "pointer", padding: "0 5px" }}>×</button>
+                      >
+                        <input
+                          type="checkbox"
+                          checked={scriptFullMode}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const fi = (scenes || []).findIndex(
+                                (s) =>
+                                  String(s.sceneNumber) ===
+                                  String(selectedSceneForScript.sceneNumber)
+                              );
+                              setScriptFullIndex(fi >= 0 ? fi : 0);
+                            }
+                            setScriptFullMode(e.target.checked);
+                          }}
+                          style={{ cursor: "pointer", accentColor: "white" }}
+                        />
+                        Full Script
+                      </label>
+                      <button
+                        onClick={closeScriptPopup}
+                        style={{
+                          backgroundColor: "transparent",
+                          border: "none",
+                          color: "white",
+                          fontSize: "24px",
+                          cursor: "pointer",
+                          padding: "0 5px",
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div style={{ flex: 1, padding: "1.5in", overflow: "auto", backgroundColor: getSceneStatusColor(activeScene.status || "Not Scheduled"), boxSizing: "border-box", textAlign: "left", fontFamily: "Courier New, monospace" }}>
-                  <div style={getElementStyle("Scene Heading")}>{activeScene.heading}</div>
-                  {activeScene.content && activeScene.content.map((block, blockIndex) => (
-                    <div key={blockIndex} style={getElementStyle(block.type)}>{formatElementText(block)}</div>
-                  ))}
-                  {!activeScene.content && (
-                    <div style={getElementStyle("Action")}>{activeScene.text || "Scene content not available"}</div>
-                  )}
+                  <div
+                    style={{
+                      flex: 1,
+                      padding: "1.5in",
+                      overflow: "auto",
+                      backgroundColor: getSceneStatusColor(
+                        activeScene.status || "Not Scheduled"
+                      ),
+                      boxSizing: "border-box",
+                      textAlign: "left",
+                      fontFamily: "Courier New, monospace",
+                    }}
+                  >
+                    <div style={getElementStyle("Scene Heading")}>
+                      {activeScene.heading}
+                    </div>
+                    {activeScene.content &&
+                      activeScene.content.map((block, blockIndex) => (
+                        <div
+                          key={blockIndex}
+                          style={getElementStyle(block.type)}
+                        >
+                          {formatElementText(block)}
+                        </div>
+                      ))}
+                    {!activeScene.content && (
+                      <div style={getElementStyle("Action")}>
+                        {activeScene.text || "Scene content not available"}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </>
-        );
-      })()}
+            </>
+          );
+        })()}
 
       {editingHeadingScene !== null && (
         <>
@@ -4805,6 +4912,7 @@ function StripboardModule({
                   <option value="NIGHT">NIGHT</option>
                   <option value="DAWN">DAWN</option>
                   <option value="DUSK">DUSK</option>
+                  <option value="OTHER">OTHER</option>
                 </select>
               </div>
               <div style={{ flex: 1 }}>
@@ -7105,75 +7213,211 @@ function StripboardScheduleModule({
         </div>
 
         {/* Script Popup Modal with exact Script module styling */}
-        {showScriptPopup && selectedSceneForScript && (() => {
-          const activeScene = scriptFullMode
-            ? (scenes[scriptFullIndex] || selectedSceneForScript)
-            : selectedSceneForScript;
-          return (
-          <>
-            <div
-              style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}
-              onClick={closeScriptPopup}
-            >
-              <div
-                style={{ backgroundColor: "white", width: "90%", maxWidth: "9.28in", height: "85%", borderRadius: "8px", overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column" }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div style={{ backgroundColor: "#2196F3", color: "white", padding: "15px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    {scriptFullMode && (
-                      <button
-                        onClick={() => setScriptFullIndex(Math.max(0, scriptFullIndex - 1))}
-                        disabled={scriptFullIndex === 0}
-                        style={{ backgroundColor: scriptFullIndex === 0 ? "#ccc" : "white", color: scriptFullIndex === 0 ? "#888" : "#2196F3", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: scriptFullIndex === 0 ? "not-allowed" : "pointer", fontWeight: "bold" }}
-                      >← Prev</button>
-                    )}
-                    <h3 style={{ margin: 0, fontSize: "16px" }}>
-                      Scene {activeScene.sceneNumber}
-                      {scriptFullMode && ` (${scriptFullIndex + 1} of ${scenes.length})`}
-                      {" - "}{activeScene.heading}
-                    </h3>
-                    {scriptFullMode && (
-                      <button
-                        onClick={() => setScriptFullIndex(Math.min(scenes.length - 1, scriptFullIndex + 1))}
-                        disabled={scriptFullIndex === scenes.length - 1}
-                        style={{ backgroundColor: scriptFullIndex === scenes.length - 1 ? "#ccc" : "white", color: scriptFullIndex === scenes.length - 1 ? "#888" : "#2196F3", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: scriptFullIndex === scenes.length - 1 ? "not-allowed" : "pointer", fontWeight: "bold" }}
-                      >Next →</button>
-                    )}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: "5px", cursor: "pointer", fontSize: "12px", userSelect: "none", color: "white" }}>
-                      <input
-                        type="checkbox"
-                        checked={scriptFullMode}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            const fi = (scenes || []).findIndex(s => String(s.sceneNumber) === String(selectedSceneForScript.sceneNumber));
-                            setScriptFullIndex(fi >= 0 ? fi : 0);
-                          }
-                          setScriptFullMode(e.target.checked);
+        {showScriptPopup &&
+          selectedSceneForScript &&
+          (() => {
+            const activeScene = scriptFullMode
+              ? scenes[scriptFullIndex] || selectedSceneForScript
+              : selectedSceneForScript;
+            return (
+              <>
+                <div
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    backgroundColor: "rgba(0,0,0,0.7)",
+                    zIndex: 9999,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  onClick={closeScriptPopup}
+                >
+                  <div
+                    style={{
+                      backgroundColor: "white",
+                      width: "90%",
+                      maxWidth: "9.28in",
+                      height: "85%",
+                      borderRadius: "8px",
+                      overflow: "hidden",
+                      boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+                      display: "flex",
+                      flexDirection: "column",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div
+                      style={{
+                        backgroundColor: "#2196F3",
+                        color: "white",
+                        padding: "15px 20px",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "12px",
                         }}
-                        style={{ cursor: "pointer", accentColor: "white" }}
-                      />
-                      Full Script
-                    </label>
-                    <button onClick={closeScriptPopup} style={{ backgroundColor: "transparent", border: "none", color: "white", fontSize: "24px", cursor: "pointer", padding: "0 5px" }}>×</button>
+                      >
+                        {scriptFullMode && (
+                          <button
+                            onClick={() =>
+                              setScriptFullIndex(
+                                Math.max(0, scriptFullIndex - 1)
+                              )
+                            }
+                            disabled={scriptFullIndex === 0}
+                            style={{
+                              backgroundColor:
+                                scriptFullIndex === 0 ? "#ccc" : "white",
+                              color: scriptFullIndex === 0 ? "#888" : "#2196F3",
+                              border: "none",
+                              padding: "6px 12px",
+                              borderRadius: "3px",
+                              cursor:
+                                scriptFullIndex === 0
+                                  ? "not-allowed"
+                                  : "pointer",
+                              fontWeight: "bold",
+                            }}
+                          >
+                            ← Prev
+                          </button>
+                        )}
+                        <h3 style={{ margin: 0, fontSize: "16px" }}>
+                          Scene {activeScene.sceneNumber}
+                          {scriptFullMode &&
+                            ` (${scriptFullIndex + 1} of ${scenes.length})`}
+                          {" - "}
+                          {activeScene.heading}
+                        </h3>
+                        {scriptFullMode && (
+                          <button
+                            onClick={() =>
+                              setScriptFullIndex(
+                                Math.min(scenes.length - 1, scriptFullIndex + 1)
+                              )
+                            }
+                            disabled={scriptFullIndex === scenes.length - 1}
+                            style={{
+                              backgroundColor:
+                                scriptFullIndex === scenes.length - 1
+                                  ? "#ccc"
+                                  : "white",
+                              color:
+                                scriptFullIndex === scenes.length - 1
+                                  ? "#888"
+                                  : "#2196F3",
+                              border: "none",
+                              padding: "6px 12px",
+                              borderRadius: "3px",
+                              cursor:
+                                scriptFullIndex === scenes.length - 1
+                                  ? "not-allowed"
+                                  : "pointer",
+                              fontWeight: "bold",
+                            }}
+                          >
+                            Next →
+                          </button>
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                        }}
+                      >
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "5px",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            userSelect: "none",
+                            color: "white",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={scriptFullMode}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                const fi = (scenes || []).findIndex(
+                                  (s) =>
+                                    String(s.sceneNumber) ===
+                                    String(selectedSceneForScript.sceneNumber)
+                                );
+                                setScriptFullIndex(fi >= 0 ? fi : 0);
+                              }
+                              setScriptFullMode(e.target.checked);
+                            }}
+                            style={{ cursor: "pointer", accentColor: "white" }}
+                          />
+                          Full Script
+                        </label>
+                        <button
+                          onClick={closeScriptPopup}
+                          style={{
+                            backgroundColor: "transparent",
+                            border: "none",
+                            color: "white",
+                            fontSize: "24px",
+                            cursor: "pointer",
+                            padding: "0 5px",
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        flex: 1,
+                        padding: "1.5in",
+                        overflow: "auto",
+                        backgroundColor: getSceneStatusColor(
+                          activeScene.sceneNumber
+                        ),
+                        boxSizing: "border-box",
+                        textAlign: "left",
+                        fontFamily: "Courier New, monospace",
+                      }}
+                    >
+                      <div style={getElementStyle("Scene Heading")}>
+                        {activeScene.heading}
+                      </div>
+                      {activeScene.content &&
+                        activeScene.content.map((block, blockIndex) => (
+                          <div
+                            key={blockIndex}
+                            style={getElementStyle(block.type)}
+                          >
+                            {formatElementText(block)}
+                          </div>
+                        ))}
+                      {!activeScene.content && (
+                        <div style={getElementStyle("Action")}>
+                          {activeScene.text || "Scene content not available"}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div style={{ flex: 1, padding: "1.5in", overflow: "auto", backgroundColor: getSceneStatusColor(activeScene.sceneNumber), boxSizing: "border-box", textAlign: "left", fontFamily: "Courier New, monospace" }}>
-                  <div style={getElementStyle("Scene Heading")}>{activeScene.heading}</div>
-                  {activeScene.content && activeScene.content.map((block, blockIndex) => (
-                    <div key={blockIndex} style={getElementStyle(block.type)}>{formatElementText(block)}</div>
-                  ))}
-                  {!activeScene.content && (
-                    <div style={getElementStyle("Action")}>{activeScene.text || "Scene content not available"}</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </>
-          );
-        })()}
+              </>
+            );
+          })()}
       </div>
     </div>
   );
@@ -8498,6 +8742,9 @@ function LocationsModule({
   setCurrentIndex,
   onSyncScriptLocations,
   onSyncActualLocations,
+  selectedProject,
+  onUpdateSceneHeading,
+  onUpdateSceneTimeOfDay,
 }) {
   console.log(
     "📍 LocationsModule RENDERED - scriptLocations count:",
@@ -8560,6 +8807,48 @@ function LocationsModule({
   const [unassignedSceneIndex, setUnassignedSceneIndex] = useState(0);
   const [unassignedReassignScene, setUnassignedReassignScene] = useState(null);
   const [unassignedReassignTarget, setUnassignedReassignTarget] = useState("");
+  // Time-of-day collapse state per location: { [locationId]: { DAWN: bool, DAY: bool, ... } }
+  const [todCollapsed, setTodCollapsed] = useState({});
+  // Scene TOD assignment popup: { sceneNumber, locationId } | null
+  const [todAssignPopup, setTodAssignPopup] = useState(null);
+
+  const TIME_OF_DAY_ORDER = [
+    "DAWN",
+    "DAY",
+    "DUSK",
+    "NIGHT",
+    "OTHER",
+    "UNASSIGNED",
+  ];
+
+  const getSceneTimeOfDay = (sceneNum) => {
+    const scene = (mainScenes || scenes).find(
+      (s) => String(s.sceneNumber) === String(sceneNum)
+    );
+    // manualTimeOfDay takes priority if explicitly set (even if non-standard)
+    // use nullish check not falsy, so empty string doesn't fall through
+    const tod =
+      scene?.manualTimeOfDay != null && scene.manualTimeOfDay !== ""
+        ? scene.manualTimeOfDay
+        : scene?.metadata?.timeOfDay || "";
+    if (!tod) return "UNASSIGNED";
+    const upper = tod.toUpperCase();
+    if (["DAWN", "DAY", "DUSK", "NIGHT"].includes(upper)) return upper;
+    return "OTHER";
+  };
+
+  const toggleTod = (locationId, tod) => {
+    setTodCollapsed((prev) => ({
+      ...prev,
+      [locationId]: {
+        ...(prev[locationId] || {}),
+        [tod]: !(prev[locationId]?.[tod] ?? true), // default collapsed = true
+      },
+    }));
+  };
+
+  const isTodCollapsed = (locationId, tod) =>
+    todCollapsed[locationId]?.[tod] ?? true; // default collapsed
   const [newActualLocation, setNewActualLocation] = useState({
     name: "",
     address: "",
@@ -9154,7 +9443,7 @@ function LocationsModule({
     setScriptLocations(updatedLocations);
     if (onSyncScriptLocations) onSyncScriptLocations(updatedLocations);
 
-    // Update all scenes assigned to this sub-location
+    // Update all scenes assigned to this sub-location atomically
     const location = scriptLocations.find((l) => l.id === editingHeading);
     if (location && location.scenes.length > 0 && mainScenes && setMainScenes) {
       const updatedScenes = mainScenes.map((scene) => {
@@ -9169,13 +9458,29 @@ function LocationsModule({
               intExt: editHeadingIntExt,
               location: newSubLocation,
               timeOfDay,
+              modifier: scene.metadata?.modifier || "",
             },
           };
         }
         return scene;
       });
       setMainScenes(updatedScenes);
-      if (saveScenesDatabase) saveScenesDatabase(updatedScenes);
+      // Atomic update per scene — no full sync
+      if (onUpdateSceneHeading) {
+        location.scenes.forEach((sceneNum) => {
+          const scene = mainScenes.find(
+            (s) => String(s.sceneNumber) === String(sceneNum)
+          );
+          onUpdateSceneHeading(
+            sceneNum,
+            newHeading,
+            editHeadingIntExt,
+            newSubLocation,
+            timeOfDay,
+            scene?.metadata?.modifier || ""
+          );
+        });
+      }
     }
 
     setEditingHeading(null);
@@ -9848,7 +10153,7 @@ function LocationsModule({
                               </span>
                             )}
                           </div>
-                          {/* Assigned Scenes */}
+                          {/* Assigned Scenes — grouped by time of day */}
                           <div
                             style={{
                               fontSize: "12px",
@@ -9856,154 +10161,437 @@ function LocationsModule({
                               marginBottom: "8px",
                             }}
                           >
-                            <strong>Assigned Scenes:</strong>{" "}
-                            {location.scenes.length > 0 ? (
-                              <>
-                                {location.scenes.map((sceneNum, index) => {
-                                  const scene = scenes.find(
-                                    (s) => s.sceneNumber == sceneNum
-                                  );
-                                  const status =
-                                    scene?.status || "Not Scheduled";
-                                  const statusColor =
-                                    status === "Scheduled"
-                                      ? "#2196F3"
-                                      : status === "Shot"
-                                      ? "#4CAF50"
-                                      : status === "Pickups"
-                                      ? "#FFC107"
-                                      : status === "Reshoot"
-                                      ? "#F44336"
-                                      : "#f0f0f0";
-                                  const textColor =
-                                    status === "Pickups"
-                                      ? "black"
-                                      : status === "Not Scheduled"
-                                      ? "#666"
-                                      : "white";
-
-                                  return (
-                                    <span key={sceneNum}>
-                                      <span
-                                        style={{
-                                          backgroundColor: statusColor,
-                                          color: textColor,
-                                          padding: "2px 6px",
-                                          borderRadius: "3px",
-                                          marginRight: "4px",
-                                          fontSize: "11px",
-                                          fontWeight: "bold",
-                                          cursor: "pointer",
-                                          border: "1px solid #ddd",
-                                        }}
-                                        title={`Scene ${sceneNum} - ${status} (click to manage)`}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setSceneBadgeReassignTarget("");
-                                          setShowSceneBadgePopup({
-                                            sceneNumber: sceneNum,
-                                            locationId: location.id,
-                                            parentLocation:
-                                              location.parentLocation,
-                                          });
-                                        }}
-                                      >
-                                        {sceneNum}
-                                      </span>
-                                      {index < location.scenes.length - 1
-                                        ? " "
-                                        : ""}
-                                    </span>
-                                  );
-                                })}{" "}
-                                ({location.scenes.length} scenes)
-                              </>
-                            ) : (
+                            <strong>Assigned Scenes</strong> (
+                            {location.scenes.length})
+                            {location.scenes.length === 0 && (
                               <span
-                                style={{ color: "#999", fontStyle: "italic" }}
+                                style={{
+                                  color: "#999",
+                                  fontStyle: "italic",
+                                  marginLeft: "6px",
+                                }}
                               >
                                 No scenes assigned
                               </span>
                             )}
                           </div>
+                          {location.scenes.length > 0 &&
+                            (() => {
+                              // Group scenes by time of day
+                              const groups = {};
+                              location.scenes.forEach((sceneNum) => {
+                                const tod = getSceneTimeOfDay(sceneNum);
+                                if (!groups[tod]) groups[tod] = [];
+                                groups[tod].push(sceneNum);
+                              });
 
-                          {/* All Available Scenes for Manual Assignment */}
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              marginBottom: "8px",
-                              padding: "8px",
-                              backgroundColor: "#f9f9f9",
-                              borderRadius: "4px",
-                              border: "1px solid #e0e0e0",
-                            }}
-                          >
-                            <strong>
-                              All Scenes (Double-click to add/remove):
-                            </strong>
-                            <div
-                              style={{ marginTop: "4px", lineHeight: "1.8" }}
-                            >
-                              {allSceneNumbers.map((sceneNum) => {
-                                const isAssigned =
-                                  location.scenes.includes(sceneNum);
-                                const isRecentlyRemoved =
-                                  !isAssigned &&
-                                  (
-                                    recentlyRemovedScenes[location.id] ||
-                                    new Set()
-                                  ).has(String(sceneNum));
-                                const scene = scenes.find(
-                                  (s) => s.sceneNumber == sceneNum
+                              return TIME_OF_DAY_ORDER.filter(
+                                (tod) => groups[tod]?.length > 0
+                              ).map((tod) => {
+                                const todScenes = groups[tod] || [];
+                                const collapsed = isTodCollapsed(
+                                  location.id,
+                                  tod
                                 );
-                                const status = scene?.status || "Not Scheduled";
+                                const label =
+                                  tod === "UNASSIGNED"
+                                    ? "⚠ Unassigned Time of Day"
+                                    : tod;
+                                const labelColor =
+                                  tod === "UNASSIGNED"
+                                    ? "#FF9800"
+                                    : tod === "DAY"
+                                    ? "#F57F17"
+                                    : tod === "NIGHT"
+                                    ? "#283593"
+                                    : tod === "DAWN"
+                                    ? "#E91E63"
+                                    : tod === "DUSK"
+                                    ? "#6A1B9A"
+                                    : "#555";
 
                                 return (
-                                  <span
-                                    key={sceneNum}
+                                  <div
+                                    key={tod}
                                     style={{
-                                      backgroundColor: isAssigned
-                                        ? "#4CAF50"
-                                        : isRecentlyRemoved
-                                        ? "#FFF176"
-                                        : "#f0f0f0",
-                                      color: isAssigned
-                                        ? "white"
-                                        : isRecentlyRemoved
-                                        ? "#333"
-                                        : "#666",
-                                      padding: "2px 6px",
-                                      borderRadius: "3px",
-                                      marginRight: "4px",
-                                      marginBottom: "3px",
-                                      fontSize: "11px",
-                                      fontWeight: "bold",
-                                      cursor: "pointer",
-                                      border: isAssigned
-                                        ? "1px solid #4CAF50"
-                                        : "1px solid #ddd",
-                                      display: "inline-block",
-                                    }}
-                                    title={
-                                      isAssigned
-                                        ? `Scene ${sceneNum} - ASSIGNED (Double-click to remove from this location)`
-                                        : isRecentlyRemoved
-                                        ? `Scene ${sceneNum} - Recently removed (Double-click to re-add)`
-                                        : `Scene ${sceneNum} - Not assigned here (Double-click to add)`
-                                    }
-                                    onDoubleClick={() => {
-                                      toggleSceneAssignment(
-                                        location.id,
-                                        sceneNum
-                                      );
+                                      marginBottom: "6px",
+                                      border: `1px solid ${labelColor}22`,
+                                      borderRadius: "4px",
+                                      overflow: "hidden",
                                     }}
                                   >
-                                    {sceneNum}
-                                  </span>
+                                    {/* TOD header — always visible, shows heading + assigned badges */}
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        flexWrap: "wrap",
+                                        gap: "4px",
+                                        padding: "4px 8px",
+                                        backgroundColor: `${labelColor}18`,
+                                        borderBottom: collapsed
+                                          ? "none"
+                                          : `1px solid ${labelColor}33`,
+                                      }}
+                                    >
+                                      {/* Chevron + full heading */}
+                                      <span
+                                        onClick={() =>
+                                          toggleTod(location.id, tod)
+                                        }
+                                        style={{
+                                          fontWeight: "bold",
+                                          fontSize: "11px",
+                                          color: labelColor,
+                                          cursor: "pointer",
+                                          whiteSpace: "nowrap",
+                                          marginRight: "4px",
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        {collapsed ? "▶" : "▼"}{" "}
+                                        {tod === "UNASSIGNED"
+                                          ? "⚠ Unassigned Time of Day"
+                                          : (() => {
+                                              const sample = (
+                                                mainScenes || scenes
+                                              ).find(
+                                                (s) =>
+                                                  String(s.sceneNumber) ===
+                                                  String(todScenes[0])
+                                              );
+                                              const intExt =
+                                                sample?.metadata?.intExt ||
+                                                location.intExt ||
+                                                "";
+                                              const loc =
+                                                sample?.metadata?.location ||
+                                                location.subLocation ||
+                                                "";
+                                              return `${intExt} ${loc} - ${tod}`.trim();
+                                            })()}
+                                      </span>
+                                      {/* Assigned scene badges — always visible in header */}
+                                      {todScenes
+                                        .sort(
+                                          (a, b) =>
+                                            parseFloat(
+                                              String(a).replace(/[^0-9.]/g, "")
+                                            ) -
+                                            parseFloat(
+                                              String(b).replace(/[^0-9.]/g, "")
+                                            )
+                                        )
+                                        .map((sceneNum) => {
+                                          const scene = scenes.find(
+                                            (s) => s.sceneNumber == sceneNum
+                                          );
+                                          const status =
+                                            scene?.status || "Not Scheduled";
+                                          const statusColor =
+                                            status === "Scheduled"
+                                              ? "#2196F3"
+                                              : status === "Shot"
+                                              ? "#4CAF50"
+                                              : status === "Pickups"
+                                              ? "#FFC107"
+                                              : status === "Reshoot"
+                                              ? "#F44336"
+                                              : "#e0e0e0";
+                                          const textColor =
+                                            status === "Pickups"
+                                              ? "black"
+                                              : status === "Not Scheduled"
+                                              ? "#555"
+                                              : "white";
+                                          return (
+                                            <span
+                                              key={sceneNum}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (tod === "UNASSIGNED") {
+                                                  setTodAssignPopup({
+                                                    sceneNumber: sceneNum,
+                                                    locationId: location.id,
+                                                  });
+                                                }
+                                              }}
+                                              style={{
+                                                backgroundColor: statusColor,
+                                                color: textColor,
+                                                padding: "1px 5px",
+                                                borderRadius: "3px",
+                                                fontSize: "10px",
+                                                fontWeight: "bold",
+                                                cursor:
+                                                  tod === "UNASSIGNED"
+                                                    ? "pointer"
+                                                    : "default",
+                                                border: `1px solid ${
+                                                  statusColor === "#e0e0e0"
+                                                    ? "#ccc"
+                                                    : statusColor
+                                                }`,
+                                              }}
+                                              title={
+                                                tod === "UNASSIGNED"
+                                                  ? `Scene ${sceneNum} — click to assign time of day`
+                                                  : `Scene ${sceneNum} — ${status}`
+                                              }
+                                            >
+                                              {sceneNum}
+                                              {tod === "UNASSIGNED" && (
+                                                <span
+                                                  style={{
+                                                    marginLeft: "2px",
+                                                    fontSize: "8px",
+                                                    color: "#FF9800",
+                                                  }}
+                                                >
+                                                  ▾
+                                                </span>
+                                              )}
+                                            </span>
+                                          );
+                                        })}
+                                      <span
+                                        onClick={() =>
+                                          toggleTod(location.id, tod)
+                                        }
+                                        style={{
+                                          marginLeft: "auto",
+                                          color: labelColor,
+                                          cursor: "pointer",
+                                          fontSize: "10px",
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        {collapsed ? "▼" : "▲"}
+                                      </span>
+                                    </div>
+
+                                    {/* Expanded: full scene assignment grid for this TOD */}
+                                    {!collapsed && (
+                                      <div
+                                        style={{
+                                          padding: "6px 8px",
+                                          backgroundColor: "#fafafa",
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            fontSize: "10px",
+                                            color: "#888",
+                                            marginBottom: "4px",
+                                          }}
+                                        >
+                                          Click to manage scene:
+                                        </div>
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            flexWrap: "wrap",
+                                            gap: "3px",
+                                            lineHeight: "1.8",
+                                          }}
+                                        >
+                                          {allSceneNumbers.map((sceneNum) => {
+                                            const isAssigned = todScenes.some(
+                                              (s) =>
+                                                String(s) === String(sceneNum)
+                                            );
+                                            const isAssignedElsewhere =
+                                              !isAssigned &&
+                                              location.scenes.some(
+                                                (s) =>
+                                                  String(s) === String(sceneNum)
+                                              );
+                                            const isRecentlyRemoved =
+                                              !isAssigned &&
+                                              !isAssignedElsewhere &&
+                                              (
+                                                recentlyRemovedScenes[
+                                                  location.id
+                                                ] || new Set()
+                                              ).has(String(sceneNum));
+
+                                            return (
+                                              <span
+                                                key={sceneNum}
+                                                style={{
+                                                  backgroundColor: isAssigned
+                                                    ? "#4CAF50"
+                                                    : isAssignedElsewhere
+                                                    ? "#90CAF9"
+                                                    : isRecentlyRemoved
+                                                    ? "#FFF176"
+                                                    : "#f0f0f0",
+                                                  color: isAssigned
+                                                    ? "white"
+                                                    : isAssignedElsewhere
+                                                    ? "#1565C0"
+                                                    : isRecentlyRemoved
+                                                    ? "#333"
+                                                    : "#666",
+                                                  padding: "2px 6px",
+                                                  borderRadius: "3px",
+                                                  marginBottom: "2px",
+                                                  fontSize: "11px",
+                                                  fontWeight: "bold",
+                                                  cursor: isAssignedElsewhere
+                                                    ? "not-allowed"
+                                                    : "pointer",
+                                                  border: isAssigned
+                                                    ? "1px solid #4CAF50"
+                                                    : isAssignedElsewhere
+                                                    ? "1px solid #90CAF9"
+                                                    : "1px solid #ddd",
+                                                  display: "inline-block",
+                                                  opacity: isAssignedElsewhere
+                                                    ? 0.5
+                                                    : 1,
+                                                }}
+                                                title={
+                                                  isAssigned
+                                                    ? `Scene ${sceneNum} — click to manage`
+                                                    : isAssignedElsewhere
+                                                    ? `Scene ${sceneNum} — assigned to a different time of day`
+                                                    : isRecentlyRemoved
+                                                    ? `Scene ${sceneNum} — recently removed, click to manage`
+                                                    : `Scene ${sceneNum} — click to assign here as ${tod}`
+                                                }
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  if (isAssignedElsewhere)
+                                                    return;
+                                                  setSceneBadgeReassignTarget(
+                                                    ""
+                                                  );
+                                                  setShowSceneBadgePopup({
+                                                    sceneNumber: sceneNum,
+                                                    locationId: location.id,
+                                                    parentLocation:
+                                                      location.parentLocation,
+                                                    currentTod: tod,
+                                                    isAssigned,
+                                                  });
+                                                }}
+                                              >
+                                                {sceneNum}
+                                              </span>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
                                 );
-                              })}
-                            </div>
-                          </div>
+                              });
+                            })()}
+
+                          {/* TOD Assignment Popup */}
+                          {todAssignPopup && (
+                            <>
+                              <div
+                                style={{
+                                  position: "fixed",
+                                  top: 0,
+                                  left: 0,
+                                  width: "100%",
+                                  height: "100%",
+                                  zIndex: 2000,
+                                }}
+                                onClick={() => setTodAssignPopup(null)}
+                              />
+                              <div
+                                style={{
+                                  position: "fixed",
+                                  top: "50%",
+                                  left: "50%",
+                                  transform: "translate(-50%,-50%)",
+                                  backgroundColor: "white",
+                                  border: "2px solid #FF9800",
+                                  borderRadius: "8px",
+                                  padding: "20px",
+                                  zIndex: 2001,
+                                  minWidth: "260px",
+                                  boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+                                }}
+                              >
+                                <h4
+                                  style={{
+                                    margin: "0 0 12px",
+                                    color: "#FF9800",
+                                  }}
+                                >
+                                  Assign Time of Day — Scene{" "}
+                                  {todAssignPopup.sceneNumber}
+                                </h4>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "8px",
+                                  }}
+                                >
+                                  {[
+                                    "DAWN",
+                                    "DAY",
+                                    "DUSK",
+                                    "NIGHT",
+                                    "OTHER",
+                                  ].map((tod) => (
+                                    <button
+                                      key={tod}
+                                      onClick={() => {
+                                        if (onUpdateSceneTimeOfDay) {
+                                          onUpdateSceneTimeOfDay(
+                                            todAssignPopup.sceneNumber,
+                                            tod
+                                          );
+                                        }
+                                        setTodAssignPopup(null);
+                                      }}
+                                      style={{
+                                        padding: "8px 16px",
+                                        border: "1px solid #ddd",
+                                        borderRadius: "4px",
+                                        cursor: "pointer",
+                                        backgroundColor:
+                                          tod === "DAY"
+                                            ? "#FFF9C4"
+                                            : tod === "NIGHT"
+                                            ? "#E8EAF6"
+                                            : tod === "DAWN"
+                                            ? "#FCE4EC"
+                                            : tod === "DUSK"
+                                            ? "#EDE7F6"
+                                            : "#f5f5f5",
+                                        fontWeight: "bold",
+                                        fontSize: "13px",
+                                        textAlign: "left",
+                                      }}
+                                    >
+                                      {tod}
+                                    </button>
+                                  ))}
+                                  <button
+                                    onClick={() => setTodAssignPopup(null)}
+                                    style={{
+                                      padding: "6px",
+                                      border: "1px solid #ddd",
+                                      borderRadius: "4px",
+                                      cursor: "pointer",
+                                      backgroundColor: "#f5f5f5",
+                                      marginTop: "4px",
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                          )}
 
                           <button
                             onClick={(e) => {
@@ -10376,11 +10964,35 @@ function LocationsModule({
                 }}
               >
                 <option value="">Select a location...</option>
-                {scriptLocations.map((loc) => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.intExt} {loc.subLocation} ({loc.parentLocation})
-                  </option>
-                ))}
+                {sortedGroupEntries.flatMap(([parent, locs]) =>
+                  [...locs]
+                    .sort((a, b) => {
+                      const aMin = Math.min(
+                        ...(a.scenes.length
+                          ? a.scenes.map(
+                              (s) =>
+                                parseFloat(String(s).replace(/[^0-9.]/g, "")) ||
+                                9999
+                            )
+                          : [9999])
+                      );
+                      const bMin = Math.min(
+                        ...(b.scenes.length
+                          ? b.scenes.map(
+                              (s) =>
+                                parseFloat(String(s).replace(/[^0-9.]/g, "")) ||
+                                9999
+                            )
+                          : [9999])
+                      );
+                      return aMin - bMin;
+                    })
+                    .map((loc) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.intExt} {loc.subLocation} ({loc.parentLocation})
+                      </option>
+                    ))
+                )}
               </select>
             </div>
             <div
@@ -10469,14 +11081,26 @@ function LocationsModule({
           );
           if (assignedScenes.length === 0) return null;
           const activeUnassigned = unassignedFullMode
-            ? (scenes[unassignedFullIndex] || assignedScenes[unassignedSceneIndex])
+            ? scenes[unassignedFullIndex] ||
+              assignedScenes[unassignedSceneIndex]
             : assignedScenes[unassignedSceneIndex];
           const currentScene = activeUnassigned;
           return (
             <>
               <div
-                style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }}
-                onClick={() => { setUnassignedScenesPopupScenes(null); setUnassignedFullMode(false); }}
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  backgroundColor: "rgba(0,0,0,0.5)",
+                  zIndex: 999,
+                }}
+                onClick={() => {
+                  setUnassignedScenesPopupScenes(null);
+                  setUnassignedFullMode(false);
+                }}
               />
               <div
                 style={{
@@ -10508,39 +11132,154 @@ function LocationsModule({
                     alignItems: "center",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                    }}
+                  >
                     <button
-                      onClick={() => unassignedFullMode
-                        ? setUnassignedFullIndex(Math.max(0, unassignedFullIndex - 1))
-                        : setUnassignedSceneIndex(Math.max(0, unassignedSceneIndex - 1))
+                      onClick={() =>
+                        unassignedFullMode
+                          ? setUnassignedFullIndex(
+                              Math.max(0, unassignedFullIndex - 1)
+                            )
+                          : setUnassignedSceneIndex(
+                              Math.max(0, unassignedSceneIndex - 1)
+                            )
                       }
-                      disabled={unassignedFullMode ? unassignedFullIndex === 0 : unassignedSceneIndex === 0}
-                      style={{ backgroundColor: (unassignedFullMode ? unassignedFullIndex === 0 : unassignedSceneIndex === 0) ? "#ccc" : "white", color: (unassignedFullMode ? unassignedFullIndex === 0 : unassignedSceneIndex === 0) ? "#666" : "#FF9800", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: (unassignedFullMode ? unassignedFullIndex === 0 : unassignedSceneIndex === 0) ? "not-allowed" : "pointer", fontWeight: "bold" }}
-                    >← Prev</button>
+                      disabled={
+                        unassignedFullMode
+                          ? unassignedFullIndex === 0
+                          : unassignedSceneIndex === 0
+                      }
+                      style={{
+                        backgroundColor: (
+                          unassignedFullMode
+                            ? unassignedFullIndex === 0
+                            : unassignedSceneIndex === 0
+                        )
+                          ? "#ccc"
+                          : "white",
+                        color: (
+                          unassignedFullMode
+                            ? unassignedFullIndex === 0
+                            : unassignedSceneIndex === 0
+                        )
+                          ? "#666"
+                          : "#FF9800",
+                        border: "none",
+                        padding: "6px 12px",
+                        borderRadius: "3px",
+                        cursor: (
+                          unassignedFullMode
+                            ? unassignedFullIndex === 0
+                            : unassignedSceneIndex === 0
+                        )
+                          ? "not-allowed"
+                          : "pointer",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      ← Prev
+                    </button>
                     <div style={{ fontWeight: "bold" }}>
-                      Scene {currentScene.sceneNumber} ({unassignedFullMode ? `${unassignedFullIndex + 1} of ${scenes.length}` : `${unassignedSceneIndex + 1} of ${assignedScenes.length}`})
+                      Scene {currentScene.sceneNumber} (
+                      {unassignedFullMode
+                        ? `${unassignedFullIndex + 1} of ${scenes.length}`
+                        : `${unassignedSceneIndex + 1} of ${
+                            assignedScenes.length
+                          }`}
+                      )
                     </div>
                     <button
-                      onClick={() => unassignedFullMode
-                        ? setUnassignedFullIndex(Math.min(scenes.length - 1, unassignedFullIndex + 1))
-                        : setUnassignedSceneIndex(Math.min(assignedScenes.length - 1, unassignedSceneIndex + 1))
+                      onClick={() =>
+                        unassignedFullMode
+                          ? setUnassignedFullIndex(
+                              Math.min(
+                                scenes.length - 1,
+                                unassignedFullIndex + 1
+                              )
+                            )
+                          : setUnassignedSceneIndex(
+                              Math.min(
+                                assignedScenes.length - 1,
+                                unassignedSceneIndex + 1
+                              )
+                            )
                       }
-                      disabled={unassignedFullMode ? unassignedFullIndex === scenes.length - 1 : unassignedSceneIndex === assignedScenes.length - 1}
-                      style={{ backgroundColor: (unassignedFullMode ? unassignedFullIndex === scenes.length - 1 : unassignedSceneIndex === assignedScenes.length - 1) ? "#ccc" : "white", color: (unassignedFullMode ? unassignedFullIndex === scenes.length - 1 : unassignedSceneIndex === assignedScenes.length - 1) ? "#666" : "#FF9800", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: (unassignedFullMode ? unassignedFullIndex === scenes.length - 1 : unassignedSceneIndex === assignedScenes.length - 1) ? "not-allowed" : "pointer", fontWeight: "bold" }}
-                    >Next →</button>
+                      disabled={
+                        unassignedFullMode
+                          ? unassignedFullIndex === scenes.length - 1
+                          : unassignedSceneIndex === assignedScenes.length - 1
+                      }
+                      style={{
+                        backgroundColor: (
+                          unassignedFullMode
+                            ? unassignedFullIndex === scenes.length - 1
+                            : unassignedSceneIndex === assignedScenes.length - 1
+                        )
+                          ? "#ccc"
+                          : "white",
+                        color: (
+                          unassignedFullMode
+                            ? unassignedFullIndex === scenes.length - 1
+                            : unassignedSceneIndex === assignedScenes.length - 1
+                        )
+                          ? "#666"
+                          : "#FF9800",
+                        border: "none",
+                        padding: "6px 12px",
+                        borderRadius: "3px",
+                        cursor: (
+                          unassignedFullMode
+                            ? unassignedFullIndex === scenes.length - 1
+                            : unassignedSceneIndex === assignedScenes.length - 1
+                        )
+                          ? "not-allowed"
+                          : "pointer",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      Next →
+                    </button>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: "5px", cursor: "pointer", fontSize: "12px", userSelect: "none", color: "white" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                        userSelect: "none",
+                        color: "white",
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={unassignedFullMode}
                         onChange={(e) => {
                           if (e.target.checked) {
-                            const fi = (scenes || []).findIndex(s => String(s.sceneNumber) === String(currentScene.sceneNumber));
+                            const fi = (scenes || []).findIndex(
+                              (s) =>
+                                String(s.sceneNumber) ===
+                                String(currentScene.sceneNumber)
+                            );
                             setUnassignedFullIndex(fi >= 0 ? fi : 0);
                           } else {
-                            const curNum = scenes[unassignedFullIndex]?.sceneNumber;
-                            const fi = assignedScenes.findIndex(s => String(s.sceneNumber) === String(curNum));
+                            const curNum =
+                              scenes[unassignedFullIndex]?.sceneNumber;
+                            const fi = assignedScenes.findIndex(
+                              (s) => String(s.sceneNumber) === String(curNum)
+                            );
                             setUnassignedSceneIndex(fi >= 0 ? fi : 0);
                           }
                           setUnassignedFullMode(e.target.checked);
@@ -10549,7 +11288,23 @@ function LocationsModule({
                       />
                       Full Script
                     </label>
-                    <button onClick={() => { setUnassignedScenesPopupScenes(null); setUnassignedFullMode(false); }} style={{ backgroundColor: "#f44336", color: "white", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: "pointer", fontWeight: "bold" }}>✕ Close</button>
+                    <button
+                      onClick={() => {
+                        setUnassignedScenesPopupScenes(null);
+                        setUnassignedFullMode(false);
+                      }}
+                      style={{
+                        backgroundColor: "#f44336",
+                        color: "white",
+                        border: "none",
+                        padding: "6px 12px",
+                        borderRadius: "3px",
+                        cursor: "pointer",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      ✕ Close
+                    </button>
                   </div>
                 </div>
                 <div
@@ -10628,7 +11383,10 @@ function LocationsModule({
                   boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
                 }}
               >
-                <h3 style={{ marginTop: 0 }}>Manage Scene {sceneNumber}</h3>
+                <h3 style={{ marginTop: 0 }}>
+                  {showSceneBadgePopup?.isAssigned ? "Manage" : "Assign"} Scene{" "}
+                  {sceneNumber}
+                </h3>
                 <p
                   style={{
                     fontSize: "13px",
@@ -10670,6 +11428,95 @@ function LocationsModule({
                     📄 View Script
                   </button>
                 </div>
+                {/* Assign to this location if not yet assigned */}
+                {!showSceneBadgePopup?.isAssigned && (
+                  <div style={{ marginBottom: "16px" }}>
+                    <button
+                      onClick={() => {
+                        const { sceneNumber, locationId, currentTod } =
+                          showSceneBadgePopup;
+                        if (
+                          !currentLoc?.scenes?.some(
+                            (s) => String(s) === String(sceneNumber)
+                          )
+                        ) {
+                          toggleSceneAssignment(locationId, sceneNumber);
+                        }
+                        if (
+                          currentTod &&
+                          currentTod !== "UNASSIGNED" &&
+                          onUpdateSceneTimeOfDay
+                        ) {
+                          onUpdateSceneTimeOfDay(sceneNumber, currentTod);
+                        }
+                        setShowSceneBadgePopup(null);
+                      }}
+                      style={{
+                        backgroundColor: "#4CAF50",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        padding: "8px 14px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: "bold",
+                        width: "100%",
+                      }}
+                    >
+                      ✓ Assign to {currentLoc?.intExt} {currentLoc?.subLocation}{" "}
+                      as {showSceneBadgePopup?.currentTod}
+                    </button>
+                  </div>
+                )}
+
+                {/* Reassign TOD if already assigned */}
+                {showSceneBadgePopup?.isAssigned && (
+                  <div style={{ marginBottom: "16px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        marginBottom: "6px",
+                        fontSize: "13px",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      Reassign Time of Day:
+                    </label>
+                    <div
+                      style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}
+                    >
+                      {["DAWN", "DAY", "DUSK", "NIGHT", "OTHER"].map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => {
+                            if (onUpdateSceneTimeOfDay)
+                              onUpdateSceneTimeOfDay(sceneNumber, t);
+                            setShowSceneBadgePopup(null);
+                          }}
+                          style={{
+                            padding: "6px 12px",
+                            border: "1px solid #ddd",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontWeight: "bold",
+                            fontSize: "12px",
+                            backgroundColor:
+                              t === showSceneBadgePopup?.currentTod
+                                ? "#2196F3"
+                                : "#f5f5f5",
+                            color:
+                              t === showSceneBadgePopup?.currentTod
+                                ? "white"
+                                : "#333",
+                          }}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ marginBottom: "16px" }}>
                   <label
                     style={{
@@ -10695,13 +11542,38 @@ function LocationsModule({
                     }}
                   >
                     <option value="">Select a location...</option>
-                    {scriptLocations
-                      .filter((l) => l.id !== locationId)
-                      .map((loc) => (
-                        <option key={loc.id} value={loc.id}>
-                          {loc.intExt} {loc.subLocation} ({loc.parentLocation})
-                        </option>
-                      ))}
+                    {sortedGroupEntries.flatMap(([parent, locs]) =>
+                      [...locs]
+                        .sort((a, b) => {
+                          const aMin = Math.min(
+                            ...(a.scenes.length
+                              ? a.scenes.map(
+                                  (s) =>
+                                    parseFloat(
+                                      String(s).replace(/[^0-9.]/g, "")
+                                    ) || 9999
+                                )
+                              : [9999])
+                          );
+                          const bMin = Math.min(
+                            ...(b.scenes.length
+                              ? b.scenes.map(
+                                  (s) =>
+                                    parseFloat(
+                                      String(s).replace(/[^0-9.]/g, "")
+                                    ) || 9999
+                                )
+                              : [9999])
+                          );
+                          return aMin - bMin;
+                        })
+                        .map((loc) => (
+                          <option key={loc.id} value={loc.id}>
+                            {loc.intExt} {loc.subLocation} ({loc.parentLocation}
+                            )
+                          </option>
+                        ))
+                    )}
                   </select>
                 </div>
                 <div
@@ -10943,7 +11815,8 @@ function LocationsModule({
                 style={{ width: "100%", padding: "8px", marginBottom: "10px" }}
               >
                 <option value="">Select parent location...</option>
-                {Object.keys(groupedLocations)
+                {sortedGroupEntries
+                  .map(([parent]) => parent)
                   .filter((parent) => parent !== showReassignDialog)
                   .map((parent) => (
                     <option key={parent} value={parent}>
@@ -11087,7 +11960,8 @@ function LocationsModule({
                 style={{ width: "100%", padding: "8px", marginBottom: "10px" }}
               >
                 <option value="">Select parent location...</option>
-                {Object.keys(groupedLocations)
+                {sortedGroupEntries
+                  .map(([parent]) => parent)
                   .filter(
                     (parent) => parent !== showReassignSubDialog?.parentLocation
                   )
@@ -11977,7 +12851,11 @@ function LocationsModule({
               </>
             );
           }
-          const currentScene = assignedScenes[locationSceneIndex];
+          const activeLocationScene = locationScenesFullMode
+            ? scenes[locationScenesFullIndex] ||
+              assignedScenes[locationSceneIndex]
+            : assignedScenes[locationSceneIndex];
+          const currentScene = activeLocationScene;
           return (
             <>
               <div
@@ -12022,39 +12900,154 @@ function LocationsModule({
                     alignItems: "center",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                    }}
+                  >
                     <button
-                      onClick={() => locationScenesFullMode
-                        ? setLocationScenesFullIndex(Math.max(0, locationScenesFullIndex - 1))
-                        : setLocationSceneIndex(Math.max(0, locationSceneIndex - 1))
+                      onClick={() =>
+                        locationScenesFullMode
+                          ? setLocationScenesFullIndex(
+                              Math.max(0, locationScenesFullIndex - 1)
+                            )
+                          : setLocationSceneIndex(
+                              Math.max(0, locationSceneIndex - 1)
+                            )
                       }
-                      disabled={locationScenesFullMode ? locationScenesFullIndex === 0 : locationSceneIndex === 0}
-                      style={{ backgroundColor: (locationScenesFullMode ? locationScenesFullIndex === 0 : locationSceneIndex === 0) ? "#ccc" : "white", color: (locationScenesFullMode ? locationScenesFullIndex === 0 : locationSceneIndex === 0) ? "#666" : "#2196F3", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: (locationScenesFullMode ? locationScenesFullIndex === 0 : locationSceneIndex === 0) ? "not-allowed" : "pointer", fontWeight: "bold" }}
-                    >← Prev</button>
+                      disabled={
+                        locationScenesFullMode
+                          ? locationScenesFullIndex === 0
+                          : locationSceneIndex === 0
+                      }
+                      style={{
+                        backgroundColor: (
+                          locationScenesFullMode
+                            ? locationScenesFullIndex === 0
+                            : locationSceneIndex === 0
+                        )
+                          ? "#ccc"
+                          : "white",
+                        color: (
+                          locationScenesFullMode
+                            ? locationScenesFullIndex === 0
+                            : locationSceneIndex === 0
+                        )
+                          ? "#666"
+                          : "#2196F3",
+                        border: "none",
+                        padding: "6px 12px",
+                        borderRadius: "3px",
+                        cursor: (
+                          locationScenesFullMode
+                            ? locationScenesFullIndex === 0
+                            : locationSceneIndex === 0
+                        )
+                          ? "not-allowed"
+                          : "pointer",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      ← Prev
+                    </button>
                     <div style={{ fontWeight: "bold" }}>
-                      Scene {currentScene.sceneNumber} ({locationScenesFullMode ? `${locationScenesFullIndex + 1} of ${scenes.length}` : `${locationSceneIndex + 1} of ${assignedScenes.length}`})
+                      Scene {currentScene.sceneNumber} (
+                      {locationScenesFullMode
+                        ? `${locationScenesFullIndex + 1} of ${scenes.length}`
+                        : `${locationSceneIndex + 1} of ${
+                            assignedScenes.length
+                          }`}
+                      )
                     </div>
                     <button
-                      onClick={() => locationScenesFullMode
-                        ? setLocationScenesFullIndex(Math.min(scenes.length - 1, locationScenesFullIndex + 1))
-                        : setLocationSceneIndex(Math.min(assignedScenes.length - 1, locationSceneIndex + 1))
+                      onClick={() =>
+                        locationScenesFullMode
+                          ? setLocationScenesFullIndex(
+                              Math.min(
+                                scenes.length - 1,
+                                locationScenesFullIndex + 1
+                              )
+                            )
+                          : setLocationSceneIndex(
+                              Math.min(
+                                assignedScenes.length - 1,
+                                locationSceneIndex + 1
+                              )
+                            )
                       }
-                      disabled={locationScenesFullMode ? locationScenesFullIndex === scenes.length - 1 : locationSceneIndex === assignedScenes.length - 1}
-                      style={{ backgroundColor: (locationScenesFullMode ? locationScenesFullIndex === scenes.length - 1 : locationSceneIndex === assignedScenes.length - 1) ? "#ccc" : "white", color: (locationScenesFullMode ? locationScenesFullIndex === scenes.length - 1 : locationSceneIndex === assignedScenes.length - 1) ? "#666" : "#2196F3", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: (locationScenesFullMode ? locationScenesFullIndex === scenes.length - 1 : locationSceneIndex === assignedScenes.length - 1) ? "not-allowed" : "pointer", fontWeight: "bold" }}
-                    >Next →</button>
+                      disabled={
+                        locationScenesFullMode
+                          ? locationScenesFullIndex === scenes.length - 1
+                          : locationSceneIndex === assignedScenes.length - 1
+                      }
+                      style={{
+                        backgroundColor: (
+                          locationScenesFullMode
+                            ? locationScenesFullIndex === scenes.length - 1
+                            : locationSceneIndex === assignedScenes.length - 1
+                        )
+                          ? "#ccc"
+                          : "white",
+                        color: (
+                          locationScenesFullMode
+                            ? locationScenesFullIndex === scenes.length - 1
+                            : locationSceneIndex === assignedScenes.length - 1
+                        )
+                          ? "#666"
+                          : "#2196F3",
+                        border: "none",
+                        padding: "6px 12px",
+                        borderRadius: "3px",
+                        cursor: (
+                          locationScenesFullMode
+                            ? locationScenesFullIndex === scenes.length - 1
+                            : locationSceneIndex === assignedScenes.length - 1
+                        )
+                          ? "not-allowed"
+                          : "pointer",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      Next →
+                    </button>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: "5px", cursor: "pointer", fontSize: "12px", userSelect: "none", color: "white" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                        userSelect: "none",
+                        color: "white",
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={locationScenesFullMode}
                         onChange={(e) => {
                           if (e.target.checked) {
-                            const fi = (scenes || []).findIndex(s => String(s.sceneNumber) === String(currentScene.sceneNumber));
+                            const fi = (scenes || []).findIndex(
+                              (s) =>
+                                String(s.sceneNumber) ===
+                                String(currentScene.sceneNumber)
+                            );
                             setLocationScenesFullIndex(fi >= 0 ? fi : 0);
                           } else {
-                            const curNum = scenes[locationScenesFullIndex]?.sceneNumber;
-                            const fi = assignedScenes.findIndex(s => String(s.sceneNumber) === String(curNum));
+                            const curNum =
+                              scenes[locationScenesFullIndex]?.sceneNumber;
+                            const fi = assignedScenes.findIndex(
+                              (s) => String(s.sceneNumber) === String(curNum)
+                            );
                             setLocationSceneIndex(fi >= 0 ? fi : 0);
                           }
                           setLocationScenesFullMode(e.target.checked);
@@ -12063,7 +13056,23 @@ function LocationsModule({
                       />
                       Full Script
                     </label>
-                    <button onClick={() => { setShowLocationScenesPopup(null); setLocationScenesFullMode(false); }} style={{ backgroundColor: "#f44336", color: "white", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: "pointer", fontWeight: "bold" }}>✕ Close</button>
+                    <button
+                      onClick={() => {
+                        setShowLocationScenesPopup(null);
+                        setLocationScenesFullMode(false);
+                      }}
+                      style={{
+                        backgroundColor: "#f44336",
+                        color: "white",
+                        border: "none",
+                        padding: "6px 12px",
+                        borderRadius: "3px",
+                        cursor: "pointer",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      ✕ Close
+                    </button>
                   </div>
                 </div>
                 <div
@@ -12160,6 +13169,36 @@ function App({ selectedProject, userRole, user }) {
     // Clear Stripboard position so it starts at top on reload
     sessionStorage.removeItem("stripboard-scroll-position");
   }, []); // Empty array = runs once on page load
+
+  // Centered alert/confirm modal
+  const [appAlert, setAppAlert] = useState(null);
+  const showAlert = (message) =>
+    new Promise((res) =>
+      setAppAlert({
+        message,
+        onOk: () => {
+          setAppAlert(null);
+          res(true);
+        },
+        onCancel: null,
+      })
+    );
+  const showConfirm = (message, confirmLabel = "OK", cancelLabel = "Cancel") =>
+    new Promise((res) =>
+      setAppAlert({
+        message,
+        onOk: () => {
+          setAppAlert(null);
+          res(true);
+        },
+        onCancel: () => {
+          setAppAlert(null);
+          res(false);
+        },
+        confirmLabel,
+        cancelLabel,
+      })
+    );
 
   // Load scenes from database when project is selected
   useEffect(() => {
@@ -13250,6 +14289,19 @@ function App({ selectedProject, userRole, user }) {
     }
   };
 
+  const handleDeleteTodoItem = async (taskId, updatedItems) => {
+    syncLocks.current.todoItems = true;
+    console.log("🔒 Todo items sync lock ENABLED (delete:", taskId, ")");
+    try {
+      await database.deleteTodoItem(selectedProject, taskId);
+    } catch (error) {
+      console.error("❌ Failed to delete todo item:", error);
+    } finally {
+      syncLocks.current.todoItems = false;
+      console.log("🔓 Todo items sync lock RELEASED (delete)");
+    }
+  };
+
   const syncProjectSettingsToDatabase = async (updatedProjectSettings) => {
     await database.syncProjectSettingsToDatabase(
       selectedProject,
@@ -14196,6 +15248,7 @@ function App({ selectedProject, userRole, user }) {
       // Calculate category numbers for all items
       const itemsWithCategoryNumbers = calculateCategoryNumbers(updatedItems);
       setTaggedItems(itemsWithCategoryNumbers);
+      syncTaggedItemsToDatabase(itemsWithCategoryNumbers);
     }
 
     setShowTagDropdown(null);
@@ -15567,33 +16620,48 @@ function App({ selectedProject, userRole, user }) {
     });
   };
 
-  const onCreateNewProp = (propName, sceneIndex) => {
-    const scene = scenes[sceneIndex];
-    if (!scene) return;
+  const onCreateNewProp = (
+    propName,
+    sceneIndex,
+    confirmedSceneNumbers,
+    instanceChars
+  ) => {
+    const propsCategory = tagCategories.find((cat) => cat.name === "Props");
+    const propColor = propsCategory?.color || "#FF6B6B";
 
-    const cleanWord = stemWord(propName.toLowerCase().replace(/[^\w]/g, ""));
-
-    if (taggedItems[cleanWord]) {
-      onAddPropToScene(cleanWord, sceneIndex);
-      return;
+    // Build scene numbers array — either from confirmed viewer selections or legacy single scene
+    let sceneNumbers = [];
+    if (confirmedSceneNumbers && confirmedSceneNumbers.length > 0) {
+      sceneNumbers = confirmedSceneNumbers;
+    } else if (sceneIndex !== null && sceneIndex !== undefined) {
+      const scene = scenes[sceneIndex];
+      if (scene) sceneNumbers = [scene.sceneNumber];
     }
 
+    // Derive unique characters assigned across all confirmed instances
+    const allAssignedChars = instanceChars
+      ? [...new Set(Object.values(instanceChars).filter(Boolean))]
+      : [];
+
+    // Build the key for taggedItems
+    const cleanWord = `custom_prop_${propName
+      .toLowerCase()
+      .replace(/[^\w]/g, "_")}_${Date.now()}`;
     const existingItems = Object.entries(taggedItems);
-    let chronologicalNumber = existingItems.length + 1;
-    const position = getWordPosition(propName);
-    const propsCategory = tagCategories.find((cat) => cat.name === "Props");
-    const syntheticInstanceId = `${sceneIndex}-manual-${Date.now()}`;
+    const chronologicalNumber = existingItems.length + 1;
+    const syntheticInstanceId = `manual-${Date.now()}`;
 
     const newItem = {
       displayName: propName,
       category: "Props",
-      color: propsCategory?.color || "#FF6B6B",
-      chronologicalNumber: chronologicalNumber,
-      position: position,
-      scenes: [scene.sceneNumber],
+      color: propColor,
+      chronologicalNumber,
+      position: 0,
+      scenes: sceneNumbers,
       instances: [syntheticInstanceId],
       customTitle: propName,
       manuallyCreated: true,
+      assignedCharacters: allAssignedChars,
     };
 
     const updated = {
@@ -15602,6 +16670,7 @@ function App({ selectedProject, userRole, user }) {
     };
     setTaggedItems(updated);
     syncTaggedItemsToDatabase(updated);
+    return cleanWord;
   };
 
   // Production Design module callback functions
@@ -16260,9 +17329,32 @@ function App({ selectedProject, userRole, user }) {
             onUpdateTaggedItems={setTaggedItems}
             onSyncTaggedItems={syncTaggedItemsToDatabase}
             stemWord={stemWord}
+            onDeleteProp={async (word) => {
+              const updated = { ...taggedItems };
+              delete updated[word];
+              setTaggedItems(updated);
+              try {
+                await database.deleteTaggedItem(selectedProject, word);
+              } catch (e) {
+                console.error("❌ Failed to delete prop:", e);
+              }
+            }}
+            showConfirm={showConfirm}
             userRole={userRole}
             canEdit={canEdit(userRole)}
             isViewOnly={isViewOnly(userRole)}
+            onUploadPropImage={async (propWord, file) => {
+              const result = await uploadPropImage(
+                file,
+                selectedProject.id,
+                propWord,
+                `prop_${Date.now()}.jpg`
+              );
+              return result?.url || null;
+            }}
+            onDeletePropImage={async (url) => {
+              await deleteMultipleImages([url]);
+            }}
           />
         );
       case "Makeup":
@@ -16340,6 +17432,64 @@ function App({ selectedProject, userRole, user }) {
             setCurrentIndex={setCurrentIndex}
             onSyncScriptLocations={syncScriptLocationsToDatabase}
             onSyncActualLocations={syncActualLocationsToDatabase}
+            selectedProject={selectedProject}
+            onUpdateSceneHeading={(
+              sceneNumber,
+              heading,
+              intExt,
+              location,
+              timeOfDay,
+              modifier
+            ) =>
+              database
+                .updateSceneHeading(
+                  selectedProject,
+                  sceneNumber,
+                  heading,
+                  intExt,
+                  location,
+                  timeOfDay,
+                  modifier
+                )
+                .then(() => {
+                  setScenes((prev) =>
+                    prev.map((s) =>
+                      String(s.sceneNumber) === String(sceneNumber)
+                        ? {
+                            ...s,
+                            heading,
+                            metadata: {
+                              ...s.metadata,
+                              intExt,
+                              location,
+                              timeOfDay,
+                              modifier,
+                            },
+                          }
+                        : s
+                    )
+                  );
+                })
+                .catch((e) => console.error("❌ Heading update failed:", e))
+            }
+            onUpdateSceneTimeOfDay={(sceneNumber, timeOfDay) =>
+              database
+                .updateSceneTimeOfDay(selectedProject, sceneNumber, timeOfDay)
+                .then(() => {
+                  setScenes((prev) =>
+                    prev.map((s) =>
+                      String(s.sceneNumber) === String(sceneNumber)
+                        ? {
+                            ...s,
+                            metadata: { ...s.metadata, timeOfDay },
+                            manualTimeOfDay: timeOfDay,
+                          }
+                        : s
+                    )
+                  );
+                })
+                .catch((e) => console.error("❌ Time of day update failed:", e))
+            }
             userRole={userRole}
             canEdit={canEdit(userRole)}
             isViewOnly={isViewOnly(userRole)}
@@ -16415,6 +17565,7 @@ function App({ selectedProject, userRole, user }) {
             setTodoCategories={setTodoCategories}
             castCrew={castCrew}
             syncTodoItemsToDatabase={syncTodoItemsToDatabase}
+            onDeleteTodoItem={handleDeleteTodoItem}
             userRole={userRole}
             canEdit={canEdit(userRole)}
             isViewOnly={isViewOnly(userRole)}
@@ -16772,6 +17923,146 @@ function App({ selectedProject, userRole, user }) {
         {renderModule()}
       </div>
 
+      {/* Centered Alert/Confirm Modal */}
+      {appAlert && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            backgroundColor: "rgba(0,0,0,0.5)",
+            zIndex: 99998,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") appAlert.onOk();
+            if (e.key === "Escape" && appAlert.onCancel) appAlert.onCancel();
+          }}
+          tabIndex={-1}
+          ref={(el) => el && el.focus()}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: "8px",
+              padding: "0",
+              maxWidth: "420px",
+              width: "90%",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+              overflow: "hidden",
+            }}
+          >
+            {/* Header bar matching app style */}
+            <div
+              style={{
+                backgroundColor:
+                  appAlert.confirmLabel === "Delete" ? "#f44336" : "#2196F3",
+                padding: "14px 20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span
+                style={{
+                  color: "white",
+                  fontWeight: "bold",
+                  fontSize: "15px",
+                  fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+                }}
+              >
+                {appAlert.confirmLabel === "Delete"
+                  ? "Confirm Delete"
+                  : "Confirm"}
+              </span>
+              {appAlert.onCancel && (
+                <button
+                  onClick={appAlert.onCancel}
+                  style={{
+                    backgroundColor: "transparent",
+                    border: "none",
+                    color: "white",
+                    fontSize: "20px",
+                    cursor: "pointer",
+                    lineHeight: 1,
+                    padding: "0 2px",
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: "24px 24px 20px" }}>
+              <p
+                style={{
+                  margin: "0 0 22px",
+                  fontSize: "14px",
+                  lineHeight: "1.6",
+                  whiteSpace: "pre-wrap",
+                  color: "#333",
+                  fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+                }}
+              >
+                {appAlert.message}
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  justifyContent: "flex-end",
+                }}
+              >
+                {appAlert.onCancel && (
+                  <button
+                    onClick={appAlert.onCancel}
+                    style={{
+                      padding: "8px 18px",
+                      backgroundColor: "white",
+                      border: "1px solid #ccc",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      fontFamily:
+                        "'Century Gothic', 'Futura', 'Arial', sans-serif",
+                      color: "#555",
+                    }}
+                  >
+                    {appAlert.cancelLabel || "Cancel"}
+                  </button>
+                )}
+                <button
+                  autoFocus
+                  onClick={appAlert.onOk}
+                  style={{
+                    padding: "8px 20px",
+                    backgroundColor:
+                      appAlert.confirmLabel === "Delete"
+                        ? "#f44336"
+                        : "#2196F3",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: "bold",
+                    fontFamily:
+                      "'Century Gothic', 'Futura', 'Arial', sans-serif",
+                  }}
+                >
+                  {appAlert.confirmLabel || "OK"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* AI Summarization Progress Toast */}
       {isSummarizing && (
         <div
@@ -16838,1385 +18129,6 @@ function App({ selectedProject, userRole, user }) {
   );
 }
 
-// Props Module
-const EditablePropTitle = React.memo(
-  ({ propWord, item, onTitleUpdate, onClick }) => {
-    const [isEditing, setIsEditing] = React.useState(false);
-    const [editValue, setEditValue] = React.useState(
-      item.customTitle || item.displayName
-    );
-
-    const handleSave = () => {
-      if (editValue.trim() !== item.displayName && editValue.trim() !== "") {
-        onTitleUpdate(editValue.trim());
-      }
-      setIsEditing(false);
-    };
-
-    const handleKeyPress = (e) => {
-      if (e.key === "Enter") {
-        handleSave();
-      } else if (e.key === "Escape") {
-        setEditValue(item.customTitle || item.displayName);
-        setIsEditing(false);
-      }
-    };
-
-    if (isEditing) {
-      return (
-        <input
-          type="text"
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onBlur={handleSave}
-          onKeyDown={handleKeyPress}
-          autoFocus
-          style={{
-            fontSize: "16px",
-            fontWeight: "bold",
-            backgroundColor: item.color,
-            color: "white",
-            padding: "6px 12px",
-            borderRadius: "12px",
-            border: "2px solid white",
-            outline: "none",
-            width: "200px",
-          }}
-        />
-      );
-    }
-
-    return (
-      <div
-        style={{
-          fontSize: "16px",
-          fontWeight: "bold",
-          marginBottom: "5px",
-          cursor: "pointer",
-          backgroundColor: item.color,
-          color: "white",
-          padding: "6px 12px",
-          borderRadius: "12px",
-          display: "inline-block",
-          userSelect: "none",
-          position: "relative",
-        }}
-        onClick={onClick}
-        onDoubleClick={() => setIsEditing(true)}
-      >
-        {item.chronologicalNumber}. {item.customTitle || item.displayName}
-        <span
-          style={{
-            fontSize: "10px",
-            opacity: 0.7,
-            marginLeft: "8px",
-            fontStyle: "italic",
-          }}
-        >
-          (double-click to edit)
-        </span>
-      </div>
-    );
-  }
-);
-
-function PropsModule({
-  taggedItems,
-  scenes,
-  stripboardScenes, // Add stripboardScenes prop for scene status
-  characters, // Add characters prop
-  setActiveModule,
-  setCurrentIndex,
-  onUpdatePropTitle,
-  onRemovePropFromScene,
-  onCreatePropVariant,
-  onAddPropToScene,
-  onCreateNewProp,
-  onUpdateTaggedItems, // Add callback to update taggedItems
-  onSyncTaggedItems, // Add callback to sync to database
-}) {
-  const [showScenesWithoutProps, setShowScenesWithoutProps] = useState(false);
-  const [selectedProp, setSelectedProp] = useState(null);
-  const [showScenePreview, setShowScenePreview] = useState(false);
-
-  const propItems = Object.entries(taggedItems)
-    .filter(([word, item]) => item.category === "Props")
-    .sort((a, b) => a[1].chronologicalNumber - b[1].chronologicalNumber);
-
-  // Get props for a specific scene
-  const getPropsForScene = (sceneIndex) => {
-    const sceneProps = [];
-    propItems.forEach(([word, prop]) => {
-      // Check instances instead of scenes array to respect exclusions
-      if (prop.instances) {
-        const hasActiveInstance = prop.instances.some((instance) => {
-          const sceneNumber = parseInt(instance.split("-")[0]); // Instance format is already scene number - 1
-          return sceneNumber === sceneIndex && !instance.excluded;
-        });
-
-        if (hasActiveInstance) {
-          sceneProps.push({ word, ...prop });
-        }
-      }
-    });
-    return sceneProps.sort(
-      (a, b) => a.chronologicalNumber - b.chronologicalNumber
-    );
-  };
-
-  // Filter scenes based on whether they have props
-  const filteredScenes = scenes.filter((scene, index) => {
-    const sceneProps = getPropsForScene(index);
-    return showScenesWithoutProps || sceneProps.length > 0;
-  });
-
-  const handlePropClick = (prop, sceneIndex) => {
-    // Single click - show prop details popup (placeholder for future)
-    setSelectedProp({ ...prop, contextScene: sceneIndex });
-  };
-
-  const handlePropDoubleClick = (prop, sceneIndex) => {
-    // Double click - navigate to scene in script module
-    setCurrentIndex(sceneIndex);
-    setActiveModule("Script");
-  };
-
-  const handleRemovePropFromScene = (propWord, sceneIndex) => {
-    // This would need to be implemented in the parent component
-    // For now, just close any open popups
-    setSelectedProp(null);
-  };
-
-  // Character assignment is now handled directly in the onClick handlers
-
-  if (propItems.length === 0) {
-    return (
-      <div
-        style={{
-          padding: "20px",
-          width: "100%",
-          height: "calc(100vh - 40px)",
-          overflowY: "auto",
-          boxSizing: "border-box",
-        }}
-      >
-        <h2>Props</h2>
-        <p>
-          No props have been tagged yet. Double-click words in the Script module
-          to tag them as props.
-        </p>
-      </div>
-    );
-  }
-
-  // ESC key closes all popups
-  useEffect(() => {
-    const handleEsc = (e) => {
-      if (e.key !== "Escape") return;
-      setShowScenePreview(false);
-    };
-    document.addEventListener("keydown", handleEsc);
-    return () => document.removeEventListener("keydown", handleEsc);
-  }, []);
-
-  return (
-    <div
-      style={{
-        padding: "20px",
-        minHeight: "100vh",
-        width: "100%",
-        display: "flex",
-        gap: "15px",
-        maxWidth: "100%",
-        overflowX: "auto",
-        boxSizing: "border-box",
-      }}
-    >
-      {/* Left Column - Props List */}
-      <div
-        style={{
-          flex: "0 0 400px",
-          maxHeight: "calc(100vh - 60px)",
-          overflowY: "auto",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "20px",
-          }}
-        >
-          <h2 style={{ margin: 0 }}>Props</h2>
-          <button
-            onClick={() => {
-              // Create a temporary prop object to open the popup
-              const tempProp = {
-                word: `custom_${Date.now()}`, // Temporary unique identifier
-                displayName: "New Custom Prop",
-                customTitle: "New Custom Prop",
-                category: "Props",
-                color: "#4CAF50",
-                chronologicalNumber: propItems.length + 1,
-                scenes: [],
-                contextScene: null,
-                isNewCustomProp: true, // Flag to identify this as a new custom prop
-              };
-              setSelectedProp(tempProp);
-            }}
-            style={{
-              backgroundColor: "#4CAF50",
-              color: "white",
-              padding: "8px 16px",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontSize: "12px",
-              fontWeight: "bold",
-            }}
-          >
-            + Add Custom Prop
-          </button>
-        </div>
-        <div style={{ marginBottom: "20px" }}>
-          <p>Total Props: {propItems.length}</p>
-        </div>
-
-        <div style={{ width: "100%" }}>
-          {propItems.map(([word, item]) => {
-            // Convert hex color to more pastel version
-            const getPastelColor = (hexColor) => {
-              const r = parseInt(hexColor.slice(1, 3), 16);
-              const g = parseInt(hexColor.slice(3, 5), 16);
-              const b = parseInt(hexColor.slice(5, 7), 16);
-              // Blend with white to create pastel effect
-              const pastelR = Math.round(r + (255 - r) * 0.7);
-              const pastelG = Math.round(g + (255 - g) * 0.7);
-              const pastelB = Math.round(b + (255 - b) * 0.7);
-              return `rgb(${pastelR}, ${pastelG}, ${pastelB})`;
-            };
-
-            // Get character assignments for this prop
-            const assignedCharacters = item.assignedCharacters || [];
-            const hasMultipleCharacters = assignedCharacters.length > 1;
-
-            // Capitalize first letter of prop name
-            const capitalizedName =
-              (item.customTitle || item.displayName).charAt(0).toUpperCase() +
-              (item.customTitle || item.displayName).slice(1);
-
-            return (
-              <div
-                key={word}
-                style={{
-                  backgroundColor: getPastelColor(item.color),
-                  border: "1px solid #ddd",
-                  borderRadius: "4px",
-                  padding: "8px",
-                  margin: "5px 0",
-                  fontSize: "12px",
-                  position: "relative",
-                  maxWidth: "285px", // 25% narrower than 380px
-                  boxSizing: "border-box",
-                }}
-              >
-                <div
-                  style={{
-                    fontWeight: "bold",
-                    fontSize: "20px", // 8pts bigger than 12px base
-                    marginBottom: "4px",
-                    cursor: "pointer",
-                  }}
-                  onClick={() =>
-                    setSelectedProp({ word, ...item, contextScene: null })
-                  }
-                >
-                  {item.categoryNumber || item.chronologicalNumber}.{" "}
-                  {capitalizedName}
-                  {hasMultipleCharacters && (
-                    <span
-                      style={{
-                        display: "inline-block",
-                        backgroundColor: "#4CAF50",
-                        color: "white",
-                        borderRadius: "50%",
-                        width: "14px",
-                        height: "14px",
-                        textAlign: "center",
-                        fontSize: "10px",
-                        lineHeight: "14px",
-                        marginLeft: "4px",
-                        cursor: "pointer",
-                      }}
-                      title="Assigned to multiple characters"
-                    >
-                      !
-                    </span>
-                  )}
-                </div>
-                <div style={{ color: "#666", marginBottom: "6px" }}>
-                  Category: {item.category}
-                  {assignedCharacters.length > 0 && (
-                    <span style={{ marginLeft: "12px" }}>
-                      Characters: {assignedCharacters.join(", ")}
-                    </span>
-                  )}
-                </div>
-                <div style={{ display: "flex", gap: "4px", marginTop: "8px" }}>
-                  <button
-                    onClick={() =>
-                      setSelectedProp({ word, ...item, contextScene: null })
-                    }
-                    style={{
-                      backgroundColor: "#2196F3",
-                      color: "white",
-                      border: "none",
-                      padding: "4px 8px",
-                      borderRadius: "2px",
-                      cursor: "pointer",
-                      fontSize: "10px",
-                    }}
-                  >
-                    Manage
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Right Column - Scene Breakdown */}
-      <div style={{ flex: 1 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "20px",
-          }}
-        >
-          <h2>Scene Breakdown</h2>
-          <label style={{ fontSize: "14px" }}>
-            <input
-              type="checkbox"
-              checked={showScenesWithoutProps}
-              onChange={(e) => setShowScenesWithoutProps(e.target.checked)}
-              style={{ marginRight: "8px" }}
-            />
-            Show scenes without props
-          </label>
-        </div>
-
-        <div style={{ maxHeight: "80vh", overflowY: "auto" }}>
-          {filteredScenes.map((scene, originalIndex) => {
-            const sceneIndex = scenes.indexOf(scene);
-            const sceneProps = getPropsForScene(sceneIndex);
-
-            return (
-              <div
-                key={sceneIndex}
-                style={{
-                  border: "1px solid #ddd",
-                  margin: "10px 0",
-                  backgroundColor: "#fff",
-                  borderRadius: "4px",
-                }}
-              >
-                <div
-                  style={{
-                    backgroundColor: "#f5f5f5",
-                    padding: "12px",
-                    fontWeight: "bold",
-                    fontSize: "14px",
-                    borderBottom:
-                      sceneProps.length > 0 ? "1px solid #ddd" : "none",
-                  }}
-                >
-                  Scene {scene.sceneNumber}: {scene.heading}
-                </div>
-
-                {sceneProps.length > 0 && (
-                  <div style={{ padding: "12px" }}>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#666",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      Props needed ({sceneProps.length}):
-                    </div>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fill, minmax(150px, 1fr))",
-                        gap: "6px",
-                      }}
-                    >
-                      {sceneProps.map((prop) => {
-                        // Convert hex color to more pastel version
-                        const getPastelColor = (hexColor) => {
-                          const r = parseInt(hexColor.slice(1, 3), 16);
-                          const g = parseInt(hexColor.slice(3, 5), 16);
-                          const b = parseInt(hexColor.slice(5, 7), 16);
-                          const pastelR = Math.round(r + (255 - r) * 0.7);
-                          const pastelG = Math.round(g + (255 - g) * 0.7);
-                          const pastelB = Math.round(b + (255 - b) * 0.7);
-                          return `rgb(${pastelR}, ${pastelG}, ${pastelB})`;
-                        };
-
-                        const assignedCharacters =
-                          prop.assignedCharacters || [];
-                        const hasMultipleCharacters =
-                          assignedCharacters.length > 1;
-
-                        // Capitalize first letter of prop name
-                        const capitalizedName =
-                          (prop.customTitle || prop.displayName)
-                            .charAt(0)
-                            .toUpperCase() +
-                          (prop.customTitle || prop.displayName).slice(1);
-
-                        return (
-                          <div
-                            key={`${sceneIndex}-${prop.word}`}
-                            onClick={() => handlePropClick(prop, sceneIndex)}
-                            onDoubleClick={() =>
-                              handlePropDoubleClick(prop, sceneIndex)
-                            }
-                            style={{
-                              backgroundColor: getPastelColor(prop.color),
-                              border: "1px solid #ddd",
-                              borderRadius: "4px",
-                              padding: "6px",
-                              fontSize: "11px",
-                              cursor: "pointer",
-                              userSelect: "none",
-                            }}
-                          >
-                            <div
-                              style={{
-                                fontWeight: "bold",
-                                fontSize: "11px", // Back to original size
-                                marginBottom: "2px",
-                              }}
-                            >
-                              {prop.categoryNumber || prop.chronologicalNumber}.{" "}
-                              {capitalizedName}
-                              {hasMultipleCharacters && (
-                                <span
-                                  style={{
-                                    display: "inline-block",
-                                    backgroundColor: "#4CAF50",
-                                    color: "white",
-                                    borderRadius: "50%",
-                                    width: "10px",
-                                    height: "10px",
-                                    textAlign: "center",
-                                    fontSize: "7px",
-                                    lineHeight: "10px",
-                                    marginLeft: "3px",
-                                  }}
-                                  title="Assigned to multiple characters"
-                                >
-                                  !
-                                </span>
-                              )}
-                            </div>
-                            <div
-                              style={{
-                                color: "#666",
-                                marginBottom: "2px",
-                                fontSize: "9px",
-                              }}
-                            >
-                              {prop.category}
-                            </div>
-                            {assignedCharacters.length > 0 && (
-                              <div style={{ color: "#666", fontSize: "9px" }}>
-                                {assignedCharacters.join(", ")}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {selectedProp && (
-        <>
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              backgroundColor: "rgba(0,0,0,0.5)",
-              zIndex: 999,
-            }}
-            onClick={() => setSelectedProp(null)}
-          />
-          <div
-            style={{
-              position: "fixed",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              backgroundColor: "white",
-              border: "2px solid #ccc",
-              borderRadius: "8px",
-              padding: "20px",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
-              zIndex: 1000,
-              minWidth: "300px",
-            }}
-          >
-            <h3 style={{ marginTop: 0 }}>Prop Details</h3>
-            <div style={{ marginBottom: "15px" }}>
-              <strong>Name:</strong>
-              <input
-                type="text"
-                value={selectedProp.customTitle || selectedProp.displayName}
-                onChange={(e) => {
-                  setSelectedProp((prev) => ({
-                    ...prev,
-                    customTitle: e.target.value,
-                  }));
-                }}
-                onBlur={() => {
-                  if (
-                    onUpdatePropTitle &&
-                    selectedProp.customTitle !== selectedProp.displayName
-                  ) {
-                    onUpdatePropTitle(
-                      selectedProp.word,
-                      selectedProp.customTitle
-                    );
-                  }
-                }}
-                style={{
-                  marginLeft: "10px",
-                  padding: "4px 8px",
-                  border: "1px solid #ccc",
-                  borderRadius: "4px",
-                  fontSize: "14px",
-                  width: "200px",
-                }}
-                placeholder={selectedProp.displayName}
-              />
-            </div>
-            <p>
-              <strong>Original Word:</strong> {selectedProp.displayName}
-            </p>
-            <p>
-              <strong>Category:</strong> {selectedProp.category}
-            </p>
-            <p>
-              <strong>Number:</strong> {selectedProp.chronologicalNumber}
-            </p>
-            <p>
-              <strong>Scenes:</strong>{" "}
-              {selectedProp.scenes ? selectedProp.scenes.join(", ") : "None"}
-            </p>
-            <p>
-              <strong>Assigned Characters:</strong>{" "}
-              {selectedProp.assignedCharacters &&
-              selectedProp.assignedCharacters.length > 0
-                ? selectedProp.assignedCharacters.join(", ")
-                : "None"}
-            </p>
-
-            {/* Character Assignment */}
-            {characters && Object.keys(characters).length > 0 && (
-              <div
-                style={{
-                  marginTop: "15px",
-                  padding: "10px",
-                  backgroundColor: "#e8f5e8",
-                  borderRadius: "4px",
-                }}
-              >
-                <h4 style={{ margin: "0 0 10px 0" }}>Character Assignment</h4>
-                <div
-                  style={{
-                    marginBottom: "10px",
-                    fontSize: "12px",
-                    color: "#666",
-                  }}
-                >
-                  Assign this prop to characters. Green = assigned, Gray = not
-                  assigned.
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "4px",
-                    maxHeight: "120px",
-                    overflowY: "auto",
-                  }}
-                >
-                  {Object.keys(characters)
-                    .sort()
-                    .map((characterName) => {
-                      const isAssigned = (
-                        selectedProp.assignedCharacters || []
-                      ).includes(characterName);
-                      return (
-                        <button
-                          key={characterName}
-                          onClick={() => {
-                            // Create updated taggedItems with character assignment change
-                            const updatedTaggedItems = { ...taggedItems };
-                            const propData =
-                              updatedTaggedItems[selectedProp.word];
-
-                            if (propData) {
-                              const currentAssignments =
-                                propData.assignedCharacters || [];
-                              let newAssignments;
-
-                              if (isAssigned) {
-                                // Remove character
-                                newAssignments = currentAssignments.filter(
-                                  (char) => char !== characterName
-                                );
-                              } else {
-                                // Add character
-                                newAssignments = [
-                                  ...currentAssignments,
-                                  characterName,
-                                ].sort();
-                              }
-
-                              updatedTaggedItems[selectedProp.word] = {
-                                ...propData,
-                                assignedCharacters: newAssignments,
-                              };
-
-                              // Update the main taggedItems state
-                              if (onUpdateTaggedItems) {
-                                onUpdateTaggedItems(updatedTaggedItems);
-                              }
-
-                              // Sync to database
-                              if (onSyncTaggedItems) {
-                                onSyncTaggedItems(updatedTaggedItems);
-                              }
-
-                              // Update the selected prop to reflect the change
-                              setSelectedProp((prev) => ({
-                                ...prev,
-                                assignedCharacters: newAssignments,
-                              }));
-                            }
-                          }}
-                          style={{
-                            padding: "6px 8px",
-                            fontSize: "12px",
-                            border: "1px solid #ccc",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                            backgroundColor: isAssigned ? "#4CAF50" : "#f5f5f5",
-                            color: isAssigned ? "white" : "#333",
-                            fontWeight: isAssigned ? "bold" : "normal",
-                          }}
-                        >
-                          {characterName}
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
-            )}
-            <p style={{ fontSize: "12px", color: "#666", fontStyle: "italic" }}>
-              Future: Cost, status, vendor info, photos, etc.
-            </p>
-
-            {/* Scene Context Actions - only show if opened from scene context */}
-            {selectedProp.contextScene !== null && (
-              <div
-                style={{
-                  marginTop: "15px",
-                  padding: "10px",
-                  backgroundColor: "#f5f5f5",
-                  borderRadius: "4px",
-                }}
-              >
-                <h4 style={{ margin: "0 0 10px 0" }}>Scene Actions</h4>
-                <button
-                  onClick={() => {
-                    if (onRemovePropFromScene) {
-                      onRemovePropFromScene(
-                        selectedProp.word,
-                        selectedProp.contextScene
-                      );
-                    }
-                    setSelectedProp(null);
-                  }}
-                  style={{
-                    backgroundColor: "#f44336",
-                    color: "white",
-                    padding: "6px 12px",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    marginRight: "8px",
-                    fontSize: "12px",
-                  }}
-                >
-                  Remove from Scene
-                </button>
-                <button
-                  onClick={() => {
-                    const variantName = prompt(
-                      `Create variant of "${
-                        selectedProp.customTitle || selectedProp.displayName
-                      }":`
-                    );
-                    if (variantName && onCreatePropVariant) {
-                      onCreatePropVariant(selectedProp.word, variantName);
-                    }
-                  }}
-                  style={{
-                    backgroundColor: "#FF9800",
-                    color: "white",
-                    padding: "6px 12px",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    marginRight: "8px",
-                    fontSize: "12px",
-                  }}
-                >
-                  Create Variant
-                </button>
-              </div>
-            )}
-
-            {/* Add to Scenes - show for both contexts */}
-            <div
-              style={{
-                marginTop: "15px",
-                padding: "10px",
-                backgroundColor: "#e8f5e8",
-                borderRadius: "4px",
-              }}
-            >
-              <h4 style={{ margin: "0 0 10px 0" }}>
-                {selectedProp.contextScene !== null
-                  ? "Add Props to Scene"
-                  : "Manage Scenes for This Prop"}
-              </h4>
-
-              {selectedProp.contextScene === null ? (
-                // Left panel context - multi-select scenes for this prop
-                <div>
-                  <div
-                    style={{
-                      marginBottom: "10px",
-                      fontSize: "12px",
-                      color: "#666",
-                    }}
-                  >
-                    Click scene numbers to add/remove this prop. Green =
-                    assigned, Gray = not assigned.
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: "4px",
-                      maxHeight: "120px",
-                      overflowY: "auto",
-                    }}
-                  >
-                    {scenes.map((scene, sceneIndex) => {
-                      const isAssigned =
-                        selectedProp.instances &&
-                        selectedProp.instances.some((instance) => {
-                          const sceneIndex = parseInt(instance.split("-")[0]);
-                          return sceneIndex === scenes.indexOf(scene);
-                        });
-                      return (
-                        <button
-                          key={sceneIndex}
-                          onClick={() => {
-                            if (onAddPropToScene && !isAssigned) {
-                              onAddPropToScene(selectedProp.word, sceneIndex);
-                            }
-                            // Note: Scene removal functionality would need onRemovePropFromScene callback
-                          }}
-                          style={{
-                            padding: "6px 8px",
-                            fontSize: "12px",
-                            border: "1px solid #ccc",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                            backgroundColor: isAssigned ? "#4CAF50" : "#f5f5f5",
-                            color: isAssigned ? "white" : "#333",
-                            fontWeight: isAssigned ? "bold" : "normal",
-                          }}
-                        >
-                          {scene.sceneNumber}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                // Scene context - add other props to this scene
-                <div>
-                  <select
-                    style={{
-                      padding: "4px 8px",
-                      marginRight: "8px",
-                      border: "1px solid #ccc",
-                      borderRadius: "4px",
-                      fontSize: "12px",
-                    }}
-                    onChange={(e) => {
-                      if (e.target.value && onAddPropToScene) {
-                        onAddPropToScene(
-                          e.target.value,
-                          selectedProp.contextScene
-                        );
-                        e.target.value = "";
-                      }
-                    }}
-                  >
-                    <option value="">Select existing prop...</option>
-                    {propItems.map(([word, item]) => (
-                      <option key={word} value={word}>
-                        {item.customTitle || item.displayName}
-                      </option>
-                    ))}
-                  </select>
-                  <br />
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "8px",
-                      alignItems: "center",
-                      marginTop: "8px",
-                    }}
-                  >
-                    <input
-                      type="text"
-                      placeholder="Create new prop..."
-                      style={{
-                        padding: "4px 8px",
-                        border: "1px solid #ccc",
-                        borderRadius: "4px",
-                        fontSize: "12px",
-                        width: "150px",
-                      }}
-                      onKeyPress={(e) => {
-                        if (
-                          e.key === "Enter" &&
-                          e.target.value.trim() &&
-                          onCreateNewProp
-                        ) {
-                          onCreateNewProp(
-                            e.target.value.trim(),
-                            selectedProp.contextScene
-                          );
-                          e.target.value = "";
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={(e) => {
-                        const input =
-                          e.target.parentElement.querySelector("input");
-                        if (input.value.trim() && onCreateNewProp) {
-                          onCreateNewProp(
-                            input.value.trim(),
-                            selectedProp.contextScene
-                          );
-                          input.value = "";
-                        }
-                      }}
-                      style={{
-                        backgroundColor: "#4CAF50",
-                        color: "white",
-                        padding: "4px 8px",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: "pointer",
-                        fontSize: "12px",
-                      }}
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Create Variant - show for both contexts */}
-            <div
-              style={{
-                marginTop: "15px",
-                padding: "10px",
-                backgroundColor: "#fff3e0",
-                borderRadius: "4px",
-              }}
-            >
-              <h4 style={{ margin: "0 0 10px 0" }}>Prop Management</h4>
-              <button
-                onClick={() => {
-                  const variantName = prompt(
-                    `Create variant of "${
-                      selectedProp.customTitle || selectedProp.displayName
-                    }":`
-                  );
-                  if (variantName && onCreatePropVariant) {
-                    onCreatePropVariant(selectedProp.word, variantName);
-                  }
-                }}
-                style={{
-                  backgroundColor: "#FF9800",
-                  color: "white",
-                  padding: "6px 12px",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                }}
-              >
-                Create Variant
-              </button>
-            </div>
-
-            <div style={{ marginTop: "15px" }}>
-              {selectedProp.contextScene === null &&
-                selectedProp.scenes &&
-                selectedProp.scenes.length > 0 && (
-                  <div
-                    style={{
-                      marginBottom: "10px",
-                      padding: "8px",
-                      backgroundColor: "#f0f8ff",
-                      borderRadius: "4px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        fontWeight: "bold",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      Browse Scenes with This Prop ({selectedProp.scenes.length}{" "}
-                      scenes)
-                    </div>
-                    <button
-                      onClick={() => {
-                        // Initialize viewing scene to first scene in the list
-                        const firstSceneNumber = selectedProp.scenes[0];
-                        setSelectedProp((prev) => ({
-                          ...prev,
-                          viewingSceneNumber: firstSceneNumber,
-                        }));
-                        setShowScenePreview(true);
-                      }}
-                      style={{
-                        backgroundColor: "#2196F3",
-                        color: "white",
-                        padding: "6px 12px",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: "pointer",
-                        marginRight: "8px",
-                        fontSize: "12px",
-                      }}
-                    >
-                      View Scenes
-                    </button>
-                  </div>
-                )}
-
-              {selectedProp.contextScene !== null &&
-                !selectedProp.isNewCustomProp && (
-                  <button
-                    onClick={() => setShowScenePreview(true)}
-                    style={{
-                      backgroundColor: "#2196F3",
-                      color: "white",
-                      padding: "8px 16px",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      marginRight: "10px",
-                    }}
-                  >
-                    View Scene
-                  </button>
-                )}
-
-              {/* Save/Cancel buttons for new custom props */}
-              {selectedProp.isNewCustomProp && (
-                <div
-                  style={{ display: "flex", gap: "10px", marginBottom: "10px" }}
-                >
-                  <button
-                    onClick={() => {
-                      if (
-                        selectedProp.customTitle &&
-                        selectedProp.customTitle.trim() &&
-                        onCreateNewProp
-                      ) {
-                        onCreateNewProp(selectedProp.customTitle.trim(), null);
-                      }
-                      setSelectedProp(null);
-                    }}
-                    style={{
-                      backgroundColor: "#4CAF50",
-                      color: "white",
-                      padding: "8px 16px",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    Save Prop
-                  </button>
-                  <button
-                    onClick={() => setSelectedProp(null)}
-                    style={{
-                      backgroundColor: "#f44336",
-                      color: "white",
-                      padding: "8px 16px",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-
-              {!selectedProp.isNewCustomProp && (
-                <button
-                  onClick={() => setSelectedProp(null)}
-                  style={{
-                    backgroundColor: "#ccc",
-                    padding: "8px 16px",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Close
-                </button>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Script Popup Modal with exact Script module styling */}
-      {selectedProp &&
-        showScenePreview &&
-        (selectedProp.contextScene !== null ||
-          (selectedProp.contextScene === null &&
-            selectedProp.viewingSceneNumber)) && (
-          <>
-            <div
-              style={{
-                position: "fixed",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100%",
-                backgroundColor: "rgba(0,0,0,0.7)",
-                zIndex: 9999,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-              onClick={() => setShowScenePreview(false)}
-            >
-              <div
-                style={{
-                  backgroundColor: "white",
-                  width: "90%",
-                  maxWidth: "9.28in",
-                  height: "85%",
-                  borderRadius: "8px",
-                  overflow: "hidden",
-                  boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {(() => {
-                  // Define scene at the top so it's available to header and content
-                  let scene;
-                  if (selectedProp.contextScene !== null) {
-                    scene = scenes[selectedProp.contextScene];
-                  } else {
-                    const viewingSceneNumber =
-                      selectedProp.viewingSceneNumber || selectedProp.scenes[0];
-                    scene = scenes.find(
-                      (s) => s.sceneNumber === String(viewingSceneNumber)
-                    );
-                  }
-
-                  if (!scene) {
-                    return (
-                      <div style={{ padding: "20px" }}>Scene not found</div>
-                    );
-                  }
-
-                  return (
-                    <>
-                      {/* Header */}
-                      <div
-                        style={{
-                          backgroundColor: "#2196F3",
-                          color: "white",
-                          padding: "15px 20px",
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <div
-                          style={{
-                            margin: 0,
-                            fontSize: "12pt",
-                            fontFamily: "Courier New, monospace",
-                            fontWeight: "bold",
-                            textTransform: "uppercase",
-                            flex: 1,
-                            minWidth: 0,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {scene.sceneNumber}. {scene.heading}
-                        </div>
-
-                        {/* Navigation controls for left panel context */}
-                        {selectedProp.contextScene === null &&
-                          selectedProp.scenes &&
-                          selectedProp.scenes.length > 1 && (
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "8px",
-                              }}
-                            >
-                              <button
-                                onClick={() => {
-                                  const currentIndex =
-                                    selectedProp.scenes.indexOf(
-                                      selectedProp.viewingSceneNumber ||
-                                        selectedProp.scenes[0]
-                                    );
-                                  const prevIndex =
-                                    currentIndex > 0
-                                      ? currentIndex - 1
-                                      : selectedProp.scenes.length - 1;
-                                  setSelectedProp((prev) => ({
-                                    ...prev,
-                                    viewingSceneNumber:
-                                      selectedProp.scenes[prevIndex],
-                                  }));
-                                }}
-                                style={{
-                                  backgroundColor: "rgba(255,255,255,0.2)",
-                                  color: "white",
-                                  border: "1px solid rgba(255,255,255,0.3)",
-                                  borderRadius: "4px",
-                                  padding: "6px 12px",
-                                  cursor: "pointer",
-                                  fontSize: "12px",
-                                }}
-                              >
-                                ← Prev
-                              </button>
-                              <span
-                                style={{
-                                  fontSize: "12px",
-                                  color: "rgba(255,255,255,0.8)",
-                                }}
-                              >
-                                {(() => {
-                                  const currentIndex =
-                                    selectedProp.scenes.indexOf(
-                                      selectedProp.viewingSceneNumber ||
-                                        selectedProp.scenes[0]
-                                    );
-                                  return `${currentIndex + 1} of ${
-                                    selectedProp.scenes.length
-                                  }`;
-                                })()}
-                              </span>
-                              <button
-                                onClick={() => {
-                                  const currentIndex =
-                                    selectedProp.scenes.indexOf(
-                                      selectedProp.viewingSceneNumber ||
-                                        selectedProp.scenes[0]
-                                    );
-                                  const nextIndex =
-                                    currentIndex <
-                                    selectedProp.scenes.length - 1
-                                      ? currentIndex + 1
-                                      : 0;
-                                  setSelectedProp((prev) => ({
-                                    ...prev,
-                                    viewingSceneNumber:
-                                      selectedProp.scenes[nextIndex],
-                                  }));
-                                }}
-                                style={{
-                                  backgroundColor: "rgba(255,255,255,0.2)",
-                                  color: "white",
-                                  border: "1px solid rgba(255,255,255,0.3)",
-                                  borderRadius: "4px",
-                                  padding: "6px 12px",
-                                  cursor: "pointer",
-                                  fontSize: "12px",
-                                }}
-                              >
-                                Next →
-                              </button>
-                            </div>
-                          )}
-
-                        <button
-                          onClick={() => setShowScenePreview(false)}
-                          style={{
-                            backgroundColor: "transparent",
-                            border: "none",
-                            color: "white",
-                            fontSize: "24px",
-                            cursor: "pointer",
-                            padding: "0 5px",
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-
-                      {/* Script Content with exact Script module styling */}
-                      <div
-                        style={{
-                          flex: 1,
-                          padding: "1.5in",
-                          overflow: "auto",
-                          backgroundColor: "white",
-                          boxSizing: "border-box",
-                          textAlign: "left",
-                          fontFamily: "Courier New, monospace",
-                        }}
-                      >
-                        {/* Scene Heading */}
-                        <div style={getElementStyle("Scene Heading")}>
-                          {scene.heading}
-                        </div>
-
-                        {/* Scene Content */}
-                        <div style={{ lineHeight: "1.6", fontSize: "14px" }}>
-                          {scene.content.map((block, blockIndex) => {
-                            const renderContent = () => {
-                              const words = block.text.split(/(\s+)/);
-                              return words.map((word, wordIndex) => {
-                                if (!word.trim()) return word;
-
-                                const cleanWord = word
-                                  .toLowerCase()
-                                  .replace(/[^\w]/g, "");
-                                const stemmedWord = stemWord(cleanWord);
-
-                                const isCurrentProp =
-                                  stemmedWord === selectedProp.word;
-                                const isTagged = Object.keys(taggedItems).some(
-                                  (taggedWord) => stemmedWord === taggedWord
-                                );
-
-                                if (isCurrentProp) {
-                                  return (
-                                    <span
-                                      key={wordIndex}
-                                      style={{
-                                        backgroundColor: selectedProp.color,
-                                        color: "white",
-                                        padding: "2px 4px",
-                                        borderRadius: "3px",
-                                        fontWeight: "bold",
-                                      }}
-                                    >
-                                      {word}
-                                    </span>
-                                  );
-                                } else if (isTagged) {
-                                  const taggedItem = Object.entries(
-                                    taggedItems
-                                  ).find(([key]) => stemmedWord === key);
-                                  return (
-                                    <span
-                                      key={wordIndex}
-                                      style={{
-                                        backgroundColor:
-                                          taggedItem?.[1]?.color || "#ccc",
-                                        color: "white",
-                                        padding: "1px 2px",
-                                        borderRadius: "2px",
-                                        opacity: 0.7,
-                                      }}
-                                    >
-                                      {word}
-                                    </span>
-                                  );
-                                }
-
-                                return word;
-                              });
-                            };
-
-                            return (
-                              <div
-                                key={blockIndex}
-                                style={getElementStyle(block.type)}
-                              >
-                                {renderContent()}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-          </>
-        )}
-    </div>
-  );
-}
-
 // Characters Module - Card Grid Redesign
 function CharactersModule({
   characters,
@@ -18244,6 +18156,9 @@ function CharactersModule({
   isViewOnly,
 }) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(null);
+  const [editingCharacterNumber, setEditingCharacterNumber] = useState(null);
+  const [editingCharacterNumberValue, setEditingCharacterNumberValue] =
+    useState("");
   const [reassignTarget, setReassignTarget] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newCharacterName, setNewCharacterName] = useState("");
@@ -18801,7 +18716,90 @@ function CharactersModule({
                     color: "#2196F3",
                   }}
                 >
-                  {character.chronologicalNumber}.
+                  {editingCharacterNumber === character.name ? (
+                    <input
+                      type="number"
+                      value={editingCharacterNumberValue}
+                      autoFocus
+                      min={1}
+                      max={Object.keys(characters).length}
+                      onChange={(e) =>
+                        setEditingCharacterNumberValue(e.target.value)
+                      }
+                      onBlur={() => {
+                        const newNum = parseInt(editingCharacterNumberValue);
+                        const maxNum = Object.keys(characters).length;
+                        if (!isNaN(newNum) && newNum >= 1 && newNum <= maxNum) {
+                          const current = character.chronologicalNumber;
+                          const updated = { ...characters };
+                          Object.keys(updated).forEach((name) => {
+                            if (name === character.name) return;
+                            const c = updated[name];
+                            if (
+                              newNum < current &&
+                              c.chronologicalNumber >= newNum &&
+                              c.chronologicalNumber < current
+                            ) {
+                              updated[name] = {
+                                ...c,
+                                chronologicalNumber: c.chronologicalNumber + 1,
+                              };
+                            } else if (
+                              newNum > current &&
+                              c.chronologicalNumber <= newNum &&
+                              c.chronologicalNumber > current
+                            ) {
+                              updated[name] = {
+                                ...c,
+                                chronologicalNumber: c.chronologicalNumber - 1,
+                              };
+                            }
+                          });
+                          updated[character.name] = {
+                            ...updated[character.name],
+                            chronologicalNumber: newNum,
+                          };
+                          setCharacters(updated);
+                          if (onUpdateCharacters) onUpdateCharacters(updated);
+                        }
+                        setEditingCharacterNumber(null);
+                        setEditingCharacterNumberValue("");
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.target.blur();
+                        if (e.key === "Escape") {
+                          setEditingCharacterNumber(null);
+                          setEditingCharacterNumberValue("");
+                        }
+                      }}
+                      style={{
+                        width: "48px",
+                        fontSize: "14px",
+                        fontWeight: "bold",
+                        color: "#2196F3",
+                        border: "1px solid #2196F3",
+                        borderRadius: "3px",
+                        padding: "1px 4px",
+                        textAlign: "center",
+                      }}
+                    />
+                  ) : (
+                    <span
+                      onClick={() => {
+                        setEditingCharacterNumber(character.name);
+                        setEditingCharacterNumberValue(
+                          String(character.chronologicalNumber)
+                        );
+                      }}
+                      title="Click to edit number"
+                      style={{
+                        cursor: "pointer",
+                        borderBottom: "1px dashed #2196F3",
+                      }}
+                    >
+                      {character.chronologicalNumber}.
+                    </span>
+                  )}
                 </div>
 
                 {/* Actor Photo */}
@@ -21316,6 +21314,11 @@ function CastCrewModule({
     let displayValue = subField ? person[field]?.[subField] : person[field];
     if (!displayValue) displayValue = "";
 
+    // Format phone number for display
+    if (field === "phone" && displayValue) {
+      displayValue = formatPhoneNumber(displayValue, person.isInternational);
+    }
+
     if (isEditing) {
       if (options) {
         return (
@@ -22157,11 +22160,20 @@ function CastCrewModule({
     );
   };
 
-  // Helper function to extract last name
+  // Helper function to extract last name for sorting
   const getLastName = (displayName) => {
     if (!displayName) return "";
     const parts = displayName.trim().split(/\s+/);
+    // If only one word, sort by that word
+    if (parts.length === 1) return parts[0].toLowerCase();
+    // Last word is last name
     return parts[parts.length - 1].toLowerCase();
+  };
+
+  // Helper to extract first name for tiebreaking
+  const getFirstName = (displayName) => {
+    if (!displayName) return "";
+    return displayName.trim().split(/\s+/)[0].toLowerCase();
   };
 
   // Fixed the grouped constant with last name sorting
@@ -22173,19 +22185,14 @@ function CastCrewModule({
         if (a.id === newPersonId) return -1;
         if (b.id === newPersonId) return 1;
 
-        // Sort by character chronological number (same as Characters tab)
-        const characterA = moduleCharacters[a.character];
-        const characterB = moduleCharacters[b.character];
-
-        const numberA = characterA?.chronologicalNumber || 999;
-        const numberB = characterB?.chronologicalNumber || 999;
-
-        if (numberA !== numberB) {
-          return numberA - numberB;
-        }
-
-        // Fallback to alphabetical by character name if numbers are same
-        return (a.character || "").localeCompare(b.character || "");
+        // Sort by actor last name, first name as tiebreaker
+        const lastNameA = getLastName(a.displayName);
+        const lastNameB = getLastName(b.displayName);
+        const lastCmp = lastNameA.localeCompare(lastNameB);
+        if (lastCmp !== 0) return lastCmp;
+        return getFirstName(a.displayName).localeCompare(
+          getFirstName(b.displayName)
+        );
       }),
     crew: castCrew
       .filter((p) => p.type === "crew")
@@ -22194,10 +22201,14 @@ function CastCrewModule({
         if (a.id === newPersonId) return -1;
         if (b.id === newPersonId) return 1;
 
-        // Sort by last name alphabetically
+        // Sort by last name, then first name as tiebreaker
         const lastNameA = getLastName(a.displayName);
         const lastNameB = getLastName(b.displayName);
-        return lastNameA.localeCompare(lastNameB);
+        const lastCmp = lastNameA.localeCompare(lastNameB);
+        if (lastCmp !== 0) return lastCmp;
+        return getFirstName(a.displayName).localeCompare(
+          getFirstName(b.displayName)
+        );
       }),
     misc: castCrew
       .filter((p) => p.type === "misc")
@@ -22206,10 +22217,14 @@ function CastCrewModule({
         if (a.id === newPersonId) return -1;
         if (b.id === newPersonId) return 1;
 
-        // Sort by last name alphabetically
+        // Sort by last name, then first name as tiebreaker
         const lastNameA = getLastName(a.displayName);
         const lastNameB = getLastName(b.displayName);
-        return lastNameA.localeCompare(lastNameB);
+        const lastCmp = lastNameA.localeCompare(lastNameB);
+        if (lastCmp !== 0) return lastCmp;
+        return getFirstName(a.displayName).localeCompare(
+          getFirstName(b.displayName)
+        );
       }),
   };
 
@@ -22436,11 +22451,20 @@ function CastCrewModule({
               onClick={(e) => e.stopPropagation()}
             >
               <h3 style={{ marginTop: 0, marginBottom: "15px" }}>
-                {showDatePicker.endsWith("-unavailable")
-                  ? "Add Unavailable Date(s)"
-                  : showDatePicker.endsWith("-booked")
-                  ? "Add Booked Date(s)"
-                  : "Add Available Date(s)"}
+                {(() => {
+                  const personId = showDatePicker
+                    .replace(/-unavailable$/, "")
+                    .replace(/-booked$/, "")
+                    .replace(/-availability$/, "");
+                  const person = castCrew.find((p) => p.id === personId);
+                  const personName = person?.displayName || "";
+                  const label = showDatePicker.endsWith("-unavailable")
+                    ? "Unavailable Dates"
+                    : showDatePicker.endsWith("-booked")
+                    ? "Booked Dates"
+                    : "Availability";
+                  return personName ? `${personName} — ${label}` : label;
+                })()}
               </h3>
 
               {/* Instructions */}
@@ -22456,10 +22480,8 @@ function CastCrewModule({
               >
                 <strong>Instructions:</strong>{" "}
                 {showDatePicker.endsWith("-availability")
-                  ? "Click dates to cycle: White → Green (Available) → Red (Unavailable) → White"
-                  : "Double-click any date to add/remove it."}{" "}
-                <br />
-                Green = Available, Red = Unavailable, Yellow = Booked.
+                  ? "Click a date to cycle availability: White → Green (Available) → Red (Unavailable) → White."
+                  : "Click a date to book it. Click again to unbook. Yellow = Booked, White = Not booked."}
               </div>
 
               {/* Custom Calendar */}
@@ -22606,25 +22628,66 @@ function CastCrewModule({
                     >
                       Character *
                     </label>
-                    <input
-                      type="text"
-                      value={newPersonForm.character}
-                      onChange={(e) =>
-                        setNewPersonForm((prev) => ({
-                          ...prev,
-                          character: e.target.value,
-                        }))
-                      }
-                      placeholder="Enter character name"
-                      style={{
-                        width: "100%",
-                        padding: "8px 12px",
-                        border: "1px solid #ccc",
-                        borderRadius: "4px",
-                        fontSize: "14px",
-                        boxSizing: "border-box",
-                      }}
-                    />
+                    {moduleCharacters &&
+                    Object.keys(moduleCharacters).length > 0 ? (
+                      <select
+                        value={newPersonForm.character}
+                        onChange={(e) =>
+                          setNewPersonForm((prev) => ({
+                            ...prev,
+                            character: e.target.value,
+                          }))
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          border: "1px solid #ccc",
+                          borderRadius: "4px",
+                          fontSize: "14px",
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        <option value="">Select a character...</option>
+                        {Object.values(moduleCharacters)
+                          .sort(
+                            (a, b) =>
+                              (a.chronologicalNumber || 999) -
+                              (b.chronologicalNumber || 999)
+                          )
+                          .filter(
+                            (char) =>
+                              !castCrew.some(
+                                (p) =>
+                                  p.type === "cast" && p.character === char.name
+                              )
+                          )
+                          .map((char) => (
+                            <option key={char.name} value={char.name}>
+                              {char.chronologicalNumber}. {char.name}
+                            </option>
+                          ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={newPersonForm.character}
+                        onChange={(e) =>
+                          setNewPersonForm((prev) => ({
+                            ...prev,
+                            character: e.target.value,
+                          }))
+                        }
+                        placeholder="Enter character name (parse script first to auto-populate)"
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          border: "1px solid #ccc",
+                          borderRadius: "4px",
+                          fontSize: "14px",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    )}
                   </>
                 ) : (
                   <>
@@ -26807,26 +26870,35 @@ function WardrobeModule({
     );
     setCastCrew(updated);
     const updatedPerson = updated.find((p) => p.id === actor.id);
-    database.updateSingleCastCrewPerson(selectedProject, updatedPerson)
+    database
+      .updateSingleCastCrewPerson(selectedProject, updatedPerson)
       .catch((e) => console.error("Sizing save failed:", e));
     setEditingSizingField(null);
     setSizingEditValue("");
   };
   const [showSceneAssignPopup, setShowSceneAssignPopup] = React.useState(null);
-  const [showSceneScriptViewer, setShowSceneScriptViewer] = React.useState(false);
+  const [showSceneScriptViewer, setShowSceneScriptViewer] =
+    React.useState(false);
   const [sceneScriptViewerIndex, setSceneScriptViewerIndex] = React.useState(0);
-  const [wardrobeScriptFullMode, setWardrobeScriptFullMode] = React.useState(false);
-  const [wardrobeScriptFullIndex, setWardrobeScriptFullIndex] = React.useState(0);
+  const [wardrobeScriptFullMode, setWardrobeScriptFullMode] =
+    React.useState(false);
+  const [wardrobeScriptFullIndex, setWardrobeScriptFullIndex] =
+    React.useState(0);
 
   // Build compact range string from integer scenes array
   const buildSceneRanges = (arr) => {
     if (!arr || arr.length === 0) return "";
-    const sorted = [...arr].map(Number).filter((n) => !isNaN(n)).sort((a, b) => a - b);
+    const sorted = [...arr]
+      .map(Number)
+      .filter((n) => !isNaN(n))
+      .sort((a, b) => a - b);
     const ranges = [];
-    let start = sorted[0], end = sorted[0];
+    let start = sorted[0],
+      end = sorted[0];
     for (let i = 1; i <= sorted.length; i++) {
-      if (sorted[i] === end + 1) { end = sorted[i]; }
-      else {
+      if (sorted[i] === end + 1) {
+        end = sorted[i];
+      } else {
         ranges.push(start === end ? `${start}` : `${start}-${end}`);
         start = end = sorted[i];
       }
@@ -26847,7 +26919,11 @@ function WardrobeModule({
             const newScenes = cur.includes(sceneNum)
               ? cur.filter((s) => s !== sceneNum)
               : [...cur, sceneNum].sort((a, b) => a - b);
-            return { ...it, scenes: newScenes, sceneRanges: buildSceneRanges(newScenes) };
+            return {
+              ...it,
+              scenes: newScenes,
+              sceneRanges: buildSceneRanges(newScenes),
+            };
           }),
         };
       });
@@ -26858,14 +26934,31 @@ function WardrobeModule({
 
   // Script element styles for scene viewer
   const wardrobeGetElementStyle = (type) => {
-    const base = { fontFamily: "Courier New, monospace", fontSize: "12pt", lineHeight: "12pt", marginBottom: "12pt", color: "#000" };
+    const base = {
+      fontFamily: "Courier New, monospace",
+      fontSize: "12pt",
+      lineHeight: "12pt",
+      marginBottom: "12pt",
+      color: "#000",
+    };
     switch (type) {
-      case "Character": return { ...base, marginLeft: "200px", textTransform: "uppercase" };
-      case "Dialogue": return { ...base, marginLeft: "100px", marginRight: "100px" };
-      case "Parenthetical": return { ...base, marginLeft: "150px", fontStyle: "italic" };
-      case "Action": return { ...base, marginLeft: "0" };
-      case "Scene Heading": return { ...base, textTransform: "uppercase", fontWeight: "bold", marginTop: "24pt" };
-      default: return base;
+      case "Character":
+        return { ...base, marginLeft: "200px", textTransform: "uppercase" };
+      case "Dialogue":
+        return { ...base, marginLeft: "100px", marginRight: "100px" };
+      case "Parenthetical":
+        return { ...base, marginLeft: "150px", fontStyle: "italic" };
+      case "Action":
+        return { ...base, marginLeft: "0" };
+      case "Scene Heading":
+        return {
+          ...base,
+          textTransform: "uppercase",
+          fontWeight: "bold",
+          marginTop: "24pt",
+        };
+      default:
+        return base;
     }
   };
 
@@ -27377,21 +27470,30 @@ function WardrobeModule({
             {selectedCharacter &&
               (() => {
                 const charScenes = (
-                  (characters && characters[selectedCharacter]?.scenes) || []
+                  (characters && characters[selectedCharacter]?.scenes) ||
+                  []
                 )
                   .map((s) => parseInt(s))
                   .filter((n) => !isNaN(n))
                   .sort((a, b) => a - b);
 
-                if (charScenes.length === 0) return (
-                  <div style={{
-                    backgroundColor: "#f5f5f5", border: "1px solid #e0e0e0",
-                    borderRadius: "4px", padding: "8px 12px", marginBottom: "14px",
-                    fontSize: "12px", color: "#aaa", fontStyle: "italic",
-                  }}>
-                    📋 {selectedCharacter} — no scenes detected in script yet
-                  </div>
-                );
+                if (charScenes.length === 0)
+                  return (
+                    <div
+                      style={{
+                        backgroundColor: "#f5f5f5",
+                        border: "1px solid #e0e0e0",
+                        borderRadius: "4px",
+                        padding: "8px 12px",
+                        marginBottom: "14px",
+                        fontSize: "12px",
+                        color: "#aaa",
+                        fontStyle: "italic",
+                      }}
+                    >
+                      📋 {selectedCharacter} — no scenes detected in script yet
+                    </div>
+                  );
 
                 // Build compact range string e.g. "1-3, 5, 7-9"
                 const ranges = [];
@@ -27488,69 +27590,117 @@ function WardrobeModule({
                 );
               })()}
 
-              {/* Sizing Row */}
-            {selectedCharacter && (() => {
-              const actor = castCrew && castCrew.find(
-                (p) => p.type === "cast" && p.character === selectedCharacter
-              );
-              const sizing = actor?.wardrobe || {};
-              return (
-                  <div style={{
-                    display: "flex", alignItems: "center", flexWrap: "wrap",
-                    gap: "6px", backgroundColor: "#f0f4ff", border: "1px solid #c5d0e8",
-                    borderRadius: "4px", padding: "7px 12px", marginBottom: "14px",
-                    fontSize: "12px",
-                  }}>
-                    <span style={{ fontWeight: "bold", color: "#3a4a7a", marginRight: "4px", whiteSpace: "nowrap" }}>
+            {/* Sizing Row */}
+            {selectedCharacter &&
+              (() => {
+                const actor =
+                  castCrew &&
+                  castCrew.find(
+                    (p) =>
+                      p.type === "cast" && p.character === selectedCharacter
+                  );
+                const sizing = actor?.wardrobe || {};
+                return (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      gap: "6px",
+                      backgroundColor: "#f0f4ff",
+                      border: "1px solid #c5d0e8",
+                      borderRadius: "4px",
+                      padding: "7px 12px",
+                      marginBottom: "14px",
+                      fontSize: "12px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: "bold",
+                        color: "#3a4a7a",
+                        marginRight: "4px",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       👔 {selectedCharacter} sizing:
                     </span>
                     {!actor ? (
                       <span style={{ color: "#aaa", fontStyle: "italic" }}>
-                        No cast member assigned — assign an actor in Cast &amp; Crew to add sizing
+                        No cast member assigned — assign an actor in Cast &amp;
+                        Crew to add sizing
                       </span>
                     ) : (
                       SIZING_FIELDS.map(({ key, label }) => (
-                        <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: "3px", whiteSpace: "nowrap" }}>
+                        <span
+                          key={key}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "3px",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
                           <span style={{ color: "#666" }}>{label}:</span>
                           {editingSizingField === key ? (
                             <input
                               autoFocus
                               value={sizingEditValue}
-                              onChange={(e) => setSizingEditValue(e.target.value)}
+                              onChange={(e) =>
+                                setSizingEditValue(e.target.value)
+                              }
                               onBlur={() => saveSizing(key, sizingEditValue)}
                               onKeyDown={(e) => {
-                                if (e.key === "Enter") saveSizing(key, sizingEditValue);
-                                if (e.key === "Escape") { setEditingSizingField(null); setSizingEditValue(""); }
+                                if (e.key === "Enter")
+                                  saveSizing(key, sizingEditValue);
+                                if (e.key === "Escape") {
+                                  setEditingSizingField(null);
+                                  setSizingEditValue("");
+                                }
                               }}
                               style={{
-                                width: "50px", fontSize: "11px", padding: "1px 4px",
-                                border: "1px solid #2196F3", borderRadius: "3px",
+                                width: "50px",
+                                fontSize: "11px",
+                                padding: "1px 4px",
+                                border: "1px solid #2196F3",
+                                borderRadius: "3px",
                               }}
                             />
                           ) : (
                             <span
-                              onClick={() => { setEditingSizingField(key); setSizingEditValue(sizing[key] || ""); }}
+                              onClick={() => {
+                                setEditingSizingField(key);
+                                setSizingEditValue(sizing[key] || "");
+                              }}
                               title="Click to edit"
                               style={{
-                                cursor: "pointer", fontWeight: "600", color: sizing[key] ? "#1a237e" : "#bbb",
+                                cursor: "pointer",
+                                fontWeight: "600",
+                                color: sizing[key] ? "#1a237e" : "#bbb",
                                 fontStyle: sizing[key] ? "normal" : "italic",
-                                borderBottom: "1px dashed #aaa", paddingBottom: "1px",
-                                minWidth: "24px", display: "inline-block",
+                                borderBottom: "1px dashed #aaa",
+                                paddingBottom: "1px",
+                                minWidth: "24px",
+                                display: "inline-block",
                               }}
                             >
                               {sizing[key] || "—"}
                             </span>
                           )}
-                          {key !== "waist" && <span style={{ color: "#ddd", marginLeft: "3px" }}>·</span>}
+                          {key !== "waist" && (
+                            <span style={{ color: "#ddd", marginLeft: "3px" }}>
+                              ·
+                            </span>
+                          )}
                         </span>
                       ))
                     )}
                   </div>
                 );
               })()}
-  
-              {/* Wardrobe Table */}
-              {selectedCharacter && currentItems.length > 0 && (
+
+            {/* Wardrobe Table */}
+            {selectedCharacter && currentItems.length > 0 && (
               <div
                 style={{
                   border: "1px solid #ccc",
@@ -27668,7 +27818,13 @@ function WardrobeModule({
                         </div>
 
                         {/* Scene Assignment Cell */}
-                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "4px",
+                          }}
+                        >
                           <button
                             onClick={() => setShowSceneAssignPopup(item.id)}
                             style={{
@@ -27686,7 +27842,13 @@ function WardrobeModule({
                             ＋ Assign Scenes
                           </button>
                           {(item.scenes || []).length > 0 ? (
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: "2px" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                gap: "2px",
+                              }}
+                            >
                               {[...(item.scenes || [])]
                                 .map(Number)
                                 .filter((n) => !isNaN(n))
@@ -27709,7 +27871,13 @@ function WardrobeModule({
                                 ))}
                             </div>
                           ) : (
-                            <span style={{ color: "#bbb", fontSize: "10px", fontStyle: "italic" }}>
+                            <span
+                              style={{
+                                color: "#bbb",
+                                fontSize: "10px",
+                                fontStyle: "italic",
+                              }}
+                            >
                               No scenes
                             </span>
                           )}
@@ -28820,8 +28988,7 @@ function WardrobeModule({
                           : 1,
                     }}
                   >
-                    ›
-                    ›
+                    › ›
                   </button>
                 </>
               )}
@@ -28829,188 +28996,533 @@ function WardrobeModule({
           </div>
         )}
 
-      {/* Scene Assignment Popup */}
-      {showSceneAssignPopup &&
-        (() => {
-          const popupItem = (() => {
-            for (const char of wardrobeItems) {
-              const found = char.items && char.items.find((it) => it.id === showSceneAssignPopup);
-              if (found) return found;
-            }
-            return null;
-          })();
-          if (!popupItem) return null;
-          const charData = characters && characters[selectedCharacter];
-          const charScenes = charData
-            ? [...(charData.scenes || [])].map(Number).filter((n) => !isNaN(n)).sort((a, b) => a - b)
-            : [];
-          const assignedScenes = (popupItem.scenes || []).map(Number).sort((a, b) => a - b);
-          return (
-            <>
-              <div
-                style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1000 }}
-                onClick={() => setShowSceneAssignPopup(null)}
-              />
-              <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", backgroundColor: "white", borderRadius: "8px", padding: 0, zIndex: 1001, width: "620px", maxWidth: "90vw", maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
-                <div style={{ padding: "15px 20px", backgroundColor: "#4CAF50", color: "white", borderRadius: "8px 8px 0 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ fontWeight: "bold", fontSize: "14px" }}>
-                    Assign Scenes — Look {popupItem.number} ({selectedCharacter})
-                  </div>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                  <button
-                      onClick={() => { setSceneScriptViewerIndex(0); setShowSceneScriptViewer(true); }}
-                      disabled={charScenes.length === 0}
-                      style={{
-                        backgroundColor: charScenes.length === 0 ? "rgba(255,255,255,0.4)" : "white",
-                        color: charScenes.length === 0 ? "rgba(76,175,80,0.5)" : "#4CAF50",
-                        border: "none", padding: "6px 12px", borderRadius: "3px",
-                        cursor: charScenes.length === 0 ? "not-allowed" : "pointer",
-                        fontWeight: "bold",
-                      }}
-                      title={charScenes.length === 0 ? "No scenes detected for this character" : "Browse all scenes this character appears in"}
-                    >
-                      📄 View Script
-                    </button>
-                    <button
-                      onClick={() => setShowSceneAssignPopup(null)}
-                      style={{ backgroundColor: "#f44336", color: "white", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: "pointer", fontWeight: "bold" }}
-                    >
-                      ✕ Close
-                    </button>
-                  </div>
-                </div>
-                <div style={{ padding: "8px 20px", backgroundColor: "#f5f5f5", borderBottom: "1px solid #ddd", fontSize: "12px", color: "#555" }}>
-                {assignedScenes.length} scene{assignedScenes.length !== 1 ? "s" : ""} assigned
-                  · Click to toggle · 📄 browses all {charScenes.length} character scenes
-                </div>
-                <div style={{ padding: "16px 20px", overflowY: "auto", flex: 1 }}>
-                  {charScenes.length === 0 ? (
-                    <div style={{ color: "#aaa", fontStyle: "italic", textAlign: "center", padding: "20px 0" }}>
-                      No scenes found for {selectedCharacter}. Parse your script first.
+        {/* Scene Assignment Popup */}
+        {showSceneAssignPopup &&
+          (() => {
+            const popupItem = (() => {
+              for (const char of wardrobeItems) {
+                const found =
+                  char.items &&
+                  char.items.find((it) => it.id === showSceneAssignPopup);
+                if (found) return found;
+              }
+              return null;
+            })();
+            if (!popupItem) return null;
+            const charData = characters && characters[selectedCharacter];
+            const charScenes = charData
+              ? [...(charData.scenes || [])]
+                  .map(Number)
+                  .filter((n) => !isNaN(n))
+                  .sort((a, b) => a - b)
+              : [];
+            const assignedScenes = (popupItem.scenes || [])
+              .map(Number)
+              .sort((a, b) => a - b);
+            return (
+              <>
+                <div
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    backgroundColor: "rgba(0,0,0,0.5)",
+                    zIndex: 1000,
+                  }}
+                  onClick={() => setShowSceneAssignPopup(null)}
+                />
+                <div
+                  style={{
+                    position: "fixed",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%,-50%)",
+                    backgroundColor: "white",
+                    borderRadius: "8px",
+                    padding: 0,
+                    zIndex: 1001,
+                    width: "620px",
+                    maxWidth: "90vw",
+                    maxHeight: "80vh",
+                    display: "flex",
+                    flexDirection: "column",
+                    boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "15px 20px",
+                      backgroundColor: "#4CAF50",
+                      color: "white",
+                      borderRadius: "8px 8px 0 0",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div style={{ fontWeight: "bold", fontSize: "14px" }}>
+                      Assign Scenes — Look {popupItem.number} (
+                      {selectedCharacter})
                     </div>
-                  ) : (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                      {charScenes.map((sceneNum) => {
-                        const isAssigned = assignedScenes.includes(sceneNum);
-                        const sceneData = scenes && scenes.find((s) => parseInt(s.sceneNumber) === sceneNum);
-                        return (
-                          <button
-                            key={sceneNum}
-                            onClick={() => toggleSceneForItem(popupItem.id, sceneNum)}
-                            title={sceneData?.description || sceneData?.metadata?.location || ""}
-                            style={{
-                              padding: "6px 14px", borderRadius: "4px",
-                              border: isAssigned ? "1px solid #388E3C" : "1px solid #bdbdbd",
-                              backgroundColor: isAssigned ? "#4CAF50" : "#f5f5f5",
-                              color: isAssigned ? "white" : "#444",
-                              fontWeight: isAssigned ? "bold" : "normal",
-                              cursor: "pointer", fontSize: "14px", minWidth: "44px",
-                            }}
-                          >
-                            {sceneNum}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
-          );
-        })()}
-
-      {/* Scene Script Viewer — stacked, shows assigned scenes with prev/next */}
-      {showSceneScriptViewer &&
-        (() => {
-          const popupItem = (() => {
-            for (const char of wardrobeItems) {
-              const found = char.items && char.items.find((it) => it.id === showSceneAssignPopup);
-              if (found) return found;
-            }
-            return null;
-          })();
-          if (!popupItem) return null;
-          // All scenes the character appears in
-          const charData = characters && characters[selectedCharacter];
-          const allCharScenes = charData
-            ? [...(charData.scenes || [])].map(Number).filter((n) => !isNaN(n)).sort((a, b) => a - b)
-            : [];
-          const allCharSceneData = allCharScenes
-            .map((n) => scenes && scenes.find((s) => parseInt(s.sceneNumber) === n))
-            .filter(Boolean);
-          if (allCharSceneData.length === 0) return null;
-          const assignedSceneNums = (popupItem.scenes || []).map(Number);
-          const filteredIdx = Math.min(sceneScriptViewerIndex, allCharSceneData.length - 1);
-          const activeWardrobeIdx = wardrobeScriptFullMode ? Math.min(wardrobeScriptFullIndex, scenes.length - 1) : filteredIdx;
-          const currentScene = wardrobeScriptFullMode ? (scenes[activeWardrobeIdx] || allCharSceneData[filteredIdx]) : allCharSceneData[filteredIdx];
-          const isAssigned = assignedSceneNums.includes(parseInt(currentScene.sceneNumber));
-          return (
-            <>
-              <div
-                style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.4)", zIndex: 1100 }}
-                onClick={() => { setShowSceneScriptViewer(false); setWardrobeScriptFullMode(false); }}
-              />
-              <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", backgroundColor: "white", border: "2px solid #4CAF50", borderRadius: "8px", padding: 0, zIndex: 1101, width: "900px", maxWidth: "90vw", height: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
-                <div style={{ padding: "12px 20px", backgroundColor: "#4CAF50", color: "white", borderRadius: "8px 8px 0 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <button
-                      onClick={() => wardrobeScriptFullMode ? setWardrobeScriptFullIndex(Math.max(0, activeWardrobeIdx - 1)) : setSceneScriptViewerIndex(Math.max(0, filteredIdx - 1))}
-                      disabled={wardrobeScriptFullMode ? activeWardrobeIdx === 0 : filteredIdx === 0}
-                      style={{ backgroundColor: (wardrobeScriptFullMode ? activeWardrobeIdx === 0 : filteredIdx === 0) ? "#ccc" : "white", color: (wardrobeScriptFullMode ? activeWardrobeIdx === 0 : filteredIdx === 0) ? "#888" : "#4CAF50", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: (wardrobeScriptFullMode ? activeWardrobeIdx === 0 : filteredIdx === 0) ? "not-allowed" : "pointer", fontWeight: "bold" }}
-                    >← Prev</button>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}>
-                      <div style={{ fontWeight: "bold" }}>
-                        Scene {currentScene.sceneNumber} ({wardrobeScriptFullMode ? `${activeWardrobeIdx + 1} of ${scenes.length}` : `${filteredIdx + 1} of ${allCharSceneData.length}`})
-                      </div>
-                      <div style={{ fontSize: "10px", fontWeight: "bold", padding: "1px 8px", borderRadius: "10px", backgroundColor: isAssigned ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.2)", color: "white" }}>
-                        {isAssigned ? "✓ In this look" : "○ Not in this look"}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => wardrobeScriptFullMode ? setWardrobeScriptFullIndex(Math.min(scenes.length - 1, activeWardrobeIdx + 1)) : setSceneScriptViewerIndex(Math.min(allCharSceneData.length - 1, filteredIdx + 1))}
-                      disabled={wardrobeScriptFullMode ? activeWardrobeIdx === scenes.length - 1 : filteredIdx === allCharSceneData.length - 1}
-                      style={{ backgroundColor: (wardrobeScriptFullMode ? activeWardrobeIdx === scenes.length - 1 : filteredIdx === allCharSceneData.length - 1) ? "#ccc" : "white", color: (wardrobeScriptFullMode ? activeWardrobeIdx === scenes.length - 1 : filteredIdx === allCharSceneData.length - 1) ? "#888" : "#4CAF50", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: (wardrobeScriptFullMode ? activeWardrobeIdx === scenes.length - 1 : filteredIdx === allCharSceneData.length - 1) ? "not-allowed" : "pointer", fontWeight: "bold" }}
-                    >Next →</button>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: "5px", cursor: "pointer", fontSize: "12px", userSelect: "none", color: "white" }}>
-                      <input
-                        type="checkbox"
-                        checked={wardrobeScriptFullMode}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            const fi = (scenes || []).findIndex(s => String(s.sceneNumber) === String(currentScene.sceneNumber));
-                            setWardrobeScriptFullIndex(fi >= 0 ? fi : 0);
-                          } else {
-                            const curNum = scenes[activeWardrobeIdx]?.sceneNumber;
-                            const fi = allCharSceneData.findIndex(s => String(s.sceneNumber) === String(curNum));
-                            setSceneScriptViewerIndex(fi >= 0 ? fi : 0);
-                          }
-                          setWardrobeScriptFullMode(e.target.checked);
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button
+                        onClick={() => {
+                          setSceneScriptViewerIndex(0);
+                          setShowSceneScriptViewer(true);
                         }}
-                        style={{ cursor: "pointer", accentColor: "white" }}
-                      />
-                      Full Script
-                    </label>
-                    <button onClick={() => { setShowSceneScriptViewer(false); setWardrobeScriptFullMode(false); }} style={{ backgroundColor: "#f44336", color: "white", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: "pointer", fontWeight: "bold" }}>✕ Close (ESC)</button>
+                        disabled={charScenes.length === 0}
+                        style={{
+                          backgroundColor:
+                            charScenes.length === 0
+                              ? "rgba(255,255,255,0.4)"
+                              : "white",
+                          color:
+                            charScenes.length === 0
+                              ? "rgba(76,175,80,0.5)"
+                              : "#4CAF50",
+                          border: "none",
+                          padding: "6px 12px",
+                          borderRadius: "3px",
+                          cursor:
+                            charScenes.length === 0 ? "not-allowed" : "pointer",
+                          fontWeight: "bold",
+                        }}
+                        title={
+                          charScenes.length === 0
+                            ? "No scenes detected for this character"
+                            : "Browse all scenes this character appears in"
+                        }
+                      >
+                        📄 View Script
+                      </button>
+                      <button
+                        onClick={() => setShowSceneAssignPopup(null)}
+                        style={{
+                          backgroundColor: "#f44336",
+                          color: "white",
+                          border: "none",
+                          padding: "6px 12px",
+                          borderRadius: "3px",
+                          cursor: "pointer",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        ✕ Close
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      padding: "8px 20px",
+                      backgroundColor: "#f5f5f5",
+                      borderBottom: "1px solid #ddd",
+                      fontSize: "12px",
+                      color: "#555",
+                    }}
+                  >
+                    {assignedScenes.length} scene
+                    {assignedScenes.length !== 1 ? "s" : ""} assigned · Click to
+                    toggle · 📄 browses all {charScenes.length} character scenes
+                  </div>
+                  <div
+                    style={{ padding: "16px 20px", overflowY: "auto", flex: 1 }}
+                  >
+                    {charScenes.length === 0 ? (
+                      <div
+                        style={{
+                          color: "#aaa",
+                          fontStyle: "italic",
+                          textAlign: "center",
+                          padding: "20px 0",
+                        }}
+                      >
+                        No scenes found for {selectedCharacter}. Parse your
+                        script first.
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: "8px",
+                        }}
+                      >
+                        {charScenes.map((sceneNum) => {
+                          const isAssigned = assignedScenes.includes(sceneNum);
+                          const sceneData =
+                            scenes &&
+                            scenes.find(
+                              (s) => parseInt(s.sceneNumber) === sceneNum
+                            );
+                          return (
+                            <button
+                              key={sceneNum}
+                              onClick={() =>
+                                toggleSceneForItem(popupItem.id, sceneNum)
+                              }
+                              title={
+                                sceneData?.description ||
+                                sceneData?.metadata?.location ||
+                                ""
+                              }
+                              style={{
+                                padding: "6px 14px",
+                                borderRadius: "4px",
+                                border: isAssigned
+                                  ? "1px solid #388E3C"
+                                  : "1px solid #bdbdbd",
+                                backgroundColor: isAssigned
+                                  ? "#4CAF50"
+                                  : "#f5f5f5",
+                                color: isAssigned ? "white" : "#444",
+                                fontWeight: isAssigned ? "bold" : "normal",
+                                cursor: "pointer",
+                                fontSize: "14px",
+                                minWidth: "44px",
+                              }}
+                            >
+                              {sceneNum}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div style={{ padding: "12px 20px", backgroundColor: "#f5f5f5", borderBottom: "1px solid #ddd", fontFamily: "Courier New, monospace", fontSize: "12pt", fontWeight: "bold", textTransform: "uppercase" }}>
-                  {currentScene.heading}
-                </div>
-                <div style={{ flex: 1, padding: "1.5in", overflow: "auto", backgroundColor: "white", boxSizing: "border-box", fontFamily: "Courier New, monospace" }}>
-                  <div style={wardrobeGetElementStyle("Scene Heading")}>{currentScene.heading}</div>
-                  <div style={{ lineHeight: "1.6", fontSize: "14px" }}>
-                    {(currentScene.content || []).map((block, i) => (
-                      <div key={i} style={wardrobeGetElementStyle(block.type)}>{block.text}</div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </>
-          );
-        })()}
+              </>
+            );
+          })()}
 
+        {/* Scene Script Viewer — stacked, shows assigned scenes with prev/next */}
+        {showSceneScriptViewer &&
+          (() => {
+            const popupItem = (() => {
+              for (const char of wardrobeItems) {
+                const found =
+                  char.items &&
+                  char.items.find((it) => it.id === showSceneAssignPopup);
+                if (found) return found;
+              }
+              return null;
+            })();
+            if (!popupItem) return null;
+            // All scenes the character appears in
+            const charData = characters && characters[selectedCharacter];
+            const allCharScenes = charData
+              ? [...(charData.scenes || [])]
+                  .map(Number)
+                  .filter((n) => !isNaN(n))
+                  .sort((a, b) => a - b)
+              : [];
+            const allCharSceneData = allCharScenes
+              .map(
+                (n) =>
+                  scenes && scenes.find((s) => parseInt(s.sceneNumber) === n)
+              )
+              .filter(Boolean);
+            if (allCharSceneData.length === 0) return null;
+            const assignedSceneNums = (popupItem.scenes || []).map(Number);
+            const filteredIdx = Math.min(
+              sceneScriptViewerIndex,
+              allCharSceneData.length - 1
+            );
+            const activeWardrobeIdx = wardrobeScriptFullMode
+              ? Math.min(wardrobeScriptFullIndex, scenes.length - 1)
+              : filteredIdx;
+            const currentScene = wardrobeScriptFullMode
+              ? scenes[activeWardrobeIdx] || allCharSceneData[filteredIdx]
+              : allCharSceneData[filteredIdx];
+            const isAssigned = assignedSceneNums.includes(
+              parseInt(currentScene.sceneNumber)
+            );
+            return (
+              <>
+                <div
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    backgroundColor: "rgba(0,0,0,0.4)",
+                    zIndex: 1100,
+                  }}
+                  onClick={() => {
+                    setShowSceneScriptViewer(false);
+                    setWardrobeScriptFullMode(false);
+                  }}
+                />
+                <div
+                  style={{
+                    position: "fixed",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%,-50%)",
+                    backgroundColor: "white",
+                    border: "2px solid #4CAF50",
+                    borderRadius: "8px",
+                    padding: 0,
+                    zIndex: 1101,
+                    width: "900px",
+                    maxWidth: "90vw",
+                    height: "80vh",
+                    display: "flex",
+                    flexDirection: "column",
+                    boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "12px 20px",
+                      backgroundColor: "#4CAF50",
+                      color: "white",
+                      borderRadius: "8px 8px 0 0",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                      }}
+                    >
+                      <button
+                        onClick={() =>
+                          wardrobeScriptFullMode
+                            ? setWardrobeScriptFullIndex(
+                                Math.max(0, activeWardrobeIdx - 1)
+                              )
+                            : setSceneScriptViewerIndex(
+                                Math.max(0, filteredIdx - 1)
+                              )
+                        }
+                        disabled={
+                          wardrobeScriptFullMode
+                            ? activeWardrobeIdx === 0
+                            : filteredIdx === 0
+                        }
+                        style={{
+                          backgroundColor: (
+                            wardrobeScriptFullMode
+                              ? activeWardrobeIdx === 0
+                              : filteredIdx === 0
+                          )
+                            ? "#ccc"
+                            : "white",
+                          color: (
+                            wardrobeScriptFullMode
+                              ? activeWardrobeIdx === 0
+                              : filteredIdx === 0
+                          )
+                            ? "#888"
+                            : "#4CAF50",
+                          border: "none",
+                          padding: "6px 12px",
+                          borderRadius: "3px",
+                          cursor: (
+                            wardrobeScriptFullMode
+                              ? activeWardrobeIdx === 0
+                              : filteredIdx === 0
+                          )
+                            ? "not-allowed"
+                            : "pointer",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        ← Prev
+                      </button>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: "3px",
+                        }}
+                      >
+                        <div style={{ fontWeight: "bold" }}>
+                          Scene {currentScene.sceneNumber} (
+                          {wardrobeScriptFullMode
+                            ? `${activeWardrobeIdx + 1} of ${scenes.length}`
+                            : `${filteredIdx + 1} of ${
+                                allCharSceneData.length
+                              }`}
+                          )
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "10px",
+                            fontWeight: "bold",
+                            padding: "1px 8px",
+                            borderRadius: "10px",
+                            backgroundColor: isAssigned
+                              ? "rgba(255,255,255,0.3)"
+                              : "rgba(0,0,0,0.2)",
+                            color: "white",
+                          }}
+                        >
+                          {isAssigned ? "✓ In this look" : "○ Not in this look"}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() =>
+                          wardrobeScriptFullMode
+                            ? setWardrobeScriptFullIndex(
+                                Math.min(
+                                  scenes.length - 1,
+                                  activeWardrobeIdx + 1
+                                )
+                              )
+                            : setSceneScriptViewerIndex(
+                                Math.min(
+                                  allCharSceneData.length - 1,
+                                  filteredIdx + 1
+                                )
+                              )
+                        }
+                        disabled={
+                          wardrobeScriptFullMode
+                            ? activeWardrobeIdx === scenes.length - 1
+                            : filteredIdx === allCharSceneData.length - 1
+                        }
+                        style={{
+                          backgroundColor: (
+                            wardrobeScriptFullMode
+                              ? activeWardrobeIdx === scenes.length - 1
+                              : filteredIdx === allCharSceneData.length - 1
+                          )
+                            ? "#ccc"
+                            : "white",
+                          color: (
+                            wardrobeScriptFullMode
+                              ? activeWardrobeIdx === scenes.length - 1
+                              : filteredIdx === allCharSceneData.length - 1
+                          )
+                            ? "#888"
+                            : "#4CAF50",
+                          border: "none",
+                          padding: "6px 12px",
+                          borderRadius: "3px",
+                          cursor: (
+                            wardrobeScriptFullMode
+                              ? activeWardrobeIdx === scenes.length - 1
+                              : filteredIdx === allCharSceneData.length - 1
+                          )
+                            ? "not-allowed"
+                            : "pointer",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        Next →
+                      </button>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                      }}
+                    >
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          userSelect: "none",
+                          color: "white",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={wardrobeScriptFullMode}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const fi = (scenes || []).findIndex(
+                                (s) =>
+                                  String(s.sceneNumber) ===
+                                  String(currentScene.sceneNumber)
+                              );
+                              setWardrobeScriptFullIndex(fi >= 0 ? fi : 0);
+                            } else {
+                              const curNum =
+                                scenes[activeWardrobeIdx]?.sceneNumber;
+                              const fi = allCharSceneData.findIndex(
+                                (s) => String(s.sceneNumber) === String(curNum)
+                              );
+                              setSceneScriptViewerIndex(fi >= 0 ? fi : 0);
+                            }
+                            setWardrobeScriptFullMode(e.target.checked);
+                          }}
+                          style={{ cursor: "pointer", accentColor: "white" }}
+                        />
+                        Full Script
+                      </label>
+                      <button
+                        onClick={() => {
+                          setShowSceneScriptViewer(false);
+                          setWardrobeScriptFullMode(false);
+                        }}
+                        style={{
+                          backgroundColor: "#f44336",
+                          color: "white",
+                          border: "none",
+                          padding: "6px 12px",
+                          borderRadius: "3px",
+                          cursor: "pointer",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        ✕ Close (ESC)
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      padding: "12px 20px",
+                      backgroundColor: "#f5f5f5",
+                      borderBottom: "1px solid #ddd",
+                      fontFamily: "Courier New, monospace",
+                      fontSize: "12pt",
+                      fontWeight: "bold",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {currentScene.heading}
+                  </div>
+                  <div
+                    style={{
+                      flex: 1,
+                      padding: "1.5in",
+                      overflow: "auto",
+                      backgroundColor: "white",
+                      boxSizing: "border-box",
+                      fontFamily: "Courier New, monospace",
+                    }}
+                  >
+                    <div style={wardrobeGetElementStyle("Scene Heading")}>
+                      {currentScene.heading}
+                    </div>
+                    <div style={{ lineHeight: "1.6", fontSize: "14px" }}>
+                      {(currentScene.content || []).map((block, i) => (
+                        <div
+                          key={i}
+                          style={wardrobeGetElementStyle(block.type)}
+                        >
+                          {block.text}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
       </div>
     </div>
   );

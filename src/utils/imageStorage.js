@@ -195,6 +195,18 @@ export async function uploadGarmentImage(file, projectId, garmentId) {
 }
 
 /**
+ * Upload a prop image
+ * @param {File} file - Image file
+ * @param {string} projectId - Project ID
+ * @param {string} propWord - Prop word key (used as item ID)
+ * @param {string|null} fileName - Optional filename
+ * @returns {Promise<{url: string, path: string} | {error: string}>}
+ */
+export async function uploadPropImage(file, projectId, propWord, fileName = null) {
+  return uploadImage(file, projectId, "props", propWord, fileName);
+}
+
+/**
  * Delete multiple images by their URLs
  * @param {Array<string>} urls - Array of image URLs to delete
  * @returns {Promise<{success: boolean, errors: Array}>}

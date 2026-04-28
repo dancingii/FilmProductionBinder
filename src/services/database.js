@@ -2237,6 +2237,22 @@ export const updateTwoShootingDaySchedules = async (
   }
 };
 
+export const deleteTodoItem = async (selectedProject, taskId) => {
+  if (!selectedProject || !taskId) return;
+  try {
+    const { error } = await supabase
+      .from("todo_items")
+      .delete()
+      .eq("project_id", selectedProject.id)
+      .filter("item_data->>id", "eq", taskId);
+    if (error) throw error;
+    console.log("✅ Todo item deleted:", taskId);
+  } catch (error) {
+    console.error("❌ Failed to delete todo item:", error);
+    throw error;
+  }
+};
+
 export const syncTodoItemsToDatabase = async (
   selectedProject,
   updatedTodoItems
@@ -2483,6 +2499,21 @@ export const syncCostVendorsToDatabase = async (
   }
 };
 
+export const deleteTaggedItem = async (selectedProject, word) => {
+  if (!selectedProject || !word) return;
+  try {
+    const { error } = await supabase.rpc("delete_tagged_item", {
+      p_project_id: selectedProject.id,
+      p_word: word,
+    });
+    if (error) throw error;
+    console.log("✅ Tagged item deleted:", word);
+  } catch (error) {
+    console.error("❌ Failed to delete tagged item:", error);
+    throw error;
+  }
+};
+
 export const syncTaggedItemsToDatabase = async (
   selectedProject,
   updatedTaggedItems
@@ -2525,7 +2556,7 @@ export const syncTaggedItemsToDatabase = async (
     // Use atomic RPC function
     const { error } = await supabase.rpc("sync_tagged_items", {
       p_project_id: selectedProject.id,
-      p_tagged_items_data: taggedItemsData,
+      p_tagged_data: taggedItemsData,
     });
 
     if (error) throw error;

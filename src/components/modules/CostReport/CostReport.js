@@ -237,6 +237,36 @@ function CostReport({
     if (onSyncCostCategories) onSyncCostCategories(updated);
   };
 
+  const addSubExpense = (parentId, subId) => {
+    const newExpense = {
+      id: Date.now().toString(),
+      date: new Date().toISOString().split("T")[0],
+      vendor: "",
+      description: "",
+      cost: 0,
+      quantity: 1,
+      payment: "",
+      scene: "",
+      purchaser: "",
+      receipt: "",
+      notes: "",
+    };
+    const updated = costCategories.map((c) =>
+      c.id === parentId
+        ? {
+            ...c,
+            subCategories: (c.subCategories || []).map((s) =>
+              s.id === subId
+                ? { ...s, expenses: [...(s.expenses || []), newExpense] }
+                : s
+            ),
+          }
+        : c
+    );
+    setCostCategories(updated);
+    if (onSyncCostCategories) onSyncCostCategories(updated);
+  };
+
   const updateSubExpense = (parentId, subId, expenseId, field, value) => {
     const updated = costCategories.map((c) =>
       c.id === parentId
@@ -980,6 +1010,372 @@ function CostReport({
                   >
                     ×
                   </button>
+                </div>
+              ))}
+
+              {/* Sub-categories */}
+              {(category.subCategories || []).map((sub) => (
+                <div
+                  key={sub.id}
+                  style={{
+                    border: `1px solid ${category.color}`,
+                    borderRadius: "4px",
+                    marginBottom: "8px",
+                    overflow: "hidden",
+                  }}
+                >
+                  {/* Sub-category Header */}
+                  <div
+                    style={{
+                      backgroundColor: category.color,
+                      opacity: 0.85,
+                      color: "white",
+                      padding: "4px 10px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      fontSize: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                      }}
+                    >
+                      <span style={{ fontWeight: "bold" }}>{sub.name}</span>
+                      <span style={{ opacity: 0.85 }}>
+                        ({(sub.expenses || []).length} items)
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "15px",
+                      }}
+                    >
+                      <span>Budget: ${(sub.budget || 0).toFixed(2)}</span>
+                      <span>Spent: ${getSubCategoryTotal(sub).toFixed(2)}</span>
+                      <span>
+                        Remaining: $
+                        {((sub.budget || 0) - getSubCategoryTotal(sub)).toFixed(
+                          2
+                        )}
+                      </span>
+                      <button
+                        onClick={() => addSubExpense(category.id, sub.id)}
+                        style={{
+                          backgroundColor: "white",
+                          color: category.color,
+                          border: "none",
+                          borderRadius: "50%",
+                          width: "18px",
+                          height: "18px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          fontWeight: "bold",
+                          lineHeight: "1",
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Sub-category Expenses */}
+                  {(sub.expenses || []).length > 0 && (
+                    <div style={{ padding: "4px 8px" }}>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "100px 80px 120px 60px 130px 130px 80px 60px 100px 100px 40px",
+                          gap: "8px",
+                          backgroundColor: category.color,
+                          color: "white",
+                          fontWeight: "bold",
+                          fontSize: "11px",
+                          padding: "6px 8px",
+                          marginBottom: "1px",
+                          opacity: 0.7,
+                        }}
+                      >
+                        <div>Date</div>
+                        <div>Payment</div>
+                        <div>Vendor</div>
+                        <div>Purchaser</div>
+                        <div>Description</div>
+                        <div>Scene</div>
+                        <div>Cost</div>
+                        <div>Qty</div>
+                        <div>Total</div>
+                        <div>Receipt</div>
+                        <div>Del</div>
+                      </div>
+                      {(sub.expenses || []).map((expense, index) => (
+                        <div
+                          key={expense.id}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              "100px 80px 120px 60px 130px 130px 80px 60px 100px 100px 40px",
+                            gap: "8px",
+                            backgroundColor:
+                              index % 2 === 0 ? "#E8F5E9" : "#F3E5F5",
+                            border: "1px solid #ddd",
+                            fontSize: "12px",
+                            padding: "3px",
+                            marginBottom: "1px",
+                            alignItems: "flex-start",
+                          }}
+                        >
+                          <input
+                            type="date"
+                            value={expense.date}
+                            onChange={(e) =>
+                              updateSubExpense(
+                                category.id,
+                                sub.id,
+                                expense.id,
+                                "date",
+                                e.target.value
+                              )
+                            }
+                            style={{
+                              padding: "2px",
+                              fontSize: "11px",
+                              border: "1px solid #ddd",
+                              borderRadius: "2px",
+                            }}
+                          />
+                          <select
+                            value={expense.payment || ""}
+                            onChange={(e) =>
+                              updateSubExpense(
+                                category.id,
+                                sub.id,
+                                expense.id,
+                                "payment",
+                                e.target.value
+                              )
+                            }
+                            style={{
+                              padding: "2px",
+                              fontSize: "11px",
+                              border: "1px solid #ddd",
+                              borderRadius: "2px",
+                            }}
+                          >
+                            <option value="">Select...</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Credit Card">Credit Card</option>
+                            <option value="Debit Card">Debit Card</option>
+                            <option value="Check">Check</option>
+                            <option value="Bank Transfer">Bank Transfer</option>
+                            <option value="PayPal">PayPal</option>
+                            <option value="Venmo">Venmo</option>
+                            <option value="Other">Other</option>
+                          </select>
+                          <input
+                            type="text"
+                            value={expense.vendor}
+                            onChange={(e) =>
+                              updateSubExpense(
+                                category.id,
+                                sub.id,
+                                expense.id,
+                                "vendor",
+                                e.target.value
+                              )
+                            }
+                            placeholder="Vendor name"
+                            style={{
+                              padding: "2px",
+                              fontSize: "11px",
+                              border: "1px solid #ddd",
+                              borderRadius: "2px",
+                            }}
+                          />
+                          <select
+                            value={expense.purchaser}
+                            onChange={(e) =>
+                              updateSubExpense(
+                                category.id,
+                                sub.id,
+                                expense.id,
+                                "purchaser",
+                                e.target.value
+                              )
+                            }
+                            style={{
+                              padding: "2px",
+                              fontSize: "10px",
+                              border: "1px solid #ddd",
+                              borderRadius: "2px",
+                              width: "100%",
+                              textAlign: "center",
+                              fontWeight: "bold",
+                            }}
+                          >
+                            <option value="">--</option>
+                            {Object.entries(getOrganizedCrew()).map(
+                              ([department, departmentCrew]) => {
+                                if (departmentCrew.length === 0) return null;
+                                return (
+                                  <optgroup
+                                    key={department}
+                                    label={department.toUpperCase()}
+                                  >
+                                    {departmentCrew.map((person) => (
+                                      <option key={person.id} value={person.id}>
+                                        {person.displayName}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                );
+                              }
+                            )}
+                          </select>
+                          <input
+                            type="text"
+                            value={expense.description}
+                            onChange={(e) =>
+                              updateSubExpense(
+                                category.id,
+                                sub.id,
+                                expense.id,
+                                "description",
+                                e.target.value
+                              )
+                            }
+                            placeholder="Description"
+                            style={{
+                              padding: "2px",
+                              fontSize: "11px",
+                              border: "1px solid #ddd",
+                              borderRadius: "2px",
+                            }}
+                          />
+                          <select
+                            value={expense.scene}
+                            onChange={(e) =>
+                              updateSubExpense(
+                                category.id,
+                                sub.id,
+                                expense.id,
+                                "scene",
+                                e.target.value
+                              )
+                            }
+                            style={{
+                              padding: "2px",
+                              fontSize: "11px",
+                              border: "1px solid #ddd",
+                              borderRadius: "2px",
+                            }}
+                          >
+                            <option value="">Scene...</option>
+                            {getSceneOptions().map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={expense.cost}
+                            onChange={(e) =>
+                              updateSubExpense(
+                                category.id,
+                                sub.id,
+                                expense.id,
+                                "cost",
+                                e.target.value
+                              )
+                            }
+                            style={{
+                              padding: "2px",
+                              fontSize: "11px",
+                              border: "1px solid #ddd",
+                              borderRadius: "2px",
+                            }}
+                          />
+                          <input
+                            type="number"
+                            value={expense.quantity}
+                            onChange={(e) =>
+                              updateSubExpense(
+                                category.id,
+                                sub.id,
+                                expense.id,
+                                "quantity",
+                                e.target.value
+                              )
+                            }
+                            style={{
+                              padding: "2px",
+                              fontSize: "11px",
+                              border: "1px solid #ddd",
+                              borderRadius: "2px",
+                            }}
+                          />
+                          <div style={{ fontWeight: "bold" }}>
+                            $
+                            {(
+                              (expense.cost || 0) * (expense.quantity || 1)
+                            ).toFixed(2)}
+                          </div>
+                          <button
+                            onClick={() =>
+                              setReceiptPopup({
+                                categoryId: category.id,
+                                subId: sub.id,
+                                expenseId: expense.id,
+                                currentUrl: expense.receipt || null,
+                              })
+                            }
+                            title={
+                              expense.receipt
+                                ? "View/Replace Receipt"
+                                : "Upload Receipt"
+                            }
+                            style={{
+                              padding: "2px 6px",
+                              fontSize: "10px",
+                              backgroundColor: expense.receipt
+                                ? "#4CAF50"
+                                : "#bdbdbd",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "2px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            📎
+                          </button>
+                          <button
+                            onClick={() =>
+                              deleteSubExpense(category.id, sub.id, expense.id)
+                            }
+                            style={{
+                              backgroundColor: "#f44336",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "2px",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                              padding: "2px 4px",
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
 

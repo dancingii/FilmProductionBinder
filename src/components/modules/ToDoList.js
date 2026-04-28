@@ -465,6 +465,7 @@ function ToDoListModule({
   setTodoCategories,
   castCrew,
   syncTodoItemsToDatabase,
+  onDeleteTodoItem,
   userRole,
   canEdit,
   isViewOnly,
@@ -582,14 +583,12 @@ function ToDoListModule({
   const deleteTask = (taskId) => {
     setTodoItems((prev) => {
       const updatedItems = prev.filter((task) => task.id !== taskId);
-      // Sync to database after deletion
-      if (typeof syncTodoItemsToDatabase === "function") {
-        syncTodoItemsToDatabase(updatedItems);
+      if (typeof onDeleteTodoItem === "function") {
+        onDeleteTodoItem(taskId, updatedItems);
       }
       return updatedItems;
     });
   };
-
   const updateTask = React.useCallback(
     (taskId, field, value) => {
       setTodoItems((prev) => {
