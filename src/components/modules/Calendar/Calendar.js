@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 
 function CalendarModule({
   scheduledScenes,
@@ -38,19 +38,33 @@ function CalendarModule({
   const daysInMonth = lastDayOfMonth.getDate();
 
   const monthNames = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
   ];
 
   const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   const isShootingDay = (day) => {
-    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(
+      day
+    ).padStart(2, "0")}`;
     return shootingDays && shootingDays.some((sd) => sd.date === dateStr);
   };
 
   const getDayItems = (day) => {
-    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(
+      day
+    ).padStart(2, "0")}`;
     const shootingDay = shootingDays?.find((sd) => sd.date === dateStr);
 
     let scenes = [];
@@ -63,16 +77,22 @@ function CalendarModule({
     }
 
     const assignedTodos = todoItems
-      ? todoItems.filter((item) => item.assignedDate === dateStr && !item.completed)
+      ? todoItems.filter(
+          (item) => item.assignedDate === dateStr && !item.completed
+        )
       : [];
     const dueTodos = todoItems
       ? todoItems.filter((item) => item.dueDate === dateStr && !item.completed)
       : [];
     const unavailablePeople = castCrew
-      ? castCrew.filter((p) => p.availability?.unavailableDates?.includes(dateStr))
+      ? castCrew.filter((p) =>
+          p.availability?.unavailableDates?.includes(dateStr)
+        )
       : [];
     const availablePeople = castCrew
-      ? castCrew.filter((p) => p.availability?.availableDates?.includes(dateStr))
+      ? castCrew.filter((p) =>
+          p.availability?.availableDates?.includes(dateStr)
+        )
       : [];
     const bookedPeople = castCrew
       ? castCrew.filter((p) => p.availability?.bookedDates?.includes(dateStr))
@@ -87,7 +107,15 @@ function CalendarModule({
         )
       : [];
 
-    return { scenes, assignedTodos, dueTodos, unavailablePeople, availablePeople, bookedPeople, manualEvents };
+    return {
+      scenes,
+      assignedTodos,
+      dueTodos,
+      unavailablePeople,
+      availablePeople,
+      bookedPeople,
+      manualEvents,
+    };
   };
 
   const isToday = (day) =>
@@ -197,7 +225,8 @@ function CalendarModule({
 
         {Array.from({ length: daysInMonth }, (_, i) => {
           const day = i + 1;
-          const { scenes, unavailablePeople, availablePeople, bookedPeople } = getDayItems(day);
+          const { scenes, unavailablePeople, availablePeople, bookedPeople } =
+            getDayItems(day);
           const isTodayDate = isToday(day);
           const isShootingDayDate = isShootingDay(day);
 
@@ -244,17 +273,25 @@ function CalendarModule({
               </div>
 
               {(() => {
-                const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                const { assignedTodos, dueTodos, manualEvents } = getDayItems(day);
+                const dateStr = `${year}-${String(month + 1).padStart(
+                  2,
+                  "0"
+                )}-${String(day).padStart(2, "0")}`;
+                const { assignedTodos, dueTodos, manualEvents } =
+                  getDayItems(day);
                 const scheduledScenesForDay = [];
                 const shotScenesForDay = [];
 
                 scenes.forEach((scene) => {
-                  const sceneNumber = typeof scene === "object" ? scene.sceneNumber : scene;
-                  const stripboardScene = stripboardScenes?.find((s) => s.sceneNumber === sceneNumber);
+                  const sceneNumber =
+                    typeof scene === "object" ? scene.sceneNumber : scene;
+                  const stripboardScene = stripboardScenes?.find(
+                    (s) => s.sceneNumber === sceneNumber
+                  );
                   const status = stripboardScene?.status || "Not Scheduled";
                   if (status === "Shot") shotScenesForDay.push(sceneNumber);
-                  else if (status === "Scheduled") scheduledScenesForDay.push(sceneNumber);
+                  else if (status === "Scheduled")
+                    scheduledScenesForDay.push(sceneNumber);
                 });
 
                 const allTasks = [...assignedTodos, ...dueTodos];
@@ -281,7 +318,8 @@ function CalendarModule({
                             userSelect: "none",
                           }}
                         >
-                          {expandedSections[`${dateStr}-tasks`] ? "▼" : "►"} Tasks ({tasksCount})
+                          {expandedSections[`${dateStr}-tasks`] ? "▼" : "►"}{" "}
+                          Tasks ({tasksCount})
                         </div>
                         {expandedSections[`${dateStr}-tasks`] && (
                           <div style={{ marginTop: "2px" }}>
@@ -330,69 +368,90 @@ function CalendarModule({
                       (() => {
                         const eventsByType = {};
                         manualEvents.forEach((event) => {
-                          if (!eventsByType[event.eventType]) eventsByType[event.eventType] = [];
+                          if (!eventsByType[event.eventType])
+                            eventsByType[event.eventType] = [];
                           eventsByType[event.eventType].push(event);
                         });
 
-                        return Object.entries(eventsByType).map(([eventType, events]) => {
-                          const eventIcon = {
-                            rehearsal: "🎭",
-                            fitting: "👔",
-                            travel: "✈️",
-                            return_travel: "🔙",
-                            hold: "⏸️",
-                            pickup: "📹",
-                            off: "🏖️",
-                          }[eventType] || "📅";
-                          const eventLabel = eventType.replace(/_/g, " ").toUpperCase();
+                        return Object.entries(eventsByType).map(
+                          ([eventType, events]) => {
+                            const eventIcon =
+                              {
+                                rehearsal: "🎭",
+                                fitting: "👔",
+                                travel: "✈️",
+                                return_travel: "🔙",
+                                hold: "⏸️",
+                                pickup: "📹",
+                                off: "🏖️",
+                              }[eventType] || "📅";
+                            const eventLabel = eventType
+                              .replace(/_/g, " ")
+                              .toUpperCase();
 
-                          return (
-                            <div key={eventType} style={{ marginBottom: "3px" }}>
+                            return (
                               <div
-                                onClick={() => toggleSection(dateStr, `event-${eventType}`)}
-                                style={{
-                                  backgroundColor: "#BBDEFB",
-                                  padding: "2px 4px",
-                                  borderRadius: "3px",
-                                  cursor: "pointer",
-                                  fontSize: "10px",
-                                  fontWeight: "bold",
-                                  color: "#0D47A1",
-                                  userSelect: "none",
-                                }}
+                                key={eventType}
+                                style={{ marginBottom: "3px" }}
                               >
-                                {expandedSections[`${dateStr}-event-${eventType}`] ? "▼" : "►"}{" "}
-                                {eventIcon} {eventLabel} ({events.length})
-                              </div>
-                              {expandedSections[`${dateStr}-event-${eventType}`] && (
-                                <div style={{ marginTop: "2px" }}>
-                                  {events.map((event, index) => {
-                                    const castMember = castCrew?.find((p) => p.id === event.castMemberId);
-                                    const castName = castMember?.name || "Unknown";
-                                    return (
-                                      <div
-                                        key={`event-${index}`}
-                                        style={{
-                                          backgroundColor: "#2196F3",
-                                          color: "white",
-                                          padding: "2px 4px",
-                                          margin: "1px 0",
-                                          borderRadius: "2px",
-                                          fontSize: "9px",
-                                          whiteSpace: "nowrap",
-                                          overflow: "hidden",
-                                          textOverflow: "ellipsis",
-                                        }}
-                                      >
-                                        👤 {castName}{event.notes && ` - ${event.notes}`}
-                                      </div>
-                                    );
-                                  })}
+                                <div
+                                  onClick={() =>
+                                    toggleSection(dateStr, `event-${eventType}`)
+                                  }
+                                  style={{
+                                    backgroundColor: "#BBDEFB",
+                                    padding: "2px 4px",
+                                    borderRadius: "3px",
+                                    cursor: "pointer",
+                                    fontSize: "10px",
+                                    fontWeight: "bold",
+                                    color: "#0D47A1",
+                                    userSelect: "none",
+                                  }}
+                                >
+                                  {expandedSections[
+                                    `${dateStr}-event-${eventType}`
+                                  ]
+                                    ? "▼"
+                                    : "►"}{" "}
+                                  {eventIcon} {eventLabel} ({events.length})
                                 </div>
-                              )}
-                            </div>
-                          );
-                        });
+                                {expandedSections[
+                                  `${dateStr}-event-${eventType}`
+                                ] && (
+                                  <div style={{ marginTop: "2px" }}>
+                                    {events.map((event, index) => {
+                                      const castMember = castCrew?.find(
+                                        (p) => p.id === event.castMemberId
+                                      );
+                                      const castName =
+                                        castMember?.name || "Unknown";
+                                      return (
+                                        <div
+                                          key={`event-${index}`}
+                                          style={{
+                                            backgroundColor: "#2196F3",
+                                            color: "white",
+                                            padding: "2px 4px",
+                                            margin: "1px 0",
+                                            borderRadius: "2px",
+                                            fontSize: "9px",
+                                            whiteSpace: "nowrap",
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                          }}
+                                        >
+                                          👤 {castName}
+                                          {event.notes && ` - ${event.notes}`}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+                        );
                       })()}
 
                     {bookedCount > 0 && (
@@ -410,7 +469,8 @@ function CalendarModule({
                             userSelect: "none",
                           }}
                         >
-                          {expandedSections[`${dateStr}-booked`] ? "▼" : "►"} Booked ({bookedCount})
+                          {expandedSections[`${dateStr}-booked`] ? "▼" : "►"}{" "}
+                          Booked ({bookedCount})
                         </div>
                         {expandedSections[`${dateStr}-booked`] && (
                           <div style={{ marginTop: "2px" }}>
@@ -452,7 +512,8 @@ function CalendarModule({
                             userSelect: "none",
                           }}
                         >
-                          {expandedSections[`${dateStr}-available`] ? "▼" : "►"} Available ({availableCount})
+                          {expandedSections[`${dateStr}-available`] ? "▼" : "►"}{" "}
+                          Available ({availableCount})
                         </div>
                         {expandedSections[`${dateStr}-available`] && (
                           <div style={{ marginTop: "2px" }}>
@@ -494,7 +555,10 @@ function CalendarModule({
                             userSelect: "none",
                           }}
                         >
-                          {expandedSections[`${dateStr}-unavailable`] ? "▼" : "►"} Unavailable ({unavailableCount})
+                          {expandedSections[`${dateStr}-unavailable`]
+                            ? "▼"
+                            : "►"}{" "}
+                          Unavailable ({unavailableCount})
                         </div>
                         {expandedSections[`${dateStr}-unavailable`] && (
                           <div style={{ marginTop: "2px" }}>
@@ -535,7 +599,10 @@ function CalendarModule({
                           lineHeight: "1.2",
                         }}
                       >
-                        🎬 Scenes: {scheduledScenesForDay.map((s) => s.sceneNumber || s).join(", ")}
+                        🎬 Scenes:{" "}
+                        {scheduledScenesForDay
+                          .map((s) => s.sceneNumber || s)
+                          .join(", ")}
                       </div>
                     )}
 
@@ -553,7 +620,10 @@ function CalendarModule({
                           lineHeight: "1.2",
                         }}
                       >
-                        ✅ Shot: {shotScenesForDay.map((s) => s.sceneNumber || s).join(", ")}
+                        ✅ Shot:{" "}
+                        {shotScenesForDay
+                          .map((s) => s.sceneNumber || s)
+                          .join(", ")}
                       </div>
                     )}
                   </>
