@@ -202,6 +202,9 @@ export const loadTaggedItemsFromDatabase = async (
         assignedCharacters: item.assigned_characters || [],
         manuallyCreated: item.manually_created || false,
         originalProp: item.original_prop,
+        defaultCharacter: item.default_character || false,
+        scenesBeforeDefault: item.scenes_before_default ?? undefined,
+        photos: item.photos || [],
       };
     });
 
@@ -2560,6 +2563,39 @@ export const syncTaggedItemsToDatabase = async (
     });
 
     if (error) throw error;
+
+    // Patch new fields not covered by the RPC (default_character,
+    // scenes_before_default, photos) via full-row UPSERT so NOT NULL
+    // constraints are satisfied on any INSERT fallback
+    const patchData = taggedItemsArray.map((item) => ({
+      project_id: selectedProject.id,
+      word: item.word,
+      display_name: item.displayName,
+      custom_title: item.customTitle || null,
+      category: item.category,
+      color: item.color,
+      chronological_number: item.chronologicalNumber,
+      position: item.position,
+      scenes: item.scenes || [],
+      instances: item.instances || [],
+      assigned_characters: item.assignedCharacters || [],
+      manually_created: item.manuallyCreated || false,
+      original_prop: item.originalProp || null,
+      default_character: item.defaultCharacter || false,
+      scenes_before_default: item.scenesBeforeDefault ?? null,
+      photos: item.photos || [],
+    }));
+
+    const { error: patchError } = await supabase
+      .from("tagged_items")
+      .upsert(patchData, { onConflict: "project_id,word" });
+
+    if (patchError) {
+      console.error(
+        "❌ Error patching extended tagged item fields:",
+        patchError
+      );
+    }
 
     console.log("✅ Tagged Items synced successfully (ATOMIC)");
   } catch (error) {

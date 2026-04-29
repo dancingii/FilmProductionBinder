@@ -107,6 +107,8 @@ function PropsModule({
   const [showScenePreview, setShowScenePreview] = useState(false);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [propImageUploading, setPropImageUploading] = useState(false);
+  const [characterFilter, setCharacterFilter] = useState([]); // [] = show all
+  const [showCharacterFilterDropdown, setShowCharacterFilterDropdown] = useState(false);
 
   // --- Script search state for new custom props ---
   const [propSearchQuery, setPropSearchQuery] = useState("");
@@ -134,6 +136,14 @@ function PropsModule({
   const [primarySessionChar, setPrimarySessionChar] = useState(null);
   // The most recently chosen character (for pre-populating next popup)
   const [lastChosenChar, setLastChosenChar] = useState(null);
+  // Multi-character selection toggle + selected chars for current popup
+  const [instancePopupMultiSelect, setInstancePopupMultiSelect] = useState(false);
+  const [instancePopupMultiChars, setInstancePopupMultiChars] = useState([]);
+  const [instancePopupCharDropdownOpen, setInstancePopupCharDropdownOpen] = useState(false);
+  const [charDropdownFlipped, setCharDropdownFlipped] = useState(false);
+  const [fullScriptSceneIdx, setFullScriptSceneIdx] = useState(0);
+  const charDropdownTriggerRef = React.useRef(null);
+  const [showFullScriptViewer, setShowFullScriptViewer] = useState(false);
 
   const propViewerScrollRef = React.useRef(null);
   const propViewerCurrentRef = React.useRef(null);
@@ -255,6 +265,15 @@ function PropsModule({
     }
   }, [propSearchQuery, selectedProp?.isNewCustomProp, searchScript]);
 
+  // Populate search results when scene preview opens for an existing prop
+  // so the word-level highlighting works in the script viewer
+  React.useEffect(() => {
+    if (showScenePreview && selectedProp && !selectedProp.isNewCustomProp) {
+      const name = selectedProp.customTitle || selectedProp.displayName;
+      if (name) searchScript(name);
+    }
+  }, [showScenePreview, selectedProp?.word, searchScript]);
+
   // When opening the script viewer, initialise statuses for all found instances
   const openPropScriptViewer = () => {
     if (!propSearchResults) return;
@@ -356,9 +375,48 @@ function PropsModule({
     setLastChosenChar(null);
   };
 
+  const getEarliestSceneNum = (prop) => {
+    const s = prop.scenes || [];
+    if (s.length === 0) return Infinity;
+    const nums = s.map((n) => parseFloat(n)).filter((n) => !isNaN(n));
+    return nums.length > 0 ? Math.min(...nums) : Infinity;
+  };
+
   const propItems = Object.entries(taggedItems)
     .filter(([word, item]) => item.category === "Props")
-    .sort((a, b) => a[1].chronologicalNumber - b[1].chronologicalNumber);
+    .sort((a, b) => {
+      const aMin = getEarliestSceneNum(a[1]);
+      const bMin = getEarliestSceneNum(b[1]);
+      if (aMin !== bMin) return aMin - bMin;
+      return (a[1].chronologicalNumber || 0) - (b[1].chronologicalNumber || 0);
+    });
+
+  // Display number = position in chronological scene order (1-based)
+  const propNumberMap = Object.fromEntries(
+    propItems.map(([word], idx) => [word, idx + 1])
+  );
+
+  // Sync chronologicalNumber back to DB whenever scene-sorted order
+  // differs from stored values — keeps all modules in agreement
+  const propNumberSyncedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (propItems.length === 0) return;
+    const needsUpdate = propItems.some(
+      ([word], idx) =>
+        taggedItems[word]?.chronologicalNumber !== idx + 1
+    );
+    if (!needsUpdate) {
+      propNumberSyncedRef.current = true;
+      return;
+    }
+    const updated = { ...taggedItems };
+    propItems.forEach(([word], idx) => {
+      updated[word] = { ...updated[word], chronologicalNumber: idx + 1 };
+    });
+    onUpdateTaggedItems(updated);
+    onSyncTaggedItems(updated);
+    propNumberSyncedRef.current = true;
+  }, [propItems.map(([w]) => w).join(",")]);
 
   // Get props for a specific scene
   const getPropsForScene = (sceneIndex) => {
@@ -444,23 +502,23 @@ function PropsModule({
 
   return (
     <div
-      style={{
-        padding: "20px",
-        minHeight: "100vh",
-        width: "100%",
-        display: "flex",
-        gap: "15px",
-        maxWidth: "100%",
-        overflowX: "auto",
-        boxSizing: "border-box",
-      }}
+    style={{
+      padding: "20px",
+      height: "calc(100vh - 60px)",
+      width: "100%",
+      display: "flex",
+      gap: "15px",
+      maxWidth: "100%",
+      overflowX: "hidden",
+      boxSizing: "border-box",
+    }}
     >
       {/* Left Column - Props List */}
       <div
         style={{
           flex: "0 0 25%",
           maxWidth: "25%",
-          maxHeight: "calc(100vh - 60px)",
+          height: "100%",
           overflowY: "auto",
           boxSizing: "border-box",
         }}
@@ -482,7 +540,10 @@ function PropsModule({
                 displayName: "New Custom Prop",
                 customTitle: "New Custom Prop",
                 category: "Props",
-                color: "#4CAF50",
+                color:
+                  Object.values(taggedItems).find(
+                    (item) => item.category === "Props"
+                  )?.color || "#FF6B6B",
                 chronologicalNumber: propItems.length + 1,
                 scenes: [],
                 contextScene: null,
@@ -504,6 +565,117 @@ function PropsModule({
             + Add Custom Prop
           </button>
         </div>
+        {/* Character filter dropdown */}
+        {Object.keys(characters || {}).length > 0 && (
+          <div style={{ marginBottom: "12px", position: "relative" }}>
+            <button
+              onClick={() => setShowCharacterFilterDropdown((prev) => !prev)}
+              style={{
+                width: "100%",
+                padding: "7px 10px",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
+                backgroundColor: characterFilter.length > 0 ? "#e3f2fd" : "white",
+                cursor: "pointer",
+                fontSize: "12px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                boxSizing: "border-box",
+              }}
+            >
+              <span>
+                {characterFilter.length === 0
+                  ? "Filter by character…"
+                  : characterFilter.length === 1
+                  ? characterFilter[0]
+                  : `${characterFilter.length} characters selected`}
+              </span>
+              <span style={{ fontSize: "10px", opacity: 0.6 }}>
+                {showCharacterFilterDropdown ? "▲" : "▼"}
+              </span>
+            </button>
+
+            {showCharacterFilterDropdown && (
+              <>
+                {/* Click-away overlay */}
+                <div
+                  style={{
+                    position: "fixed",
+                    top: 0, left: 0,
+                    width: "100%", height: "100%",
+                    zIndex: 299,
+                  }}
+                  onClick={() => setShowCharacterFilterDropdown(false)}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    width: "100%",
+                    backgroundColor: "white",
+                    border: "1px solid #90caf9",
+                    borderRadius: "4px",
+                    padding: "6px 8px",
+                    zIndex: 300,
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  {/* Clear all */}
+                  {characterFilter.length > 0 && (
+                    <div
+                      onClick={() => setCharacterFilter([])}
+                      style={{
+                        fontSize: "11px",
+                        color: "#1976d2",
+                        cursor: "pointer",
+                        marginBottom: "5px",
+                        paddingBottom: "5px",
+                        borderBottom: "1px solid #eee",
+                      }}
+                    >
+                      ✕ Clear filter
+                    </div>
+                  )}
+                  {Object.keys(characters)
+                    .sort()
+                    .map((c) => (
+                      <label
+                        key={c}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          fontSize: "12px",
+                          padding: "3px 0",
+                          cursor: "pointer",
+                          fontWeight: characterFilter.includes(c) ? "bold" : "normal",
+                          color: characterFilter.includes(c) ? "#1565c0" : "#333",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={characterFilter.includes(c)}
+                          onChange={(e) =>
+                            setCharacterFilter((prev) =>
+                              e.target.checked
+                                ? [...prev, c]
+                                : prev.filter((x) => x !== c)
+                            )
+                          }
+                          style={{ cursor: "pointer" }}
+                        />
+                        {c}
+                      </label>
+                    ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         <div style={{ marginBottom: "20px" }}>
           {propItems.length === 0 ? (
             <p style={{ color: "#888", fontStyle: "italic", fontSize: "13px" }}>
@@ -511,12 +683,31 @@ function PropsModule({
               custom prop above.
             </p>
           ) : (
-            <p>Total Props: {propItems.length}</p>
+            <p>
+              Total Props: {propItems.length}
+              {characterFilter.length > 0 && (
+                <span style={{ color: "#888", fontSize: "11px", marginLeft: "6px" }}>
+                  ({propItems.filter(([, item]) =>
+                    (item.assignedCharacters || []).some((c) =>
+                      characterFilter.includes(c)
+                    )
+                  ).length} shown)
+                </span>
+              )}
+            </p>
           )}
         </div>
 
         <div style={{ width: "100%" }}>
-          {propItems.map(([word, item]) => {
+          {propItems
+            .filter(([, item]) =>
+              characterFilter.length === 0
+                ? true
+                : (item.assignedCharacters || []).some((c) =>
+                    characterFilter.includes(c)
+                  )
+            )
+            .map(([word, item]) => {
             // Convert hex color to more pastel version
             const getPastelColor = (hexColor) => {
               const r = parseInt(hexColor.slice(1, 3), 16);
@@ -538,90 +729,116 @@ function PropsModule({
               (item.customTitle || item.displayName).charAt(0).toUpperCase() +
               (item.customTitle || item.displayName).slice(1);
 
-              return (
-                <div
-                  key={word}
-                  style={{
-                    backgroundColor: getPastelColor(item.color),
-                    border: "1px solid #ddd",
-                    borderRadius: "4px",
-                    padding: "8px",
-                    margin: "5px 0",
-                    fontSize: "12px",
-                    position: "relative",
-                    width: "100%",
+            return (
+              <div
+                key={word}
+                style={{
+                  backgroundColor: getPastelColor(item.color),
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  padding: "5px 8px",
+                  margin: "3px 0",
+                  fontSize: "12px",
+                  position: "relative",
+                  width: "100%",
                   boxSizing: "border-box",
                   display: "flex",
-                  alignItems: "stretch",
+                  alignItems: "center",
                   gap: "8px",
-                  }}
+                }}
+                a
                 >
-                  {/* Left: text content */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
+                {/* Left: text content */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* Line 1: prop name + Default badge */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      marginBottom: "3px",
+                    }}
+                  >
+                    <span
                       style={{
                         fontWeight: "bold",
-                        fontSize: "20px",
-                        marginBottom: "4px",
+                        fontSize: "15px",
                         cursor: "pointer",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
                       }}
                       onClick={() =>
                         setSelectedProp({ word, ...item, contextScene: null })
                       }
                     >
-                      {item.categoryNumber || item.chronologicalNumber}.{" "}
-                      {capitalizedName}
-                    </div>
-                    <div style={{ color: "#666", marginBottom: "6px" }}>
-                      Category: {item.category}
-                    </div>
-                    {assignedCharacters.length > 0 && (
-                      <div
+                      {propNumberMap[word]}. {capitalizedName}
+                    </span>
+                    {item.defaultCharacter && (
+                      <span
                         style={{
-                          display: "flex",
-                          flexWrap: "wrap",
-                          gap: "3px",
-                          marginBottom: "6px",
+                          fontSize: "9px",
+                          fontWeight: "bold",
+                          color: item.color,
+                          backgroundColor: "white",
+                          border: `1.5px solid ${item.color}`,
+                          borderRadius: "4px",
+                          padding: "1px 5px",
+                          letterSpacing: "0.04em",
+                          textTransform: "uppercase",
+                          lineHeight: 1.4,
+                          flexShrink: 0,
                         }}
                       >
-                        {assignedCharacters.map((char) => (
-                          <span
-                            key={char}
-                            style={{
-                              backgroundColor: item.color,
-                              color: "white",
-                              borderRadius: "10px",
-                              padding: "2px 8px",
-                              fontSize: "10px",
-                              fontWeight: "bold",
-                            }}
-                          >
-                            {char}
-                          </span>
-                        ))}
-                      </div>
+                        Default
+                      </span>
                     )}
-                    <div style={{ display: "flex", gap: "4px", marginTop: "8px" }}>
-                      <button
-                        onClick={() =>
-                          setSelectedProp({ word, ...item, contextScene: null })
-                        }
+                  </div>
+                  {/* Line 2: Manage button + character pills */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      onClick={() =>
+                        setSelectedProp({ word, ...item, contextScene: null })
+                      }
+                      style={{
+                        backgroundColor: "#2196F3",
+                        color: "white",
+                        border: "none",
+                        padding: "3px 8px",
+                        borderRadius: "2px",
+                        cursor: "pointer",
+                        fontSize: "10px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      Manage
+                    </button>
+                    {assignedCharacters.map((char) => (
+                      <span
+                        key={char}
                         style={{
-                          backgroundColor: "#2196F3",
+                          backgroundColor: item.color,
                           color: "white",
-                          border: "none",
-                          padding: "4px 8px",
-                          borderRadius: "2px",
-                          cursor: "pointer",
-                          fontSize: "10px",
+                          borderRadius: "10px",
+                          padding: "1px 6px",
+                          fontSize: "9px",
+                          fontWeight: "bold",
                         }}
                       >
-                        Manage
-                      </button>
-                    </div>
+                        {char}
+                      </span>
+                    ))}
                   </div>
-  
-                  {/* Right: prop photos — always visible, placeholder when empty */}
+                </div>
+
+                {/* Right: prop photos — always visible, placeholder when empty */}
                 <div
                   style={{
                     display: "flex",
@@ -638,11 +855,11 @@ function PropsModule({
                         alt={`${capitalizedName} ${idx + 1}`}
                         onClick={() => setLightboxImage(photo)}
                         style={{
-                          width: "70px",
-                          height: "70px",
+                          width: "44px",
+                          height: "44px",
                           objectFit: "cover",
-                          border: `5px solid ${item.color}`,
-                          borderRadius: "4px",
+                          border: `3px solid ${item.color}`,
+                          borderRadius: "3px",
                           cursor: "pointer",
                           display: "block",
                         }}
@@ -655,10 +872,10 @@ function PropsModule({
                       }
                       title="Open prop to add a photo"
                       style={{
-                        width: "70px",
-                        height: "70px",
-                        border: `5px solid ${item.color}`,
-                        borderRadius: "4px",
+                        width: "44px",
+                        height: "44px",
+                        border: `3px solid ${item.color}`,
+                        borderRadius: "3px",
                         backgroundColor: "rgba(0,0,0,0.06)",
                         display: "flex",
                         alignItems: "center",
@@ -667,19 +884,19 @@ function PropsModule({
                         flexShrink: 0,
                       }}
                     >
-                      <span style={{ fontSize: "22px", opacity: 0.3 }}>📷</span>
+                      <span style={{ fontSize: "14px", opacity: 0.3 }}>📷</span>
                     </div>
                   )}
                 </div>
-                </div>
-              );
+              </div>
+            );
           })}
         </div>
       </div>
 
       {/* Right Column - Scene Breakdown */}
       <div
-        style={{ flex: 1, maxHeight: "calc(100vh - 60px)", overflowY: "auto" }}
+        style={{ flex: 1, height: "100%", overflowY: "auto" }}
       >
         <div
           style={{
@@ -701,7 +918,7 @@ function PropsModule({
           </label>
         </div>
 
-        <div style={{ maxHeight: "80vh", overflowY: "auto" }}>
+        <div>
           {filteredScenes.map((scene, originalIndex) => {
             const sceneIndex = scenes.indexOf(scene);
             const sceneProps = getPropsForScene(sceneIndex);
@@ -796,8 +1013,9 @@ function PropsModule({
                                 marginBottom: "2px",
                               }}
                             >
-                              {prop.categoryNumber || prop.chronologicalNumber}.{" "}
-                              {capitalizedName}
+                              {propNumberMap[prop.word] ??
+                                prop.chronologicalNumber}
+                              . {capitalizedName}
                               {hasMultipleCharacters && (
                                 <span
                                   style={{
@@ -989,104 +1207,107 @@ function PropsModule({
 
             {/* Search Script — only shown when creating a new custom prop */}
             {selectedProp.isNewCustomProp && (
-            <div
-              style={{
-                marginBottom: "14px",
-                padding: "10px",
-                backgroundColor: "#f0f7ff",
-                borderRadius: "6px",
-                border: "1px solid #bbdefb",
-              }}
-            >
-              <label
+              <div
                 style={{
-                  display: "block",
-                  fontWeight: "bold",
-                  fontSize: "11px",
-                  marginBottom: "5px",
-                  color: "#1565c0",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
+                  marginBottom: "14px",
+                  padding: "10px",
+                  backgroundColor: "#f0f7ff",
+                  borderRadius: "6px",
+                  border: "1px solid #bbdefb",
                 }}
               >
-                Search Script
-              </label>
-              <input
-                type="text"
-                value={propSearchQuery}
-                autoFocus
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setPropSearchQuery(val);
-                  // Sync prop name from search field (new custom prop only)
-                  setSelectedProp((prev) => ({ ...prev, customTitle: val }));
-                }}
-                placeholder="Type word(s) to search script — e.g. 'cigarette holder'"
-                style={{
-                  width: "100%",
-                  padding: "6px 8px",
-                  border: "1px solid #90caf9",
-                  borderRadius: "4px",
-                  fontSize: "13px",
-                  boxSizing: "border-box",
-                  marginBottom: "6px",
-                }}
-              />
-              {propSearchResults &&
-                propSearchResults.sceneIndices.length > 0 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <span style={{ fontSize: "12px", color: "#555" }}>
-                      Found in{" "}
-                      <strong>{propSearchResults.sceneIndices.length}</strong>{" "}
-                      scene
-                      {propSearchResults.sceneIndices.length !== 1 ? "s" : ""} (
-                      {(() => {
-                        const count = propSearchResults.sceneIndices.reduce(
-                          (sum, si) =>
-                            sum +
-                            (propSearchResults.instancesByScene[si] || [])
-                              .length,
-                          0
-                        );
-                        return `(${count} instance${count !== 1 ? "s" : ""})`;
-                      })()}
-                    </span>
-                    <button
-                      onClick={openPropScriptViewer}
+                <label
+                  style={{
+                    display: "block",
+                    fontWeight: "bold",
+                    fontSize: "11px",
+                    marginBottom: "5px",
+                    color: "#1565c0",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  Search Script
+                </label>
+                <input
+                  type="text"
+                  value={propSearchQuery}
+                  autoFocus
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setPropSearchQuery(val);
+                    // Sync prop name from search field (new custom prop only)
+                    setSelectedProp((prev) => ({ ...prev, customTitle: val }));
+                  }}
+                  placeholder="Type word(s) to search script — e.g. 'cigarette holder'"
+                  style={{
+                    width: "100%",
+                    padding: "6px 8px",
+                    border: "1px solid #90caf9",
+                    borderRadius: "4px",
+                    fontSize: "13px",
+                    boxSizing: "border-box",
+                    marginBottom: "6px",
+                  }}
+                />
+                {propSearchResults &&
+                  propSearchResults.sceneIndices.length > 0 && (
+                    <div
                       style={{
-                        backgroundColor: "#1976d2",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "4px",
-                        padding: "5px 12px",
-                        cursor: "pointer",
-                        fontSize: "12px",
-                        fontWeight: "bold",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
                       }}
                     >
-                      📄 View &amp; Assign
-                    </button>
+                      <span style={{ fontSize: "12px", color: "#555" }}>
+                        Found in{" "}
+                        <strong>{propSearchResults.sceneIndices.length}</strong>{" "}
+                        scene
+                        {propSearchResults.sceneIndices.length !== 1
+                          ? "s"
+                          : ""}{" "}
+                        (
+                        {(() => {
+                          const count = propSearchResults.sceneIndices.reduce(
+                            (sum, si) =>
+                              sum +
+                              (propSearchResults.instancesByScene[si] || [])
+                                .length,
+                            0
+                          );
+                          return `(${count} instance${count !== 1 ? "s" : ""})`;
+                        })()}
+                      </span>
+                      <button
+                        onClick={openPropScriptViewer}
+                        style={{
+                          backgroundColor: "#1976d2",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "4px",
+                          padding: "5px 12px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        📄 View &amp; Assign
+                      </button>
+                    </div>
+                  )}
+                {propSearchResults &&
+                  propSearchResults.sceneIndices.length === 0 &&
+                  propSearchQuery && (
+                    <div style={{ fontSize: "12px", color: "#e53935" }}>
+                      No matches found in script.
+                    </div>
+                  )}
+                {!propSearchQuery && (
+                  <div style={{ fontSize: "11px", color: "#90caf9" }}>
+                    Supports multi-word phrases (e.g. "cigarette holder")
                   </div>
                 )}
-              {propSearchResults &&
-                propSearchResults.sceneIndices.length === 0 &&
-                propSearchQuery && (
-                  <div style={{ fontSize: "12px", color: "#e53935" }}>
-                    No matches found in script.
-                  </div>
-                )}
-              {!propSearchQuery && (
-                <div style={{ fontSize: "11px", color: "#90caf9" }}>
-                  Supports multi-word phrases (e.g. "cigarette holder")
-                </div>
-              )}
-            </div>
+              </div>
             )}
 
             {/* Original word + meta — hide for new custom props to keep it clean */}
@@ -1112,7 +1333,9 @@ function PropsModule({
               <strong>Category:</strong> {selectedProp.category}
             </p>
             <p>
-              <strong>Number:</strong> {selectedProp.chronologicalNumber}
+              <strong>Number:</strong>{" "}
+              {propNumberMap[selectedProp.word] ??
+                selectedProp.chronologicalNumber}
             </p>
             <p>
               <strong>Scenes:</strong>{" "}
@@ -1235,7 +1458,8 @@ function PropsModule({
                           if (propData) {
                             let newScenes = propData.scenes || [];
                             if (isDefault) {
-                              // Auto-assign all scenes the character appears in
+                              // Snapshot current scenes before expanding so uncheck
+                              // can restore them exactly, regardless of instance format
                               const charName = (propData.assignedCharacters ||
                                 [])[0];
                               const charObj = Object.values(characters).find(
@@ -1248,10 +1472,20 @@ function PropsModule({
                                   ...new Set([...newScenes, ...charSceneNums]),
                                 ];
                               }
+                            } else {
+                              // Restore the exact scenes that existed before default was checked
+                              newScenes =
+                                propData.scenesBeforeDefault !== undefined
+                                  ? propData.scenesBeforeDefault
+                                  : propData.scenes || [];
                             }
                             updatedTaggedItems[selectedProp.word] = {
                               ...propData,
                               defaultCharacter: isDefault,
+                              // Store snapshot on check; clear it on uncheck
+                              scenesBeforeDefault: isDefault
+                                ? propData.scenes || []
+                                : undefined,
                               scenes: newScenes,
                             };
                             if (onUpdateTaggedItems)
@@ -1326,9 +1560,15 @@ function PropsModule({
                           if (!file || !onUploadPropImage) return;
                           setPropImageUploading(true);
                           try {
-                            const url = await onUploadPropImage(selectedProp.word, file);
+                            const url = await onUploadPropImage(
+                              selectedProp.word,
+                              file
+                            );
                             if (url) {
-                              const newPhotos = [...(selectedProp.photos || []), url];
+                              const newPhotos = [
+                                ...(selectedProp.photos || []),
+                                url,
+                              ];
                               const updatedItems = {
                                 ...taggedItems,
                                 [selectedProp.word]: {
@@ -1338,7 +1578,10 @@ function PropsModule({
                               };
                               onUpdateTaggedItems(updatedItems);
                               onSyncTaggedItems(updatedItems);
-                              setSelectedProp((prev) => ({ ...prev, photos: newPhotos }));
+                              setSelectedProp((prev) => ({
+                                ...prev,
+                                photos: newPhotos,
+                              }));
                             }
                           } finally {
                             setPropImageUploading(false);
@@ -1350,16 +1593,22 @@ function PropsModule({
                         disabled={propImageUploading}
                         onClick={() =>
                           document
-                            .getElementById(`prop-photo-upload-${selectedProp.word}`)
+                            .getElementById(
+                              `prop-photo-upload-${selectedProp.word}`
+                            )
                             .click()
                         }
                         style={{
-                          backgroundColor: propImageUploading ? "#aaa" : "#4CAF50",
+                          backgroundColor: propImageUploading
+                            ? "#aaa"
+                            : "#4CAF50",
                           color: "white",
                           border: "none",
                           padding: "5px 12px",
                           borderRadius: "4px",
-                          cursor: propImageUploading ? "not-allowed" : "pointer",
+                          cursor: propImageUploading
+                            ? "not-allowed"
+                            : "pointer",
                           fontSize: "11px",
                           fontWeight: "bold",
                         }}
@@ -1371,7 +1620,9 @@ function PropsModule({
                 </div>
 
                 {(selectedProp.photos || []).length > 0 ? (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  <div
+                    style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}
+                  >
                     {(selectedProp.photos || []).map((photo, idx) => (
                       <div key={idx} style={{ position: "relative" }}>
                         <img
@@ -1391,9 +1642,9 @@ function PropsModule({
                           onClick={async () => {
                             if (!onDeletePropImage) return;
                             await onDeletePropImage(photo);
-                            const newPhotos = (selectedProp.photos || []).filter(
-                              (_, i) => i !== idx
-                            );
+                            const newPhotos = (
+                              selectedProp.photos || []
+                            ).filter((_, i) => i !== idx);
                             const updatedItems = {
                               ...taggedItems,
                               [selectedProp.word]: {
@@ -1403,7 +1654,10 @@ function PropsModule({
                             };
                             onUpdateTaggedItems(updatedItems);
                             onSyncTaggedItems(updatedItems);
-                            setSelectedProp((prev) => ({ ...prev, photos: newPhotos }));
+                            setSelectedProp((prev) => ({
+                              ...prev,
+                              photos: newPhotos,
+                            }));
                           }}
                           style={{
                             position: "absolute",
@@ -1430,7 +1684,14 @@ function PropsModule({
                     ))}
                   </div>
                 ) : (
-                  <p style={{ fontSize: "12px", color: "#aaa", margin: 0, fontStyle: "italic" }}>
+                  <p
+                    style={{
+                      fontSize: "12px",
+                      color: "#aaa",
+                      margin: 0,
+                      fontStyle: "italic",
+                    }}
+                  >
                     No photos yet — click Upload Photo above.
                   </p>
                 )}
@@ -1771,15 +2032,12 @@ function PropsModule({
                                 .map((id) => instanceVariants[id])
                                 .find(Boolean);
 
-                              if (variant) {
-                                // Variant was already created live — skip
-                              } else if (char && char !== primarySessionChar) {
-                                // Different character — already added to variant live
-                                // skip here to avoid duplicating
-                              } else {
-                                // Primary character OR no character → main prop
+                              if (!char || char === primarySessionChar) {
+                                // No character or primary character → main prop
+                                // (variants for additional chars were already created live)
                                 mainPropScenes.push(sceneNum);
                               }
+                              // else: non-primary char — variant already handles this scene
                             });
                           } else {
                             mainPropScenes.push(...confirmedScenes);
@@ -1854,6 +2112,30 @@ function PropsModule({
                             }"? This cannot be undone.`
                           );
                       if (confirmed) {
+                        // Build updated set without the deleted prop
+                        const afterDelete = { ...taggedItems };
+                        delete afterDelete[selectedProp.word];
+
+                        // Renumber chronologicalNumber sequentially by current order
+                        const reordered = Object.entries(afterDelete).sort(
+                          (a, b) =>
+                            (a[1].chronologicalNumber || 0) -
+                            (b[1].chronologicalNumber || 0)
+                        );
+                        const renumbered = {};
+                        reordered.forEach(([word, item], idx) => {
+                          renumbered[word] = {
+                            ...item,
+                            chronologicalNumber: idx + 1,
+                          };
+                        });
+
+                        // Update state + sync renumbered set first
+                        if (onUpdateTaggedItems)
+                          onUpdateTaggedItems(renumbered);
+                        if (onSyncTaggedItems) onSyncTaggedItems(renumbered);
+
+                        // Then call onDeleteProp purely for the DB row deletion
                         if (onDeleteProp) onDeleteProp(selectedProp.word);
                         setSelectedProp(null);
                       }
@@ -1894,11 +2176,13 @@ function PropsModule({
         propSearchResults &&
         (() => {
           const { instancesByScene, sceneIndices } = propSearchResults;
-          const currentSceneIndex = sceneIndices[propViewerSceneIdx];
+          const currentSceneIndex = showFullScriptViewer
+            ? fullScriptSceneIdx
+            : sceneIndices[propViewerSceneIdx];
           const scene = scenes[currentSceneIndex];
           const currentInstances = instancesByScene[currentSceneIndex] || [];
           const currentInstanceId = currentInstances[propViewerInstanceIdx];
-          const propColor = "#4CAF50";
+          const propColor = selectedProp?.color || "#4CAF50";
 
           if (!scene) return null;
 
@@ -1966,25 +2250,47 @@ function PropsModule({
                       gap: "10px",
                     }}
                   >
-                    {/* Scene prev/next */}
+                    {/* Scene prev/next — full script mode navigates all scenes;
+                        normal mode navigates tagged scenes only */}
                     <button
                       onClick={() => {
-                        setPropViewerSceneIdx(
-                          Math.max(0, propViewerSceneIdx - 1)
-                        );
-                        setPropViewerInstanceIdx(0);
+                        if (showFullScriptViewer) {
+                          setFullScriptSceneIdx((prev) => Math.max(0, prev - 1));
+                        } else {
+                          setPropViewerSceneIdx(
+                            Math.max(0, propViewerSceneIdx - 1)
+                          );
+                          setPropViewerInstanceIdx(0);
+                        }
                         setInstancePopup(null);
                       }}
-                      disabled={propViewerSceneIdx === 0}
+                      disabled={
+                        showFullScriptViewer
+                          ? fullScriptSceneIdx === 0
+                          : propViewerSceneIdx === 0
+                      }
                       style={{
                         backgroundColor:
-                          propViewerSceneIdx === 0 ? "#ccc" : "white",
-                        color: propViewerSceneIdx === 0 ? "#888" : "#1976d2",
+                          (showFullScriptViewer
+                            ? fullScriptSceneIdx === 0
+                            : propViewerSceneIdx === 0)
+                            ? "#ccc"
+                            : "white",
+                        color:
+                          (showFullScriptViewer
+                            ? fullScriptSceneIdx === 0
+                            : propViewerSceneIdx === 0)
+                            ? "#888"
+                            : "#1976d2",
                         border: "none",
                         padding: "4px 10px",
                         borderRadius: "3px",
                         cursor:
-                          propViewerSceneIdx === 0 ? "not-allowed" : "pointer",
+                          (showFullScriptViewer
+                            ? fullScriptSceneIdx === 0
+                            : propViewerSceneIdx === 0)
+                            ? "not-allowed"
+                            : "pointer",
                         fontWeight: "bold",
                       }}
                     >
@@ -1992,39 +2298,62 @@ function PropsModule({
                     </button>
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontWeight: "bold", fontSize: "13px" }}>
-                        Scene {scene.sceneNumber} ({propViewerSceneIdx + 1}/
-                        {sceneIndices.length})
+                        {showFullScriptViewer ? (
+                          <>Scene {scene.sceneNumber} ({fullScriptSceneIdx + 1}/{scenes.length})</>
+                        ) : (
+                          <>Scene {scene.sceneNumber} ({propViewerSceneIdx + 1}/{sceneIndices.length})</>
+                        )}
                       </div>
                       <div style={{ fontSize: "10px", opacity: 0.8 }}>
-                        {confirmedInScene} confirmed · {pendingInScene} pending
+                        {showFullScriptViewer
+                          ? currentInstances.length > 0
+                            ? `${confirmedInScene} confirmed · ${pendingInScene} pending`
+                            : "no instances in this scene"
+                          : `${confirmedInScene} confirmed · ${pendingInScene} pending`}
                       </div>
                     </div>
                     <button
                       onClick={() => {
-                        setPropViewerSceneIdx(
-                          Math.min(
-                            sceneIndices.length - 1,
-                            propViewerSceneIdx + 1
-                          )
-                        );
-                        setPropViewerInstanceIdx(0);
+                        if (showFullScriptViewer) {
+                          setFullScriptSceneIdx((prev) =>
+                            Math.min(scenes.length - 1, prev + 1)
+                          );
+                        } else {
+                          setPropViewerSceneIdx(
+                            Math.min(
+                              sceneIndices.length - 1,
+                              propViewerSceneIdx + 1
+                            )
+                          );
+                          setPropViewerInstanceIdx(0);
+                        }
                         setInstancePopup(null);
                       }}
-                      disabled={propViewerSceneIdx === sceneIndices.length - 1}
+                      disabled={
+                        showFullScriptViewer
+                          ? fullScriptSceneIdx === scenes.length - 1
+                          : propViewerSceneIdx === sceneIndices.length - 1
+                      }
                       style={{
                         backgroundColor:
-                          propViewerSceneIdx === sceneIndices.length - 1
+                          (showFullScriptViewer
+                            ? fullScriptSceneIdx === scenes.length - 1
+                            : propViewerSceneIdx === sceneIndices.length - 1)
                             ? "#ccc"
                             : "white",
                         color:
-                          propViewerSceneIdx === sceneIndices.length - 1
+                          (showFullScriptViewer
+                            ? fullScriptSceneIdx === scenes.length - 1
+                            : propViewerSceneIdx === sceneIndices.length - 1)
                             ? "#888"
                             : "#1976d2",
                         border: "none",
                         padding: "4px 10px",
                         borderRadius: "3px",
                         cursor:
-                          propViewerSceneIdx === sceneIndices.length - 1
+                          (showFullScriptViewer
+                            ? fullScriptSceneIdx === scenes.length - 1
+                            : propViewerSceneIdx === sceneIndices.length - 1)
                             ? "not-allowed"
                             : "pointer",
                         fontWeight: "bold",
@@ -2118,24 +2447,72 @@ function PropsModule({
                       Word →
                     </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      setShowPropScriptViewer(false);
-                      setInstancePopup(null);
-                    }}
+                  <div
                     style={{
-                      backgroundColor: "rgba(255,255,255,0.2)",
-                      border: "1px solid rgba(255,255,255,0.5)",
-                      color: "white",
-                      fontSize: "13px",
-                      fontWeight: "bold",
-                      cursor: "pointer",
-                      padding: "6px 14px",
-                      borderRadius: "4px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
                     }}
                   >
-                    ✓ Done
-                  </button>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontSize: "12px",
+                        color: "white",
+                        cursor: "pointer",
+                        userSelect: "none",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={showFullScriptViewer}
+                        onChange={(e) => {
+                          const turningOn = e.target.checked;
+                          setShowFullScriptViewer(turningOn);
+                          setInstancePopup(null);
+                          if (turningOn) {
+                            setFullScriptSceneIdx(currentSceneIndex);
+                          } else {
+                            // Snap back to the tagged scene closest to current full-script position
+                            let closestIdx = 0;
+                            let closestDist = Infinity;
+                            sceneIndices.forEach((si, idx) => {
+                              const dist = Math.abs(si - fullScriptSceneIdx);
+                              if (dist < closestDist) {
+                                closestDist = dist;
+                                closestIdx = idx;
+                              }
+                            });
+                            setPropViewerSceneIdx(closestIdx);
+                            setPropViewerInstanceIdx(0);
+                          }
+                        }}
+                        style={{ cursor: "pointer" }}
+                      />
+                      Show full script
+                    </label>
+                    <button
+                      onClick={() => {
+                        setShowPropScriptViewer(false);
+                        setInstancePopup(null);
+                        setShowFullScriptViewer(false);
+                      }}
+                      style={{
+                        backgroundColor: "rgba(255,255,255,0.2)",
+                        border: "1px solid rgba(255,255,255,0.5)",
+                        color: "white",
+                        fontSize: "13px",
+                        fontWeight: "bold",
+                        cursor: "pointer",
+                        padding: "6px 14px",
+                        borderRadius: "4px",
+                      }}
+                    >
+                      ✓ Done
+                    </button>
+                  </div>
                 </div>
 
                 {/* Scene heading strip */}
@@ -2168,9 +2545,10 @@ function PropsModule({
                   }}
                   onClick={() => setInstancePopup(null)}
                 >
-                  <div style={getElementStyle("Scene Heading")}>
-                    {scene.heading}
-                  </div>
+                  <div style={{ marginBottom: 0 }}>
+                    <div style={getElementStyle("Scene Heading")}>
+                      {scene.heading}
+                    </div>
                   {(scene.content || []).map((block, bi) => {
                     const words = block.text.split(/(\s+)/);
                     return (
@@ -2235,6 +2613,9 @@ function PropsModule({
                                     : effectiveId
                                 );
                                 setInstancePopupVariantInput("");
+                                setInstancePopupMultiSelect(false);
+                                setInstancePopupMultiChars([]);
+                                setInstancePopupCharDropdownOpen(false);
                                 // Pre-populate with this instance's assigned character,
                                 // or the most recently chosen character
                                 const preChar =
@@ -2322,57 +2703,165 @@ function PropsModule({
                                     >
                                       <button
                                         onClick={() => {
-                                          const charToApply = instancePopupCharInput;
+                                          // Build the list of chars to apply:
+                                          // multi-select mode uses the checklist,
+                                          // single mode uses the dropdown value
+                                          const charsToApply =
+                                            instancePopupMultiSelect
+                                              ? instancePopupMultiChars
+                                              : instancePopupCharInput
+                                              ? [instancePopupCharInput]
+                                              : [];
 
-                                          // Apply the pre-filled character (if any) — same logic as dropdown onChange
-                                          if (charToApply) {
+                                          if (charsToApply.length > 0) {
+                                            const primaryChar = charsToApply[0];
                                             const updatedChars = {
                                               ...instanceCharacters,
-                                              [instanceId]: charToApply,
+                                              [instanceId]: primaryChar,
                                             };
-                                            setLastChosenChar(charToApply);
+                                            setLastChosenChar(primaryChar);
 
+                                            // Resolve primary session char
+                                            const effectivePrimary =
+                                              primarySessionChar || primaryChar;
                                             if (!primarySessionChar) {
-                                              // First character — set as primary
-                                              setPrimarySessionChar(charToApply);
-                                            } else if (charToApply !== primarySessionChar) {
-                                              // Different character — create or reuse variant
-                                              setInstanceVariants((prev) => ({
-                                                ...prev,
-                                                [instanceId]: charToApply,
-                                              }));
-                                              if (sessionVariants[charToApply]) {
-                                                // Reuse existing variant
-                                                const variantWord = sessionVariants[charToApply];
-                                                if (onAddPropToScene) {
-                                                  const sceneIdx = scenes.findIndex(
-                                                    (s) => String(s.sceneNumber) === String(scene.sceneNumber)
-                                                  );
-                                                  if (sceneIdx >= 0) onAddPropToScene(variantWord, sceneIdx);
-                                                }
-                                              } else {
-                                                // New variant
-                                                if (onCreateNewProp) {
-                                                  const createdWord = onCreateNewProp(
-                                                    selectedProp.customTitle || "Prop",
-                                                    null,
-                                                    [scene.sceneNumber],
-                                                    { variant: charToApply }
-                                                  );
-                                                  if (createdWord) {
-                                                    setSessionVariants((prev) => ({
-                                                      ...prev,
-                                                      [charToApply]: createdWord,
-                                                    }));
+                                              setPrimarySessionChar(
+                                                primaryChar
+                                              );
+                                            }
+
+                                            // Build all additional variant updates in one
+                                            // batch to avoid stale taggedItems overwrites
+                                            // from sequential onCreateNewProp calls
+                                            const additionalChars =
+                                              charsToApply.filter(
+                                                (c) => c !== effectivePrimary
+                                              );
+
+                                            if (additionalChars.length > 0) {
+                                              const batchedItems = {
+                                                ...taggedItems,
+                                              };
+                                              const newVariantWords = {};
+                                              let nextNum =
+                                                Object.keys(batchedItems)
+                                                  .length + 1;
+
+                                              for (const char of additionalChars) {
+                                                setInstanceVariants((prev) => ({
+                                                  ...prev,
+                                                  [instanceId]: char,
+                                                }));
+                                                const existingWord =
+                                                  sessionVariants[char] ||
+                                                  newVariantWords[char];
+                                                if (
+                                                  existingWord &&
+                                                  batchedItems[existingWord]
+                                                ) {
+                                                  // Reuse: add scene to existing variant
+                                                  const variantItem =
+                                                    batchedItems[existingWord];
+                                                  const sceneNum =
+                                                    scene.sceneNumber;
+                                                  const currentScenes =
+                                                    variantItem.scenes || [];
+                                                  if (
+                                                    !currentScenes
+                                                      .map(String)
+                                                      .includes(
+                                                        String(sceneNum)
+                                                      )
+                                                  ) {
+                                                    batchedItems[existingWord] =
+                                                      {
+                                                        ...variantItem,
+                                                        scenes: [
+                                                          ...currentScenes,
+                                                          sceneNum,
+                                                        ],
+                                                      };
                                                   }
+                                                } else {
+                                                  // New variant — build inline so all
+                                                  // chars share the same batchedItems base
+                                                  const cleanWord = `custom_prop_${(
+                                                    selectedProp.customTitle ||
+                                                    "Prop"
+                                                  )
+                                                    .toLowerCase()
+                                                    .replace(
+                                                      /[^\w]/g,
+                                                      "_"
+                                                    )}_${char
+                                                    .replace(/\s+/g, "_")
+                                                    .toLowerCase()}_${Date.now()}_${Math.random()
+                                                    .toString(36)
+                                                    .slice(2, 6)}`;
+                                                  batchedItems[cleanWord] = {
+                                                    displayName:
+                                                      selectedProp.customTitle ||
+                                                      selectedProp.displayName ||
+                                                      "Prop",
+                                                    category: "Props",
+                                                    color:
+                                                      Object.values(
+                                                        taggedItems
+                                                      ).find(
+                                                        (item) =>
+                                                          item.category ===
+                                                          "Props"
+                                                      )?.color ||
+                                                      selectedProp.color ||
+                                                      "#FF6B6B",
+                                                    chronologicalNumber:
+                                                      nextNum++,
+                                                    position: 0,
+                                                    scenes: [scene.sceneNumber],
+                                                    instances: [
+                                                      `manual-${Date.now()}`,
+                                                    ],
+                                                    customTitle:
+                                                      selectedProp.customTitle ||
+                                                      selectedProp.displayName ||
+                                                      "Prop",
+                                                    manuallyCreated: true,
+                                                    assignedCharacters: [char],
+                                                  };
+                                                  newVariantWords[char] =
+                                                    cleanWord;
                                                 }
+                                              }
+
+                                              // Single state + DB update for all variants
+                                              if (onUpdateTaggedItems)
+                                                onUpdateTaggedItems(
+                                                  batchedItems
+                                                );
+                                              if (onSyncTaggedItems)
+                                                onSyncTaggedItems(batchedItems);
+
+                                              // Track all new words in sessionVariants
+                                              if (
+                                                Object.keys(newVariantWords)
+                                                  .length > 0
+                                              ) {
+                                                setSessionVariants((prev) => ({
+                                                  ...prev,
+                                                  ...newVariantWords,
+                                                }));
                                               }
                                             }
 
-                                            // Default unreviewed instances without a char
+                                            // Default unreviewed instances to primary char
                                             if (propSearchResults) {
-                                              Object.entries(propSearchResults.instancesByScene)
-                                                .filter(([key]) => !key.startsWith("_group_"))
+                                              Object.entries(
+                                                propSearchResults.instancesByScene
+                                              )
+                                                .filter(
+                                                  ([key]) =>
+                                                    !key.startsWith("_group_")
+                                                )
                                                 .flatMap(([, ids]) => ids)
                                                 .filter(
                                                   (id) =>
@@ -2382,7 +2871,8 @@ function PropsModule({
                                                     !instanceCharacters[id]
                                                 )
                                                 .forEach((id) => {
-                                                  updatedChars[id] = primarySessionChar || charToApply;
+                                                  updatedChars[id] =
+                                                    effectivePrimary;
                                                 });
                                             }
                                             setInstanceCharacters(updatedChars);
@@ -2452,168 +2942,396 @@ function PropsModule({
 
                                     {/* Assign character */}
                                     <div>
-                                      <div
+                                      {/* Multi-select toggle */}
+                                      <label
                                         style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "5px",
                                           fontSize: "10px",
-                                          color: "#888",
-                                          marginBottom: "3px",
+                                          color: "#555",
+                                          marginBottom: "5px",
+                                          cursor: "pointer",
+                                          userSelect: "none",
                                         }}
                                       >
-                                        Assign character:
-                                      </div>
-                                      <select
-                                        value={instancePopupCharInput}
-                                        onChange={(e) => {
-                                          const selectedChar = e.target.value;
-                                          setInstancePopupCharInput(
-                                            selectedChar
-                                          );
-                                          if (!selectedChar) return;
+                                        <input
+                                          type="checkbox"
+                                          checked={instancePopupMultiSelect}
+                                          onChange={(e) => {
+                                            setInstancePopupMultiSelect(
+                                              e.target.checked
+                                            );
+                                            setInstancePopupMultiChars([]);
+                                          }}
+                                          style={{ cursor: "pointer" }}
+                                        />
+                                        Multiple characters
+                                      </label>
 
-                                          const existingChar =
-                                            primarySessionChar;
-
-                                          // Always track the last chosen character
-                                          setLastChosenChar(selectedChar);
-
-                                          if (!primarySessionChar) {
-                                            // First character chosen — set as primary
-                                            setPrimarySessionChar(selectedChar);
-                                          } else if (
-                                            existingChar !== selectedChar
-                                          ) {
-                                            // Different character — create or reuse variant
-                                            if (sessionVariants[selectedChar]) {
-                                              // Variant already exists — add this scene to it
-                                              const variantWord =
-                                                sessionVariants[selectedChar];
-                                              if (onAddPropToScene) {
-                                                const sceneIdx =
-                                                  scenes.findIndex(
-                                                    (s) =>
-                                                      String(s.sceneNumber) ===
-                                                      String(scene.sceneNumber)
-                                                  );
-                                                if (sceneIdx >= 0)
-                                                  onAddPropToScene(
-                                                    variantWord,
-                                                    sceneIdx
-                                                  );
-                                              }
-                                            } else {
-                                              // New character — create variant immediately
-                                              if (onCreateNewProp) {
-                                                const variantName =
-                                                  selectedProp.customTitle ||
-                                                  "Prop";
-                                                const createdWord =
-                                                  onCreateNewProp(
-                                                    variantName,
-                                                    null,
-                                                    [scene.sceneNumber],
-                                                    { variant: selectedChar }
-                                                  );
-                                                if (createdWord) {
-                                                  setSessionVariants(
-                                                    (prev) => ({
-                                                      ...prev,
-                                                      [selectedChar]:
-                                                        createdWord,
-                                                    })
+                                      {!instancePopupMultiSelect ? (
+                                        /* Single-select: original dropdown, auto-confirms on pick */
+                                        <>
+                                          <div
+                                            style={{
+                                              fontSize: "10px",
+                                              color: "#888",
+                                              marginBottom: "3px",
+                                            }}
+                                          >
+                                            Assign character:
+                                          </div>
+                                          <div style={{ position: "relative" }}>
+                                            {/* Trigger button */}
+                                            <div
+                                              ref={charDropdownTriggerRef}
+                                              onClick={() => {
+                                                const rect = charDropdownTriggerRef.current?.getBoundingClientRect();
+                                                if (rect) {
+                                                  const approxHeight =
+                                                    Object.keys(characters || {}).length * 26 + 36;
+                                                  setCharDropdownFlipped(
+                                                    rect.bottom + approxHeight > window.innerHeight
                                                   );
                                                 }
-                                              }
-                                            }
-                                            setInstanceVariants((prev) => ({
-                                              ...prev,
-                                              [instanceId]: selectedChar,
-                                            }));
-                                          }
+                                                setInstancePopupCharDropdownOpen((prev) => !prev);
+                                              }}
+                                              style={{
+                                                padding: "4px 7px",
+                                                fontSize: "11px",
+                                                border: "1px solid #ccc",
+                                                borderRadius: instancePopupCharDropdownOpen ? "3px 3px 0 0" : "3px",
+                                                backgroundColor: "white",
+                                                cursor: "pointer",
+                                                display: "flex",
+                                                justifyContent: "space-between",
+                                                alignItems: "center",
+                                                color: instancePopupCharInput ? "#333" : "#aaa",
+                                                fontStyle: instancePopupCharInput ? "normal" : "italic",
+                                              }}
+                                            >
+                                              <span>
+                                                {instancePopupCharInput || "Select character…"}
+                                              </span>
+                                              <span style={{ fontSize: "9px", opacity: 0.5 }}>
+                                                {instancePopupCharDropdownOpen ? "▲" : "▼"}
+                                              </span>
+                                            </div>
 
-                                          // Add scene to live preview
-                                          setPendingPropScenes((prev) => {
-                                            const sceneNum = scene.sceneNumber;
-                                            return prev.includes(sceneNum)
-                                              ? prev
-                                              : [...prev, sceneNum];
-                                          });
+                                            {/* Dropdown list — only when open */}
+                                            {instancePopupCharDropdownOpen && (
+                                              <div
+                                              style={{
+                                                position: "absolute",
+                                                ...(charDropdownFlipped
+                                                  ? {
+                                                      bottom: "100%",
+                                                      top: "auto",
+                                                      borderRadius: "3px 3px 0 0",
+                                                      borderBottom: "none",
+                                                      borderTop: "1px solid #90caf9",
+                                                      boxShadow: "0 -4px 12px rgba(0,0,0,0.15)",
+                                                    }
+                                                  : {
+                                                      top: "100%",
+                                                      bottom: "auto",
+                                                      borderRadius: "0 0 3px 3px",
+                                                      borderTop: "none",
+                                                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                                                    }),
+                                                left: 0,
+                                                width: "100%",
+                                                backgroundColor: "white",
+                                                border: "1px solid #90caf9",
+                                                zIndex: 1300,
+                                              }}
+                                            >
+                                            {/* "None" option */}
+                                            <div
+                                              onClick={() => {
+                                                setInstancePopupCharInput("");
+                                                setInstancePopupCharDropdownOpen(false);
+                                              }}
+                                              style={{
+                                                padding: "4px 7px",
+                                                fontSize: "11px",
+                                                cursor: "pointer",
+                                                color: "#aaa",
+                                                fontStyle: "italic",
+                                                backgroundColor:
+                                                  instancePopupCharInput === ""
+                                                    ? "#e3f2fd"
+                                                    : "transparent",
+                                                borderBottom: "1px solid #eee",
+                                              }}
+                                            >
+                                              Select character…
+                                            </div>
+                                            {Object.keys(characters || {})
+                                              .sort()
+                                              .map((c) => {
+                                                const isSelected =
+                                                  instancePopupCharInput === c;
+                                                return (
+                                                  <div
+                                                    key={c}
+                                                    onClick={() => {
+                                                      const selectedChar = c;
+                                                      setInstancePopupCharInput(
+                                                        selectedChar
+                                                      );
 
-                                          // Assign this character to this instance
-                                          const updatedChars = {
-                                            ...instanceCharacters,
-                                            [instanceId]: selectedChar,
-                                          };
+                                                      const existingChar =
+                                                        primarySessionChar;
+                                                      setLastChosenChar(
+                                                        selectedChar
+                                                      );
 
-                                          // Default all unreviewed instances to selected character
-                                          // (only overwrite if they haven't been manually set yet)
-                                          if (propSearchResults) {
-                                            Object.entries(
-                                              propSearchResults.instancesByScene
-                                            )
-                                              .filter(
-                                                ([key]) =>
-                                                  !key.startsWith("_group_")
-                                              )
-                                              .flatMap(([, ids]) => ids)
-                                              .filter(
-                                                (id) =>
-                                                  id &&
-                                                  id !== instanceId &&
-                                                  !instanceStatuses[id] &&
-                                                  !instanceCharacters[id]
-                                              )
-                                              .forEach((id) => {
-                                                updatedChars[id] = primarySessionChar || selectedChar;
-                                              });
-                                          }
-                                          setInstanceCharacters(updatedChars);
+                                                      if (!primarySessionChar) {
+                                                        setPrimarySessionChar(
+                                                          selectedChar
+                                                        );
+                                                      } else if (
+                                                        existingChar !==
+                                                        selectedChar
+                                                      ) {
+                                                        if (
+                                                          sessionVariants[
+                                                            selectedChar
+                                                          ]
+                                                        ) {
+                                                          const variantWord =
+                                                            sessionVariants[
+                                                              selectedChar
+                                                            ];
+                                                          if (onAddPropToScene) {
+                                                            const sceneIdx =
+                                                              scenes.findIndex(
+                                                                (s) =>
+                                                                  String(
+                                                                    s.sceneNumber
+                                                                  ) ===
+                                                                  String(
+                                                                    scene.sceneNumber
+                                                                  )
+                                                              );
+                                                            if (sceneIdx >= 0)
+                                                              onAddPropToScene(
+                                                                variantWord,
+                                                                sceneIdx
+                                                              );
+                                                          }
+                                                        } else {
+                                                          if (onCreateNewProp) {
+                                                            const createdWord =
+                                                              onCreateNewProp(
+                                                                selectedProp.customTitle ||
+                                                                  "Prop",
+                                                                null,
+                                                                [
+                                                                  scene.sceneNumber,
+                                                                ],
+                                                                {
+                                                                  variant:
+                                                                    selectedChar,
+                                                                }
+                                                              );
+                                                            if (createdWord) {
+                                                              setSessionVariants(
+                                                                (prev) => ({
+                                                                  ...prev,
+                                                                  [selectedChar]:
+                                                                    createdWord,
+                                                                })
+                                                              );
+                                                            }
+                                                          }
+                                                        }
+                                                        setInstanceVariants(
+                                                          (prev) => ({
+                                                            ...prev,
+                                                            [instanceId]:
+                                                              selectedChar,
+                                                          })
+                                                        );
+                                                      }
 
-                                          // Confirm this instance and advance
-                                          const newStatuses = {
-                                            ...instanceStatuses,
-                                            [instanceId]: "confirmed",
-                                          };
-                                          setInstanceStatuses(newStatuses);
-                                          setInstancePopup(null);
-                                          advanceToNextInstance(
-                                            propViewerSceneIdx,
-                                            propViewerInstanceIdx,
-                                            newStatuses
-                                          );
-                                        }}
-                                        style={{
-                                          width: "100%",
-                                          padding: "4px",
-                                          fontSize: "11px",
-                                          border: "1px solid #ccc",
-                                          borderRadius: "3px",
-                                        }}
-                                      >
-                                        <option value="">
-                                          Select character...
-                                        </option>
-                                        {Object.keys(characters || {})
-                                          .sort()
-                                          .map((c) => (
-                                            <option key={c} value={c}>
-                                              {c}
-                                            </option>
-                                          ))}
-                                      </select>
+                                                      setPendingPropScenes(
+                                                        (prev) => {
+                                                          const sceneNum =
+                                                            scene.sceneNumber;
+                                                          return prev.includes(
+                                                            sceneNum
+                                                          )
+                                                            ? prev
+                                                            : [
+                                                                ...prev,
+                                                                sceneNum,
+                                                              ];
+                                                        }
+                                                      );
+
+                                                      const updatedChars = {
+                                                        ...instanceCharacters,
+                                                        [instanceId]:
+                                                          selectedChar,
+                                                      };
+                                                      if (propSearchResults) {
+                                                        Object.entries(
+                                                          propSearchResults.instancesByScene
+                                                        )
+                                                          .filter(
+                                                            ([key]) =>
+                                                              !key.startsWith(
+                                                                "_group_"
+                                                              )
+                                                          )
+                                                          .flatMap(
+                                                            ([, ids]) => ids
+                                                          )
+                                                          .filter(
+                                                            (id) =>
+                                                              id &&
+                                                              id !==
+                                                                instanceId &&
+                                                              !instanceStatuses[
+                                                                id
+                                                              ] &&
+                                                              !instanceCharacters[
+                                                                id
+                                                              ]
+                                                          )
+                                                          .forEach((id) => {
+                                                            updatedChars[id] =
+                                                              primarySessionChar ||
+                                                              selectedChar;
+                                                          });
+                                                      }
+                                                      setInstanceCharacters(
+                                                        updatedChars
+                                                      );
+
+                                                      const newStatuses = {
+                                                        ...instanceStatuses,
+                                                        [instanceId]:
+                                                          "confirmed",
+                                                      };
+                                                      setInstanceStatuses(
+                                                        newStatuses
+                                                      );
+                                                      setInstancePopup(null);
+                                                      advanceToNextInstance(
+                                                        propViewerSceneIdx,
+                                                        propViewerInstanceIdx,
+                                                        newStatuses
+                                                      );
+                                                    }}
+                                                    style={{
+                                                      padding: "4px 7px",
+                                                      fontSize: "11px",
+                                                      cursor: "pointer",
+                                                      backgroundColor: isSelected
+                                                        ? "#e3f2fd"
+                                                        : "transparent",
+                                                      fontWeight: isSelected
+                                                        ? "bold"
+                                                        : "normal",
+                                                      color: isSelected
+                                                        ? "#1565c0"
+                                                        : "#333",
+                                                    }}
+                                                  >
+                                                    {c}
+                                                  </div>
+                                                );
+                                              })}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </>
+                                      ) : (
+                                        /* Multi-select: checklist, confirmed via Confirm button */
+                                        <div
+                                          style={{
+                                            border: "1px solid #90caf9",
+                                            borderRadius: "4px",
+                                            padding: "5px 7px",
+                                            backgroundColor: "#f0f7ff",
+                                          }}
+                                        >
+                                          {Object.keys(characters || {})
+                                            .sort()
+                                            .map((c) => (
+                                              <label
+                                                key={c}
+                                                style={{
+                                                  display: "flex",
+                                                  alignItems: "center",
+                                                  gap: "5px",
+                                                  fontSize: "11px",
+                                                  padding: "2px 0",
+                                                  cursor: "pointer",
+                                                  fontWeight:
+                                                    instancePopupMultiChars[0] ===
+                                                    c
+                                                      ? "bold"
+                                                      : "normal",
+                                                  color:
+                                                    instancePopupMultiChars[0] ===
+                                                    c
+                                                      ? "#1565c0"
+                                                      : "#333",
+                                                }}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={instancePopupMultiChars.includes(
+                                                    c
+                                                  )}
+                                                  onChange={(e) => {
+                                                    setInstancePopupMultiChars(
+                                                      (prev) =>
+                                                        e.target.checked
+                                                          ? [...prev, c]
+                                                          : prev.filter(
+                                                              (x) => x !== c
+                                                            )
+                                                    );
+                                                  }}
+                                                  style={{ cursor: "pointer" }}
+                                                />
+                                                {c}
+                                                {instancePopupMultiChars[0] ===
+                                                  c && (
+                                                  <span
+                                                    style={{
+                                                      fontSize: "9px",
+                                                      color: "#1976d2",
+                                                      marginLeft: "2px",
+                                                    }}
+                                                  >
+                                                    (primary)
+                                                  </span>
+                                                )}
+                                              </label>
+                                            ))}
+                                        </div>
+                                      )}
                                     </div>
                                   </span>
                                 )}
                             </span>
                           );
                         })}
-                      </div>
-                    );
-                  })}
+                        </div>
+                      );
+                    })}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </>
-          );
-        })()}
+              </>
+            );
+          })()}
 
       {/* Script Popup Modal with exact Script module styling */}
       {selectedProp &&
@@ -2832,7 +3550,9 @@ function PropsModule({
                             const renderContent = () => {
                               const words = block.text.split(/(\s+)/);
                               const sceneInstances = propSearchResults
-                                ? propSearchResults.instancesByScene[sceneIndex] || []
+                                ? propSearchResults.instancesByScene[
+                                    sceneIndex
+                                  ] || []
                                 : [];
                               return words.map((word, wordIndex) => {
                                 if (!word.trim()) return word;
@@ -2843,8 +3563,13 @@ function PropsModule({
                                 const stemmedWord = stemWord(cleanWord);
 
                                 const instanceId = `${sceneIndex}-${blockIndex}-${wordIndex}`;
-                                const primaryForThis = sceneInstances.find((id) =>
-                                  (propSearchResults?.instancesByScene[`_group_${id}`] || [id]).includes(instanceId)
+                                const primaryForThis = sceneInstances.find(
+                                  (id) =>
+                                    (
+                                      propSearchResults?.instancesByScene[
+                                        `_group_${id}`
+                                      ] || [id]
+                                    ).includes(instanceId)
                                 );
                                 const isInResults =
                                   !!primaryForThis ||
@@ -2856,11 +3581,14 @@ function PropsModule({
                                 const sceneIsSaved = (selectedProp.scenes || [])
                                   .map(String)
                                   .includes(String(sceneNum));
-                                const isCurrentProp = isInResults && sceneIsSaved;
+                                const isCurrentProp =
+                                  isInResults && sceneIsSaved;
 
-                                const isTagged = !isCurrentProp && Object.keys(taggedItems).some(
-                                  (taggedWord) => stemmedWord === taggedWord
-                                );
+                                const isTagged =
+                                  !isCurrentProp &&
+                                  Object.keys(taggedItems).some(
+                                    (taggedWord) => stemmedWord === taggedWord
+                                  );
 
                                 if (isCurrentProp) {
                                   return (
@@ -2918,7 +3646,7 @@ function PropsModule({
                 })()}
               </div>
             </div>
-            </>
+          </>
         )}
 
       {/* Lightbox — fullscreen image viewer */}

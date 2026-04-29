@@ -5,6 +5,8 @@ import { uploadImage } from "../../utils/imageStorage";
 import {
   uploadWardrobeImage,
   uploadGarmentImage,
+  uploadPropImage,
+  deleteMultipleImages,
 } from "../../utils/imageStorage";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -18,7 +20,7 @@ const MODULES = [
   { name: "Cast & Crew", active: false },
   { name: "Characters", active: false },
   { name: "Locations", active: false },
-  { name: "Props", active: false },
+  { name: "Props", active: true },
   { name: "Makeup", active: false },
   { name: "Budget", active: false },
   { name: "Cost Report", active: true },
@@ -2554,7 +2556,756 @@ function MobileWardrobeModule({
   );
 }
 
-// ─── Mobile Cost Report Module ────────────────────────────────────────────────
+// ─── Mobile Props Module ──────────────────────────────────────────────────────
+function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
+  const [taggedItems, setTaggedItems] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("props"); // "props" | "scenes"
+  const [characterFilter, setCharacterFilter] = useState([]);
+  const [showCharFilter, setShowCharFilter] = useState(false);
+  const [expandedProp, setExpandedProp] = useState(null);
+  const [lightboxImg, setLightboxImg] = useState(null);
+  const [uploading, setUploading] = useState(null); // propWord being uploaded
+  // Add prop workflow
+  const [showAddProp, setShowAddProp] = useState(false);
+  const [propSearchQuery, setPropSearchQuery] = useState("");
+  const [propSearchResults, setPropSearchResults] = useState(null);
+  const [showScriptViewer, setShowScriptViewer] = useState(false);
+  const [newPropName, setNewPropName] = useState("");
+  const [instanceStatuses, setInstanceStatuses] = useState({});
+  const [instanceCharacters, setInstanceCharacters] = useState({});
+  const [instancePopup, setInstancePopup] = useState(null);
+  const [viewerSceneIdx, setViewerSceneIdx] = useState(0);
+  const [viewerInstIdx, setViewerInstIdx] = useState(0);
+  const [pendingScenes, setPendingScenes] = useState([]);
+  const [primarySessionChar, setPrimarySessionChar] = useState(null);
+  const [sessionVariants, setSessionVariants] = useState({});
+  const [fullScriptMode, setFullScriptMode] = useState(false);
+  const [fullScriptIdx, setFullScriptIdx] = useState(0);
+  const [instanceMultiSelect, setInstanceMultiSelect] = useState(false);
+  const [instanceMultiChars, setInstanceMultiChars] = useState([]);
+  const scrollRef = useRef(null);
+
+  // ── stemWord (inlined from App.js) ────────────────────────────────────────
+  const stemWord = useCallback((word) => {
+    const rules = [
+      { pattern: /^children$/, stem: "child" },
+      { pattern: /^people$/, stem: "person" },
+      { pattern: /^men$/, stem: "man" },
+      { pattern: /^women$/, stem: "woman" },
+      { pattern: /^feet$/, stem: "foot" },
+      { pattern: /^teeth$/, stem: "tooth" },
+      { pattern: /^geese$/, stem: "goose" },
+      { pattern: /^mice$/, stem: "mouse" },
+      { pattern: /ies$/, stem: (w) => w.slice(0, -3) + "y" },
+      { pattern: /ves$/, stem: (w) => w.slice(0, -3) + "f" },
+      { pattern: /(s|x|z|ch|sh)es$/, stem: (w) => w.slice(0, -2) },
+      { pattern: /s$/, stem: (w) => w.slice(0, -1) },
+      { pattern: /ing$/, stem: (w) => {
+        const b = w.slice(0, -3);
+        return b.length >= 2 && b[b.length - 1] === b[b.length - 2] ? b.slice(0, -1) : b;
+      }},
+      { pattern: /ed$/, stem: (w) => {
+        const b = w.slice(0, -2);
+        return b.length >= 2 && b[b.length - 1] === b[b.length - 2] ? b.slice(0, -1) : b;
+      }},
+    ];
+    for (const r of rules) {
+      if (typeof r.stem === "string") { if (r.pattern.test(word)) return r.stem; }
+      else { if (r.pattern.test(word)) return r.stem(word); }
+    }
+    return word;
+  }, []);
+
+  // ── searchScript ──────────────────────────────────────────────────────────
+  const searchScript = useCallback((query) => {
+    if (!query?.trim()) { setPropSearchResults(null); return; }
+    const qWords = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const isMulti = qWords.length > 1;
+    const stemmedQ = qWords.map((w) => stemWord(w.replace(/[^\w]/g, "")));
+    const instancesByScene = {};
+    for (let si = 0; si < scenes.length; si++) {
+      const scene = scenes[si];
+      if (!scene.content) continue;
+      for (let bi = 0; bi < scene.content.length; bi++) {
+        const block = scene.content[bi];
+        const rawWords = block.text.split(/(\s+)/);
+        const tokens = [];
+        for (let wi = 0; wi < rawWords.length; wi++) {
+          if (rawWords[wi].trim()) tokens.push({ wi, text: rawWords[wi] });
+        }
+        for (let ti = 0; ti < tokens.length; ti++) {
+          const tok = tokens[ti];
+          const clean = tok.text.toLowerCase().replace(/[^\w]/g, "");
+          const stemmed = stemWord(clean);
+          if (isMulti) {
+            if (!stemmed.startsWith(stemmedQ[0])) continue;
+            let ok = true;
+            for (let qi = 1; qi < stemmedQ.length; qi++) {
+              const nt = tokens[ti + qi];
+              if (!nt) { ok = false; break; }
+              const nc = nt.text.toLowerCase().replace(/[^\w]/g, "");
+              if (!stemWord(nc).startsWith(stemmedQ[qi])) { ok = false; break; }
+            }
+            if (!ok) continue;
+            if (!instancesByScene[si]) instancesByScene[si] = [];
+            const groupIds = [];
+            for (let qi = 0; qi < stemmedQ.length; qi++) {
+              groupIds.push(`${si}-${bi}-${tokens[ti + qi].wi}`);
+            }
+            instancesByScene[si].push(groupIds[0]);
+            instancesByScene[`_group_${groupIds[0]}`] = groupIds;
+          } else {
+            if (stemmed.startsWith(stemmedQ[0]) || clean.startsWith(qWords[0])) {
+              if (!instancesByScene[si]) instancesByScene[si] = [];
+              instancesByScene[si].push(`${si}-${bi}-${tok.wi}`);
+            }
+          }
+        }
+      }
+    }
+    const sceneIndices = Object.keys(instancesByScene)
+      .filter((k) => !k.startsWith("_group_"))
+      .map(Number).filter((n) => !isNaN(n)).sort((a, b) => a - b);
+    setPropSearchResults({ instancesByScene, sceneIndices });
+  }, [scenes, stemWord]);
+
+  useEffect(() => {
+    if (showAddProp) searchScript(propSearchQuery);
+  }, [propSearchQuery, showAddProp, searchScript]);
+
+  // ── Load taggedItems ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!selectedProject) return;
+    setLoading(true);
+    database.loadTaggedItemsFromDatabase(
+      selectedProject,
+      (items) => {
+        setTaggedItems(items || {});
+        setLoading(false);
+      },
+      (items) => items // identity — no category number recalculation needed on mobile
+    );
+  }, [selectedProject?.id]);
+
+  // ── Realtime ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!selectedProject) return;
+    const ch = supabase
+      .channel(`tagged_items_mobile_${selectedProject.id}`)
+      .on("postgres_changes", {
+        event: "*", schema: "public", table: "tagged_items",
+        filter: `project_id=eq.${selectedProject.id}`,
+      }, () => {
+        database.loadTaggedItemsFromDatabase(
+          selectedProject,
+          (items) => { setTaggedItems(items || {}); },
+          (items) => items
+        );
+      }).subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [selectedProject?.id]);
+
+  const syncItems = useCallback(async (updated) => {
+    await database.syncTaggedItemsToDatabase(selectedProject, updated);
+    // Patch extended fields
+    const arr = Object.entries(updated).map(([word, item]) => ({
+      project_id: selectedProject.id, word,
+      display_name: item.displayName, custom_title: item.customTitle || null,
+      category: item.category, color: item.color,
+      chronological_number: item.chronologicalNumber, position: item.position || 0,
+      scenes: item.scenes || [], instances: item.instances || [],
+      assigned_characters: item.assignedCharacters || [],
+      manually_created: item.manuallyCreated || false,
+      original_prop: item.originalProp || null,
+      default_character: item.defaultCharacter || false,
+      scenes_before_default: item.scenesBeforeDefault ?? null,
+      photos: item.photos || [],
+    }));
+    await supabase.from("tagged_items")
+      .upsert(arr, { onConflict: "project_id,word" });
+  }, [selectedProject]);
+
+  // ── Prop sorting helpers ──────────────────────────────────────────────────
+  const getEarliestScene = (prop) => {
+    const nums = (prop.scenes || []).map((n) => parseFloat(n)).filter((n) => !isNaN(n));
+    return nums.length > 0 ? Math.min(...nums) : Infinity;
+  };
+
+  const propItems = Object.entries(taggedItems)
+    .filter(([, item]) => item.category === "Props")
+    .sort((a, b) => {
+      const d = getEarliestScene(a[1]) - getEarliestScene(b[1]);
+      return d !== 0 ? d : (a[1].chronologicalNumber || 0) - (b[1].chronologicalNumber || 0);
+    });
+
+  const propNumberMap = Object.fromEntries(propItems.map(([w], i) => [w, i + 1]));
+
+  const getPropsForScene = (sceneIndex) => {
+    const scene = scenes[sceneIndex];
+    if (!scene) return [];
+    return propItems
+      .filter(([, prop]) =>
+        (prop.scenes || []).some((s) => String(s) === String(scene.sceneNumber)) ||
+        (prop.instances || []).some((inst) => parseInt(inst.split("-")[0]) === sceneIndex)
+      )
+      .map(([word, prop]) => ({ word, ...prop }));
+  };
+
+  const filteredProps = characterFilter.length === 0
+    ? propItems
+    : propItems.filter(([, item]) =>
+        (item.assignedCharacters || []).some((c) => characterFilter.includes(c))
+      );
+
+  // ── Script viewer helpers ─────────────────────────────────────────────────
+  const currentSceneIndex = fullScriptMode
+    ? fullScriptIdx
+    : (propSearchResults?.sceneIndices[viewerSceneIdx] ?? 0);
+  const currentScene = scenes[currentSceneIndex];
+  const currentInstances = propSearchResults?.instancesByScene[currentSceneIndex] || [];
+
+  const advanceToNext = useCallback((sIdx, iIdx, statuses) => {
+    if (!propSearchResults) return;
+    const { instancesByScene, sceneIndices } = propSearchResults;
+    for (let s = sIdx; s < sceneIndices.length; s++) {
+      const insts = instancesByScene[sceneIndices[s]] || [];
+      const startI = s === sIdx ? iIdx + 1 : 0;
+      for (let i = startI; i < insts.length; i++) {
+        if (statuses[insts[i]] !== "confirmed" && statuses[insts[i]] !== "rejected") {
+          setViewerSceneIdx(s); setViewerInstIdx(i); return;
+        }
+      }
+    }
+  }, [propSearchResults]);
+
+  const openScriptViewer = () => {
+    if (!propSearchResults) return;
+    const { instancesByScene, sceneIndices } = propSearchResults;
+    const init = {};
+    sceneIndices.forEach((si) => {
+      (instancesByScene[si] || []).forEach((id) => { init[id] = "pending"; });
+    });
+    setInstanceStatuses(init);
+    setInstanceCharacters({});
+    setPrimarySessionChar(null);
+    setSessionVariants({});
+    setPendingScenes([]);
+    setViewerSceneIdx(0); setViewerInstIdx(0);
+    setFullScriptMode(false); setFullScriptIdx(0);
+    setShowScriptViewer(true);
+  };
+
+  const saveProp = () => {
+    if (!propSearchResults || !newPropName.trim()) return;
+    const { instancesByScene, sceneIndices } = propSearchResults;
+    const mainScenes = [];
+    sceneIndices.forEach((si) => {
+      (instancesByScene[si] || []).forEach((id) => {
+        if (!id.startsWith("_group_") && instanceStatuses[id] === "confirmed") {
+          const char = instanceCharacters[id];
+          if (!char || char === primarySessionChar) {
+            const sceneNum = scenes[si]?.sceneNumber;
+            if (sceneNum && !mainScenes.includes(sceneNum)) mainScenes.push(sceneNum);
+          }
+        }
+      });
+    });
+    const propColor = Object.values(taggedItems).find((i) => i.category === "Props")?.color || "#FF6B6B";
+    const nextNum = propItems.length + 1;
+    const cleanWord = `custom_prop_${newPropName.toLowerCase().replace(/[^\w]/g, "_")}_${Date.now()}`;
+    const newItem = {
+      displayName: newPropName, customTitle: newPropName,
+      category: "Props", color: propColor,
+      chronologicalNumber: nextNum, position: 0,
+      scenes: mainScenes, instances: [],
+      assignedCharacters: primarySessionChar ? [primarySessionChar] : [],
+      manuallyCreated: true, photos: [],
+    };
+    const updated = { ...taggedItems, [cleanWord]: newItem };
+    // Add variants from sessionVariants
+    Object.entries(sessionVariants).forEach(([char, word]) => {
+      if (!updated[word]) {
+        const variantScenes = [];
+        sceneIndices.forEach((si) => {
+          (instancesByScene[si] || []).forEach((id) => {
+            if (instanceStatuses[id] === "confirmed" && instanceCharacters[id] === char) {
+              const sn = scenes[si]?.sceneNumber;
+              if (sn && !variantScenes.includes(sn)) variantScenes.push(sn);
+            }
+          });
+        });
+        updated[word] = {
+          displayName: newPropName, customTitle: newPropName,
+          category: "Props", color: propColor,
+          chronologicalNumber: nextNum + Object.keys(sessionVariants).indexOf(char) + 1,
+          position: 0, scenes: variantScenes, instances: [],
+          assignedCharacters: [char], manuallyCreated: true, photos: [],
+        };
+      }
+    });
+    setTaggedItems(updated);
+    syncItems(updated);
+    setShowScriptViewer(false);
+    setShowAddProp(false);
+    setPropSearchQuery(""); setPropSearchResults(null);
+    setNewPropName(""); setInstanceStatuses({});
+    setInstanceCharacters({}); setPendingScenes([]);
+    setPrimarySessionChar(null); setSessionVariants({});
+  };
+
+  const getElementStyle = (type) => {
+    const base = { fontFamily: "Courier New, monospace", marginBottom: "4px", whiteSpace: "pre-wrap", wordBreak: "break-word" };
+    switch (type) {
+      case "Scene Heading": return { ...base, fontWeight: "bold", textTransform: "uppercase", fontSize: "11px" };
+      case "Action": return { ...base, fontSize: "11px" };
+      case "Character": return { ...base, textAlign: "center", fontWeight: "bold", fontSize: "11px", textTransform: "uppercase" };
+      case "Dialogue": return { ...base, marginLeft: "20px", marginRight: "20px", fontSize: "11px" };
+      case "Parenthetical": return { ...base, textAlign: "center", fontSize: "11px" };
+      default: return { ...base, fontSize: "11px" };
+    }
+  };
+
+  if (loading) return <div style={styles.spinner}><span>Loading props…</span></div>;
+
+  return (
+    <div style={{ padding: "12px", paddingBottom: "40px" }}>
+      {/* Lightbox */}
+      {lightboxImg && (
+        <div onClick={() => setLightboxImg(null)} style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.92)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <img src={lightboxImg} alt="prop" style={{ maxWidth: "95vw", maxHeight: "90vh", objectFit: "contain", borderRadius: "6px" }} />
+          <button onClick={() => setLightboxImg(null)} style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "white", fontSize: "32px", cursor: "pointer" }}>×</button>
+        </div>
+      )}
+
+      {/* Header row */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+        <div style={{ display: "flex", gap: "8px" }}>
+          {["props", "scenes"].map((tab) => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              style={{ padding: "6px 14px", borderRadius: "4px", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: "bold", backgroundColor: activeTab === tab ? "#2196F3" : "#eeeeee", color: activeTab === tab ? "white" : "#444" }}>
+              {tab === "props" ? "Props" : "Scenes"}
+            </button>
+          ))}
+        </div>
+        {activeTab === "props" && (
+          <button onClick={() => { setShowAddProp(true); setPropSearchQuery(""); setPropSearchResults(null); setNewPropName(""); }}
+            style={{ padding: "6px 12px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", fontSize: "12px", fontWeight: "bold", cursor: "pointer" }}>
+            + Add Prop
+          </button>
+        )}
+      </div>
+
+      {/* Character filter */}
+      {activeTab === "props" && Object.keys(characters).length > 0 && (
+        <div style={{ marginBottom: "10px", position: "relative" }}>
+          <button onClick={() => setShowCharFilter((p) => !p)}
+            style={{ width: "100%", padding: "8px 10px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: characterFilter.length > 0 ? "#e3f2fd" : "white", cursor: "pointer", fontSize: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", boxSizing: "border-box" }}>
+            <span>{characterFilter.length === 0 ? "Filter by character…" : characterFilter.length === 1 ? characterFilter[0] : `${characterFilter.length} characters`}</span>
+            <span style={{ fontSize: "10px", opacity: 0.5 }}>{showCharFilter ? "▲" : "▼"}</span>
+          </button>
+          {showCharFilter && (
+            <>
+              <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", zIndex: 299 }} onClick={() => setShowCharFilter(false)} />
+              <div style={{ position: "absolute", top: "100%", left: 0, width: "100%", backgroundColor: "white", border: "1px solid #90caf9", borderRadius: "4px", padding: "6px 8px", zIndex: 300, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", boxSizing: "border-box" }}>
+                {characterFilter.length > 0 && (
+                  <div onClick={() => setCharacterFilter([])} style={{ fontSize: "11px", color: "#1976d2", cursor: "pointer", marginBottom: "5px", paddingBottom: "5px", borderBottom: "1px solid #eee" }}>✕ Clear filter</div>
+                )}
+                {Object.keys(characters).sort().map((c) => (
+                  <label key={c} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", padding: "5px 0", cursor: "pointer", fontWeight: characterFilter.includes(c) ? "bold" : "normal" }}>
+                    <input type="checkbox" checked={characterFilter.includes(c)}
+                      onChange={(e) => setCharacterFilter((prev) => e.target.checked ? [...prev, c] : prev.filter((x) => x !== c))} />
+                    {c}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── PROPS TAB ── */}
+      {activeTab === "props" && (
+        <div>
+          {filteredProps.length === 0 ? (
+            <div style={{ color: "#888", textAlign: "center", padding: "40px 0", fontSize: "13px", fontStyle: "italic" }}>No props found.</div>
+          ) : (
+            filteredProps.map(([word, item]) => {
+              const isExpanded = expandedProp === word;
+              const name = item.customTitle || item.displayName || word;
+              const chars = item.assignedCharacters || [];
+              const photos = item.photos || [];
+              return (
+                <div key={word} style={{ marginBottom: "6px", borderRadius: "6px", overflow: "hidden", border: `2px solid ${item.color}`, backgroundColor: `${item.color}18` }}>
+                  {/* Collapsed header */}
+                  <div onClick={() => setExpandedProp(isExpanded ? null : word)}
+                    style={{ padding: "8px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                        <span style={{ fontWeight: "bold", fontSize: "14px" }}>{propNumberMap[word]}. {name}</span>
+                        {item.defaultCharacter && (
+                          <span style={{ fontSize: "9px", fontWeight: "bold", color: item.color, backgroundColor: "white", border: `1.5px solid ${item.color}`, borderRadius: "4px", padding: "1px 5px", textTransform: "uppercase" }}>Default</span>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "2px" }}>
+                        {chars.map((c) => (
+                          <span key={c} style={{ backgroundColor: item.color, color: "white", borderRadius: "10px", padding: "1px 7px", fontSize: "9px", fontWeight: "bold" }}>{c}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+                      {photos.length > 0 && (
+                        <img src={photos[0]} alt="" style={{ width: "36px", height: "36px", objectFit: "cover", border: `2px solid ${item.color}`, borderRadius: "3px" }} />
+                      )}
+                      <span style={{ fontSize: "16px", color: "#666" }}>{isExpanded ? "▲" : "▼"}</span>
+                    </div>
+                  </div>
+
+                  {/* Expanded content */}
+                  {isExpanded && (
+                    <div style={{ padding: "10px", borderTop: `1px solid ${item.color}40`, backgroundColor: "white" }}>
+                      {/* Scenes list */}
+                      {(item.scenes || []).length > 0 && (
+                        <div style={{ marginBottom: "10px" }}>
+                          <div style={{ fontSize: "10px", fontWeight: "bold", color: "#888", textTransform: "uppercase", marginBottom: "4px" }}>Scenes</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                            {[...(item.scenes || [])].sort((a, b) => parseFloat(a) - parseFloat(b)).map((s) => (
+                              <span key={s} style={{ backgroundColor: item.color, color: "white", borderRadius: "4px", padding: "2px 8px", fontSize: "11px", fontWeight: "bold" }}>{s}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Photos */}
+                      <div>
+                        <div style={{ fontSize: "10px", fontWeight: "bold", color: "#888", textTransform: "uppercase", marginBottom: "6px" }}>
+                          Photos ({photos.length}/10)
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px", marginBottom: "8px" }}>
+                          {photos.map((photo, idx) => (
+                            <div key={idx} style={{ position: "relative" }}>
+                              <img src={photo} alt="" onClick={() => setLightboxImg(photo)}
+                                style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: "4px", border: `2px solid ${item.color}`, cursor: "pointer" }} />
+                              <button onClick={async () => {
+                                await deleteMultipleImages([photo]);
+                                const newPhotos = photos.filter((_, i) => i !== idx);
+                                const updated = { ...taggedItems, [word]: { ...item, photos: newPhotos } };
+                                setTaggedItems(updated);
+                                syncItems(updated);
+                              }} style={{ position: "absolute", top: "-6px", right: "-6px", backgroundColor: "#f44336", color: "white", border: "none", borderRadius: "50%", width: "20px", height: "20px", fontSize: "14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>×</button>
+                            </div>
+                          ))}
+                        </div>
+                        {photos.length < 10 && (
+                          <>
+                            <input type="file" accept="image/*" id={`prop-upload-${word}`} style={{ display: "none" }}
+                              onChange={async (e) => {
+                                const file = e.target.files[0];
+                                if (!file) return;
+                                setUploading(word);
+                                try {
+                                  const result = await uploadPropImage(file, selectedProject.id, word, `prop_${Date.now()}.jpg`);
+                                  if (result?.url) {
+                                    const newPhotos = [...photos, result.url];
+                                    const updated = { ...taggedItems, [word]: { ...item, photos: newPhotos } };
+                                    setTaggedItems(updated);
+                                    syncItems(updated);
+                                  }
+                                } finally { setUploading(null); e.target.value = ""; }
+                              }} />
+                            <button disabled={uploading === word} onClick={() => document.getElementById(`prop-upload-${word}`).click()}
+                              style={{ width: "100%", padding: "8px", backgroundColor: uploading === word ? "#aaa" : "#4CAF50", color: "white", border: "none", borderRadius: "4px", fontSize: "12px", fontWeight: "bold", cursor: uploading === word ? "not-allowed" : "pointer" }}>
+                              {uploading === word ? "Uploading…" : "📷 Upload Photo"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ── SCENES TAB ── */}
+      {activeTab === "scenes" && (
+        <div>
+          {scenes.map((scene, si) => {
+            const sceneProps = getPropsForScene(si);
+            if (sceneProps.length === 0) return null;
+            const isInt = scene.heading?.toUpperCase().startsWith("INT");
+            const isExt = scene.heading?.toUpperCase().startsWith("EXT");
+            const borderColor = isInt ? "#4A90D9" : isExt ? "#5cb85c" : "#aaa";
+            return (
+              <div key={si} style={{ marginBottom: "8px", borderRadius: "6px", border: `2px solid ${borderColor}`, overflow: "hidden" }}>
+                <div style={{ backgroundColor: borderColor, padding: "6px 10px" }}>
+                  <span style={{ color: "white", fontWeight: "bold", fontSize: "12px" }}>Scene {scene.sceneNumber}</span>
+                  {scene.heading && <span style={{ color: "rgba(255,255,255,0.85)", fontSize: "10px", marginLeft: "8px" }}>{scene.heading}</span>}
+                </div>
+                <div style={{ padding: "8px 10px", backgroundColor: "white" }}>
+                  {sceneProps.map((prop) => (
+                    <div key={prop.word} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "3px 0", borderBottom: "1px solid #f0f0f0" }}>
+                      <div style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: prop.color, flexShrink: 0 }} />
+                      <span style={{ fontSize: "13px", fontWeight: "500" }}>{propNumberMap[prop.word]}. {prop.customTitle || prop.displayName}</span>
+                      {(prop.assignedCharacters || []).map((c) => (
+                        <span key={c} style={{ backgroundColor: prop.color, color: "white", borderRadius: "8px", padding: "1px 6px", fontSize: "9px", fontWeight: "bold" }}>{c}</span>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── ADD PROP OVERLAY ── */}
+      {showAddProp && !showScriptViewer && (
+        <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "white", zIndex: 500, display: "flex", flexDirection: "column" }}>
+          <div style={{ backgroundColor: "#2196F3", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ color: "white", fontWeight: "bold", fontSize: "14px" }}>Add New Prop</span>
+            <button onClick={() => { setShowAddProp(false); setPropSearchQuery(""); setPropSearchResults(null); setNewPropName(""); }}
+              style={{ background: "transparent", border: "none", color: "white", fontSize: "24px", cursor: "pointer" }}>×</button>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+            <div style={{ marginBottom: "12px" }}>
+              <label style={{ fontSize: "11px", fontWeight: "bold", color: "#555", textTransform: "uppercase", display: "block", marginBottom: "4px" }}>Prop Name / Search Script</label>
+              <input type="text" value={propSearchQuery}
+                onChange={(e) => { setPropSearchQuery(e.target.value); setNewPropName(e.target.value); }}
+                placeholder="e.g. rifle, cigarette holder…"
+                style={{ width: "100%", padding: "10px", border: "1px solid #90caf9", borderRadius: "6px", fontSize: "16px", boxSizing: "border-box" }} />
+            </div>
+            {propSearchResults && propSearchResults.sceneIndices.length > 0 && (
+              <div style={{ backgroundColor: "#f0f7ff", border: "1px solid #bbdefb", borderRadius: "6px", padding: "10px", marginBottom: "12px" }}>
+                <div style={{ fontSize: "12px", color: "#555", marginBottom: "8px" }}>
+                  Found in <strong>{propSearchResults.sceneIndices.length}</strong> scene{propSearchResults.sceneIndices.length !== 1 ? "s" : ""}
+                </div>
+                <button onClick={openScriptViewer}
+                  style={{ width: "100%", padding: "10px", backgroundColor: "#1976d2", color: "white", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: "bold", cursor: "pointer" }}>
+                  📄 View & Assign
+                </button>
+              </div>
+            )}
+            {propSearchResults && propSearchResults.sceneIndices.length === 0 && propSearchQuery && (
+              <div style={{ fontSize: "12px", color: "#e53935", marginBottom: "12px" }}>No matches found in script.</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── SCRIPT VIEWER ── */}
+      {showScriptViewer && propSearchResults && currentScene && (
+        <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "white", zIndex: 600, display: "flex", flexDirection: "column" }}>
+          {/* Viewer header */}
+          <div style={{ backgroundColor: "#1976d2", padding: "10px 12px", flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+              <span style={{ color: "white", fontWeight: "bold", fontSize: "13px" }}>{newPropName || "New Prop"}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "white", cursor: "pointer" }}>
+                  <input type="checkbox" checked={fullScriptMode} onChange={(e) => {
+                    const on = e.target.checked;
+                    setFullScriptMode(on);
+                    if (on) setFullScriptIdx(currentSceneIndex);
+                    else {
+                      let closest = 0, dist = Infinity;
+                      (propSearchResults.sceneIndices || []).forEach((si, idx) => {
+                        const d = Math.abs(si - fullScriptIdx);
+                        if (d < dist) { dist = d; closest = idx; }
+                      });
+                      setViewerSceneIdx(closest);
+                    }
+                    setInstancePopup(null);
+                  }} />
+                  Full script
+                </label>
+                <button onClick={() => { setShowScriptViewer(false); setInstancePopup(null); }}
+                  style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.5)", color: "white", padding: "4px 10px", borderRadius: "4px", fontSize: "12px", cursor: "pointer" }}>
+                  ✓ Done
+                </button>
+              </div>
+            </div>
+            {/* Scene navigation */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <button onClick={() => {
+                if (fullScriptMode) setFullScriptIdx((p) => Math.max(0, p - 1));
+                else { setViewerSceneIdx((p) => Math.max(0, p - 1)); setViewerInstIdx(0); }
+                setInstancePopup(null);
+              }} disabled={fullScriptMode ? fullScriptIdx === 0 : viewerSceneIdx === 0}
+                style={{ background: "none", border: "none", color: (fullScriptMode ? fullScriptIdx === 0 : viewerSceneIdx === 0) ? "rgba(255,255,255,0.3)" : "white", fontSize: "18px", cursor: "pointer", padding: "0 4px" }}>‹</button>
+              <span style={{ color: "white", fontSize: "12px", fontWeight: "bold" }}>
+                Scene {currentScene.sceneNumber} ({fullScriptMode ? `${fullScriptIdx + 1}/${scenes.length}` : `${viewerSceneIdx + 1}/${propSearchResults.sceneIndices.length}`})
+              </span>
+              <button onClick={() => {
+                if (fullScriptMode) setFullScriptIdx((p) => Math.min(scenes.length - 1, p + 1));
+                else { setViewerSceneIdx((p) => Math.min(propSearchResults.sceneIndices.length - 1, p + 1)); setViewerInstIdx(0); }
+                setInstancePopup(null);
+              }} disabled={fullScriptMode ? fullScriptIdx === scenes.length - 1 : viewerSceneIdx === propSearchResults.sceneIndices.length - 1}
+                style={{ background: "none", border: "none", color: (fullScriptMode ? fullScriptIdx === scenes.length - 1 : viewerSceneIdx === propSearchResults.sceneIndices.length - 1) ? "rgba(255,255,255,0.3)" : "white", fontSize: "18px", cursor: "pointer", padding: "0 4px" }}>›</button>
+            </div>
+            {/* Word navigation */}
+            {currentInstances.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "4px" }}>
+                <button onClick={() => { setViewerInstIdx((p) => Math.max(0, p - 1)); setInstancePopup(null); }}
+                  disabled={viewerInstIdx === 0}
+                  style={{ background: "none", border: "none", color: viewerInstIdx === 0 ? "rgba(255,255,255,0.3)" : "white", fontSize: "13px", cursor: "pointer" }}>← Word</button>
+                <span style={{ color: "white", fontSize: "11px" }}>{viewerInstIdx + 1}/{currentInstances.length}</span>
+                <button onClick={() => { setViewerInstIdx((p) => Math.min(currentInstances.length - 1, p + 1)); setInstancePopup(null); }}
+                  disabled={viewerInstIdx === currentInstances.length - 1}
+                  style={{ background: "none", border: "none", color: viewerInstIdx === currentInstances.length - 1 ? "rgba(255,255,255,0.3)" : "white", fontSize: "13px", cursor: "pointer" }}>Word →</button>
+              </div>
+            )}
+          </div>
+
+          {/* Script content */}
+          <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "16px", fontFamily: "Courier New, monospace", backgroundColor: "white" }}
+            onClick={() => setInstancePopup(null)}>
+            <div style={getElementStyle("Scene Heading")}>{currentScene.heading}</div>
+            {(currentScene.content || []).map((block, bi) => {
+              const words = block.text.split(/(\s+)/);
+              const sceneInsts = propSearchResults.instancesByScene[currentSceneIndex] || [];
+              return (
+                <div key={bi} style={getElementStyle(block.type)}>
+                  {words.map((word, wi) => {
+                    if (!word.trim()) return word;
+                    const id = `${currentSceneIndex}-${bi}-${wi}`;
+                    const groupKey = `_group_${currentInstances[viewerInstIdx]}`;
+                    const groupIds = propSearchResults.instancesByScene[groupKey] || [];
+                    const isCurrentWord = groupIds.includes(id) || id === currentInstances[viewerInstIdx];
+                    const isAnyInstance = sceneInsts.some((iid) => {
+                      const grp = propSearchResults.instancesByScene[`_group_${iid}`] || [iid];
+                      return grp.includes(id);
+                    });
+                    const status = instanceStatuses[currentInstances[viewerInstIdx]];
+                    const bgColor = isCurrentWord
+                      ? status === "confirmed" ? "#4CAF50" : status === "rejected" ? "#f44336" : "#FFC107"
+                      : isAnyInstance ? (instanceStatuses[sceneInsts.find((iid) => { const g = propSearchResults.instancesByScene[`_group_${iid}`] || [iid]; return g.includes(id); })] === "confirmed" ? "#a5d6a7" : "#fff9c4")
+                      : "transparent";
+                    return (
+                      <span key={wi}
+                        onClick={(e) => {
+                          if (!isAnyInstance) return;
+                          e.stopPropagation();
+                          const clickedIid = sceneInsts.find((iid) => {
+                            const g = propSearchResults.instancesByScene[`_group_${iid}`] || [iid];
+                            return g.includes(id);
+                          });
+                          if (clickedIid) {
+                            const idx = sceneInsts.indexOf(clickedIid);
+                            setViewerInstIdx(idx);
+                            setInstancePopup({ instanceId: clickedIid, sceneIdx: currentSceneIndex });
+                            setInstanceMultiSelect(false);
+                            setInstanceMultiChars([]);
+                          }
+                        }}
+                        style={{ backgroundColor: bgColor, borderRadius: bgColor !== "transparent" ? "2px" : 0, cursor: isAnyInstance ? "pointer" : "default", padding: bgColor !== "transparent" ? "0 1px" : 0 }}>
+                        {word}
+                      </span>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Instance popup */}
+          {instancePopup && (
+            <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", backgroundColor: "white", borderTop: "2px solid #1976d2", zIndex: 700, display: "flex", flexDirection: "column", maxHeight: "55vh", boxSizing: "border-box" }}
+              onClick={(e) => e.stopPropagation()}>
+
+              {/* Sticky header — always visible */}
+              <div style={{ flexShrink: 0, padding: "10px 14px", borderBottom: "1px solid #e0e0e0", backgroundColor: "white" }}>
+                {/* Row 1: label + Reject + Confirm */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                  <span style={{ fontWeight: "bold", fontSize: "13px", color: "#1976d2" }}>Assign instance</span>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button onClick={() => {
+                      const newSt = { ...instanceStatuses, [instancePopup.instanceId]: "rejected" };
+                      setInstanceStatuses(newSt);
+                      setInstancePopup(null);
+                      advanceToNext(viewerSceneIdx, viewerInstIdx, newSt);
+                    }} style={{ padding: "8px 14px", backgroundColor: "#f44336", color: "white", border: "none", borderRadius: "4px", fontSize: "13px", fontWeight: "bold", cursor: "pointer" }}>✗ Reject</button>
+                    <button onClick={() => {
+                      const charsToApply = instanceMultiSelect ? instanceMultiChars : instanceCharacters[instancePopup.instanceId] ? [instanceCharacters[instancePopup.instanceId]] : [];
+                      if (charsToApply.length > 0) {
+                        const primary = charsToApply[0];
+                        if (!primarySessionChar) setPrimarySessionChar(primary);
+                        setInstanceCharacters((prev) => ({ ...prev, [instancePopup.instanceId]: primary }));
+                        charsToApply.slice(1).forEach((char) => {
+                          if (!sessionVariants[char]) {
+                            const vWord = `custom_prop_${(newPropName || "prop").toLowerCase().replace(/[^\w]/g, "_")}_${char.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`;
+                            setSessionVariants((prev) => ({ ...prev, [char]: vWord }));
+                          }
+                        });
+                        const sceneNum = scenes[instancePopup.sceneIdx]?.sceneNumber;
+                        if (sceneNum) setPendingScenes((prev) => prev.includes(sceneNum) ? prev : [...prev, sceneNum]);
+                      }
+                      const newSt = { ...instanceStatuses, [instancePopup.instanceId]: "confirmed" };
+                      setInstanceStatuses(newSt);
+                      setInstancePopup(null);
+                      advanceToNext(viewerSceneIdx, viewerInstIdx, newSt);
+                    }} style={{ padding: "8px 14px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", fontSize: "13px", fontWeight: "bold", cursor: "pointer" }}>✓ Confirm</button>
+                  </div>
+                </div>
+                {/* Row 2: multiple characters toggle */}
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", color: "#555", cursor: "pointer", userSelect: "none" }}>
+                  <input type="checkbox" checked={instanceMultiSelect}
+                    onChange={(e) => { setInstanceMultiSelect(e.target.checked); setInstanceMultiChars([]); }}
+                    style={{ width: "16px", height: "16px", cursor: "pointer" }} />
+                  Multiple characters
+                </label>
+              </div>
+
+              {/* Scrollable character list */}
+              <div style={{ flex: 1, overflowY: "auto" }}>
+                {!instanceMultiSelect ? (
+                  <div>
+                    <div onClick={() => setInstanceCharacters((prev) => ({ ...prev, [instancePopup.instanceId]: "" }))}
+                      style={{ padding: "12px 14px", fontSize: "14px", cursor: "pointer", color: "#aaa", fontStyle: "italic", borderBottom: "1px solid #eee", backgroundColor: !instanceCharacters[instancePopup.instanceId] ? "#e3f2fd" : "white" }}>
+                      Select character…
+                    </div>
+                    {Object.keys(characters).sort().map((c) => (
+                      <div key={c} onClick={() => setInstanceCharacters((prev) => ({ ...prev, [instancePopup.instanceId]: c }))}
+                        style={{ padding: "12px 14px", fontSize: "14px", cursor: "pointer", backgroundColor: instanceCharacters[instancePopup.instanceId] === c ? "#e3f2fd" : "white", fontWeight: instanceCharacters[instancePopup.instanceId] === c ? "bold" : "normal", color: instanceCharacters[instancePopup.instanceId] === c ? "#1565c0" : "#333", borderBottom: "1px solid #f5f5f5" }}>
+                        {c}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: "6px 8px", backgroundColor: "#f0f7ff" }}>
+                    {Object.keys(characters).sort().map((c) => (
+                      <label key={c} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", padding: "8px 6px", cursor: "pointer", fontWeight: instanceMultiChars[0] === c ? "bold" : "normal", color: instanceMultiChars[0] === c ? "#1565c0" : "#333", borderBottom: "1px solid #e8f0fe" }}>
+                        <input type="checkbox" checked={instanceMultiChars.includes(c)}
+                          onChange={(e) => setInstanceMultiChars((prev) => e.target.checked ? [...prev, c] : prev.filter((x) => x !== c))}
+                          style={{ width: "16px", height: "16px", cursor: "pointer" }} />
+                        {c}
+                        {instanceMultiChars[0] === c && <span style={{ fontSize: "10px", color: "#1976d2", marginLeft: "2px" }}>(primary)</span>}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Save bar */}
+          <div style={{ padding: "10px 16px", borderTop: "1px solid #eee", backgroundColor: "#f9f9f9", display: "flex", gap: "8px" }}>
+            <button onClick={saveProp} disabled={!newPropName.trim()}
+              style={{ flex: 1, padding: "12px", backgroundColor: !newPropName.trim() ? "#aaa" : "#1976d2", color: "white", border: "none", borderRadius: "6px", fontSize: "14px", fontWeight: "bold", cursor: !newPropName.trim() ? "not-allowed" : "pointer" }}>
+              💾 Save Prop
+            </button>
+            <button onClick={() => { setShowScriptViewer(false); setInstancePopup(null); }}
+              style={{ padding: "12px 16px", backgroundColor: "#eee", color: "#444", border: "none", borderRadius: "6px", fontSize: "14px", cursor: "pointer" }}>
+              Back
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MobileCostReportModule({ selectedProject }) {
   const [costCategories, setCostCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -4546,6 +5297,13 @@ export default function MobileApp() {
             characters={characters}
             castCrew={castCrew}
             setCastCrew={setCastCrew}
+          />
+        )}
+        {activeModule === "Props" && (
+          <MobilePropsModule
+            selectedProject={selectedProject}
+            scenes={scenes}
+            characters={characters}
           />
         )}
         {activeModule === "Cost Report" && (
