@@ -386,9 +386,16 @@ function MobileLogin({ onLogin }) {
 }
 
 // ─── Project Selector ─────────────────────────────────────────────────────────
-function MobileProjectSelector({ user, onSelectProject, onSignOut }) {
+function MobileProjectSelector({ user, onSelectProject, onSignOut, initialProjectId }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Auto-select project from QR deep link
+  useEffect(() => {
+    if (!initialProjectId || projects.length === 0) return;
+    const match = projects.find((p) => p.id === initialProjectId);
+    if (match) onSelectProject(match);
+  }, [projects, initialProjectId]);
 
   useEffect(() => {
     const loadProjects = async () => {
@@ -5330,7 +5337,7 @@ function MobileDashboard({
   );
 }
 
-export default function MobileApp({ initialPropId }) {
+export default function MobileApp({ initialPropId, initialProjectId }) {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState(null);
@@ -5424,6 +5431,7 @@ export default function MobileApp({ initialPropId }) {
         user={session.user}
         onSelectProject={setSelectedProject}
         onSignOut={handleSignOut}
+        initialProjectId={initialProjectId}
       />
     );
 

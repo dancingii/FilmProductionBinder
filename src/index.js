@@ -13,11 +13,12 @@ const isMobile =
   window.innerWidth < 768;
 
   const urlParams = new URLSearchParams(window.location.search);
-  const initialPropId = urlParams.get("prop");
+const initialPropId = urlParams.get("prop");
+const initialProjectId = urlParams.get("projectId");
   
   root.render(
     isMobile ? (
-      <MobileApp initialPropId={initialPropId} />
+      <MobileApp initialPropId={initialPropId} initialProjectId={initialProjectId} />
     ) : (
       <AuthWrapper>
         <App />

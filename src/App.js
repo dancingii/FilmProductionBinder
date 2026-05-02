@@ -4181,6 +4181,7 @@ function App({ selectedProject, userRole, user }) {
             onSyncTaggedItems={syncTaggedItemsToDatabase}
             stemWord={stemWord}
             projectSettings={projectSettings}
+            projectId={selectedProject?.id}
             onDeleteProp={async (word) => {
               // State + renumbering is handled in Props.js before this is called.
               // This callback is responsible only for removing the DB row.

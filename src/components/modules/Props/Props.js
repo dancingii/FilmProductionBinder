@@ -122,6 +122,7 @@ function PropsModule({
   onUploadPropImage,
   onDeletePropImage,
   projectSettings,
+  projectId,
 }) {
   const [showScenesWithoutProps, setShowScenesWithoutProps] = useState(false);
   const [selectedProp, setSelectedProp] = useState(null);
@@ -465,7 +466,7 @@ function PropsModule({
 
   // ── Badge & Print helpers ─────────────────────────────────────────────────
   const getPropDeepLink = (propId) =>
-    `${window.location.origin}/?prop=${encodeURIComponent(propId)}`;
+    `${window.location.origin}/?prop=${encodeURIComponent(propId)}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`;
 
   const getPropQrImgUrl = (propId, size = 100) =>
     `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(getPropDeepLink(propId))}`;
