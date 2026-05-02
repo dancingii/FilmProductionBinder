@@ -2610,6 +2610,7 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
   const [instanceMultiSelect, setInstanceMultiSelect] = useState(false);
   const [instanceMultiChars, setInstanceMultiChars] = useState([]);
   const scrollRef = useRef(null);
+  const propCardRefs = useRef({});
 
   // ── stemWord (inlined from App.js) ────────────────────────────────────────
   const stemWord = useCallback((word) => {
@@ -2731,11 +2732,17 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
     return () => supabase.removeChannel(ch);
   }, [selectedProject?.id]);
 
-  // Deep link: auto-expand prop matching initialPropId
+  // Deep link: auto-expand prop matching initialPropId and scroll to it
   useEffect(() => {
     if (!initialPropId || Object.keys(taggedItems).length === 0) return;
     const entry = Object.entries(taggedItems).find(([, item]) => item.propId === initialPropId);
-    if (entry) setExpandedProp(entry[0]);
+    if (entry) {
+      setExpandedProp(entry[0]);
+      setTimeout(() => {
+        const el = propCardRefs.current[entry[0]];
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
+    }
   }, [initialPropId, Object.keys(taggedItems).join(",")]);
 
   const syncItems = useCallback(async (updated) => {
@@ -3045,7 +3052,7 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
               const chars = item.assignedCharacters || [];
               const photos = item.photos || [];
               return (
-                <div key={word} style={{ marginBottom: "6px", borderRadius: "6px", overflow: "hidden", border: `2px solid ${item.color}`, backgroundColor: `${item.color}18` }}>
+                <div key={word} ref={el => propCardRefs.current[word] = el} style={{ marginBottom: "6px", borderRadius: "6px", overflow: "hidden", border: `2px solid ${item.color}`, backgroundColor: `${item.color}18` }}>
                   {/* Collapsed header */}
                   <div onClick={() => setExpandedProp(isExpanded ? null : word)}
                     style={{ padding: "8px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
