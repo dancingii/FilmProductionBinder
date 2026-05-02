@@ -123,6 +123,7 @@ function PropsModule({
   onDeletePropImage,
   projectSettings,
   projectId,
+  shootingDays,
 }) {
   const [showScenesWithoutProps, setShowScenesWithoutProps] = useState(false);
   const [selectedProp, setSelectedProp] = useState(null);
@@ -140,6 +141,8 @@ function PropsModule({
   const [printFormat, setPrintFormat] = useState("avery5163");
   const [usedSlots, setUsedSlots] = useState([]);
   const [showBadgeSection, setShowBadgeSection] = useState(false);
+  const [showReassignChar, setShowReassignChar] = useState(false);
+  const [scenesExpanded, setScenesExpanded] = useState(true);
 
   // --- Script search state for new custom props ---
   const [propSearchQuery, setPropSearchQuery] = useState("");
@@ -1528,31 +1531,25 @@ function PropsModule({
                   ? "Add Custom Prop"
                   : "Prop Details"}
               </h3>
-              {!selectedProp.isNewCustomProp &&
-                selectedProp.scenes &&
-                selectedProp.scenes.length > 0 && (
-                  <button
-                    onClick={() => {
-                      const firstSceneNumber = selectedProp.scenes[0];
-                      setSelectedProp((prev) => ({
-                        ...prev,
-                        viewingSceneNumber: firstSceneNumber,
-                      }));
-                      setShowScenePreview(true);
-                    }}
-                    style={{
-                      backgroundColor: "#2196F3",
-                      color: "white",
-                      padding: "5px 12px",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontSize: "12px",
-                    }}
-                  >
-                    📄 View Scenes
-                  </button>
-                )}
+              {!selectedProp.isNewCustomProp && (
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ backgroundColor: "#555", color: "white", borderRadius: "4px", padding: "4px 10px", fontSize: "11px", fontWeight: "bold" }}>
+                    Prop #{propNumberMap[selectedProp.word] ?? selectedProp.chronologicalNumber}
+                  </span>
+                  {selectedProp.scenes && selectedProp.scenes.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const firstSceneNumber = selectedProp.scenes[0];
+                        setSelectedProp((prev) => ({ ...prev, viewingSceneNumber: firstSceneNumber }));
+                        setShowScenePreview(true);
+                      }}
+                      style={{ backgroundColor: "#2196F3", color: "white", padding: "5px 12px", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px" }}
+                    >
+                      📄 View Scenes
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Name field */}
@@ -1740,14 +1737,6 @@ function PropsModule({
               </div>
             )}
 
-            {/* Original word + meta — hide for new custom props to keep it clean */}
-            {!selectedProp.isNewCustomProp && (
-              <>
-                <p style={{ margin: "4px 0", fontSize: "12px" }}>
-                  <strong>Original Word:</strong> {selectedProp.displayName}
-                </p>
-              </>
-            )}
             {selectedProp.isNewCustomProp && propSearchQuery && (
               <p
                 style={{
@@ -1910,192 +1899,66 @@ function PropsModule({
               </div>
             )}
 
-            <p>
-              <strong>Number:</strong>{" "}
-              {propNumberMap[selectedProp.word] ??
-                selectedProp.chronologicalNumber}
-            </p>
-            <p>
-              <strong>Scenes:</strong>{" "}
-              {(() => {
-                const liveProp = taggedItems[selectedProp.word];
-                const scenes = liveProp?.scenes || selectedProp.scenes || [];
-                return scenes.length > 0 ? scenes.join(", ") : "None";
-              })()}
-            </p>
-            <p>
-              <strong>Assigned Characters:</strong>{" "}
-              {selectedProp.assignedCharacters &&
-              selectedProp.assignedCharacters.length > 0
-                ? selectedProp.assignedCharacters.join(", ")
-                : "None"}
-            </p>
-
-            {/* Character Assignment — dropdown */}
-            {characters && Object.keys(characters).length > 0 && (
-              <div style={{ marginTop: "12px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "11px",
-                    fontWeight: "bold",
-                    color: "#555",
-                    marginBottom: "4px",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                  }}
-                >
-                  Assigned Character
+            {/* Character — display + reassign */}
+            <div style={{ margin: "8px 0" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                <label style={{ fontSize: "11px", fontWeight: "bold", color: "#555", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Character
                 </label>
-                <select
-                  value={(selectedProp.assignedCharacters || [])[0] || ""}
-                  onChange={(e) => {
-                    const selectedChar = e.target.value;
-                    const updatedTaggedItems = { ...taggedItems };
-                    const propData = updatedTaggedItems[selectedProp.word];
-                    if (propData) {
-                      const newAssignments = selectedChar ? [selectedChar] : [];
-                      // If default character, auto-assign scenes for that character
-                      let newScenes = propData.scenes || [];
-                      if (selectedChar && propData.defaultCharacter) {
-                        const charObj = Object.values(characters).find(
-                          (c) => c.name === selectedChar
-                        );
-                        if (charObj?.scenes) {
-                          const charSceneNums = charObj.scenes.map(String);
-                          newScenes = [
-                            ...new Set([...newScenes, ...charSceneNums]),
-                          ];
-                        }
-                      }
-                      updatedTaggedItems[selectedProp.word] = {
-                        ...propData,
-                        assignedCharacters: newAssignments,
-                        scenes: newScenes,
-                      };
-                      if (onUpdateTaggedItems)
-                        onUpdateTaggedItems(updatedTaggedItems);
-                      if (onSyncTaggedItems)
-                        onSyncTaggedItems(updatedTaggedItems);
-                      setSelectedProp((prev) => ({
-                        ...prev,
-                        assignedCharacters: newAssignments,
-                        scenes: newScenes,
-                      }));
-                    }
-                  }}
-                  style={{
-                    width: "100%",
-                    padding: "7px 10px",
-                    border: "1px solid #ccc",
-                    borderRadius: "4px",
-                    fontSize: "13px",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  <option value="">No character assigned</option>
-                  {Object.keys(characters)
-                    .sort()
-                    .map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                </select>
-
-                {/* Default Character toggle */}
-                {(selectedProp.assignedCharacters || []).length > 0 && (
-                  <div
-                    style={{
-                      marginTop: "8px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        cursor: "pointer",
-                        fontSize: "12px",
-                        color: "#555",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={
-                          !!taggedItems[selectedProp.word]?.defaultCharacter
-                        }
-                        onChange={(e) => {
-                          const isDefault = e.target.checked;
-                          const updatedTaggedItems = { ...taggedItems };
-                          const propData =
-                            updatedTaggedItems[selectedProp.word];
-                          if (propData) {
-                            let newScenes = propData.scenes || [];
-                            if (isDefault) {
-                              // Snapshot current scenes before expanding so uncheck
-                              // can restore them exactly, regardless of instance format
-                              const charName = (propData.assignedCharacters ||
-                                [])[0];
-                              const charObj = Object.values(characters).find(
-                                (c) => c.name === charName
-                              );
-                              if (charObj?.scenes) {
-                                const charSceneNums =
-                                  charObj.scenes.map(String);
-                                newScenes = [
-                                  ...new Set([...newScenes, ...charSceneNums]),
-                                ];
-                              }
-                            } else {
-                              // Restore the exact scenes that existed before default was checked
-                              newScenes =
-                                propData.scenesBeforeDefault !== undefined
-                                  ? propData.scenesBeforeDefault
-                                  : propData.scenes || [];
-                            }
-                            updatedTaggedItems[selectedProp.word] = {
-                              ...propData,
-                              defaultCharacter: isDefault,
-                              // Store snapshot on check; clear it on uncheck
-                              scenesBeforeDefault: isDefault
-                                ? propData.scenes || []
-                                : undefined,
-                              scenes: newScenes,
-                            };
-                            if (onUpdateTaggedItems)
-                              onUpdateTaggedItems(updatedTaggedItems);
-                            if (onSyncTaggedItems)
-                              onSyncTaggedItems(updatedTaggedItems);
-                            setSelectedProp((prev) => ({
-                              ...prev,
-                              defaultCharacter: isDefault,
-                              scenes: newScenes,
-                            }));
-                          }
-                        }}
-                        style={{ cursor: "pointer" }}
-                      />
-                      <span>Default prop for this character</span>
-                    </label>
-                    {!!taggedItems[selectedProp.word]?.defaultCharacter && (
-                      <span
-                        style={{
-                          fontSize: "10px",
-                          color: "#4CAF50",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        ✓ Auto-assigned to all character scenes
-                      </span>
-                    )}
-                  </div>
+                {!showReassignChar && (
+                  <button onClick={() => setShowReassignChar(true)}
+                    style={{ background: "none", border: "1px solid #ccc", borderRadius: "4px", padding: "2px 8px", fontSize: "10px", cursor: "pointer", color: "#555" }}>
+                    Reassign
+                  </button>
                 )}
               </div>
-            )}
+              {/* Current assignment display */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: showReassignChar ? "8px" : 0 }}>
+                {(selectedProp.assignedCharacters || []).length > 0
+                  ? (selectedProp.assignedCharacters || []).map((c) => (
+                      <span key={c} style={{ backgroundColor: selectedProp.color || "#888", color: "white", borderRadius: "10px", padding: "2px 10px", fontSize: "11px", fontWeight: "bold" }}>{c}</span>
+                    ))
+                  : <span style={{ fontSize: "12px", color: "#aaa", fontStyle: "italic" }}>None assigned</span>
+                }
+              </div>
+              {/* Reassign dropdown — only shown when requested */}
+              {showReassignChar && characters && Object.keys(characters).length > 0 && (
+                <div>
+                  <select
+                    value={(selectedProp.assignedCharacters || [])[0] || ""}
+                    onChange={(e) => {
+                      const selectedChar = e.target.value;
+                      const updatedTaggedItems = { ...taggedItems };
+                      const propData = updatedTaggedItems[selectedProp.word];
+                      if (propData) {
+                        const newAssignments = selectedChar ? [selectedChar] : [];
+                        let newScenes = propData.scenes || [];
+                        if (selectedChar && propData.defaultCharacter) {
+                          const charObj = Object.values(characters).find((c) => c.name === selectedChar);
+                          if (charObj?.scenes) {
+                            newScenes = [...new Set([...newScenes, ...charObj.scenes.map(String)])];
+                          }
+                        }
+                        updatedTaggedItems[selectedProp.word] = { ...propData, assignedCharacters: newAssignments, scenes: newScenes };
+                        if (onUpdateTaggedItems) onUpdateTaggedItems(updatedTaggedItems);
+                        if (onSyncTaggedItems) onSyncTaggedItems(updatedTaggedItems);
+                        setSelectedProp((prev) => ({ ...prev, assignedCharacters: newAssignments, scenes: newScenes }));
+                      }
+                    }}
+                    style={{ width: "100%", padding: "7px 10px", border: "1px solid #90caf9", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box", marginBottom: "6px" }}
+                  >
+                    <option value="">No character assigned</option>
+                    {Object.keys(characters).sort().map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  <button onClick={() => setShowReassignChar(false)}
+                    style={{ backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", padding: "5px 14px", fontSize: "12px", fontWeight: "bold", cursor: "pointer" }}>
+                    Verify
+                  </button>
+                </div>
+              )}
+            </div>
             {/* Photos section — only for saved props */}
             {!selectedProp.isNewCustomProp && (
               <div
@@ -2276,68 +2139,50 @@ function PropsModule({
               </div>
             )}
 
-            {/* Scene Context Actions - only show if opened from scene context */}
-            {selectedProp.contextScene !== null && (
-              <div
-                style={{
-                  marginTop: "15px",
-                  padding: "10px",
-                  backgroundColor: "#f5f5f5",
-                  borderRadius: "4px",
-                }}
-              >
-                <h4 style={{ margin: "0 0 10px 0" }}>Scene Actions</h4>
-                <button
-                  onClick={() => {
-                    if (onRemovePropFromScene) {
-                      onRemovePropFromScene(
-                        selectedProp.word,
-                        selectedProp.contextScene
-                      );
-                    }
-                    setSelectedProp(null);
-                  }}
-                  style={{
-                    backgroundColor: "#f44336",
-                    color: "white",
-                    padding: "6px 12px",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    marginRight: "8px",
-                    fontSize: "12px",
-                  }}
-                >
-                  Remove from Scene
-                </button>
-                <button
-                  onClick={() => {
-                    const variantName = prompt(
-                      `Create variant of "${
-                        selectedProp.customTitle || selectedProp.displayName
-                      }":`
-                    );
-                    if (variantName && onCreatePropVariant) {
-                      onCreatePropVariant(selectedProp.word, variantName);
-                    }
-                  }}
-                  style={{
-                    backgroundColor: "#FF9800",
-                    color: "white",
-                    padding: "6px 12px",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    marginRight: "8px",
-                    fontSize: "12px",
-                  }}
-                >
-                  Create Variant
-                </button>
-              </div>
-            )}
+            {/* Shoot Dates */}
+            {!selectedProp.isNewCustomProp && (() => {
+              const propScenes = taggedItems[selectedProp.word]?.scenes || selectedProp.scenes || [];
+              const sceneShootDayMap = {};
+              (shootingDays || []).forEach(day => {
+                (day.scheduleBlocks || []).forEach(block => {
+                  if (block.scene?.sceneNumber) {
+                    sceneShootDayMap[String(block.scene.sceneNumber)] = { dayNumber: day.dayNumber, date: day.date };
+                  }
+                });
+              });
+              const seen = new Set();
+              const badges = propScenes.map(sceneNum => {
+                const entry = sceneShootDayMap[String(sceneNum)];
+                if (!entry || seen.has(entry.dayNumber)) return null;
+                seen.add(entry.dayNumber);
+                return { dayNumber: entry.dayNumber, date: entry.date };
+              }).filter(Boolean).sort((a, b) => a.dayNumber - b.dayNumber);
 
-            {/* Add to Scenes - show for both contexts */}
+              if (badges.length === 0) return null;
+              return (
+                <div style={{ marginBottom: "10px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: "bold", color: "#555", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: "6px" }}>
+                    Shoot Dates
+                  </label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                  {badges.map(({ dayNumber, date }) => (
+                    <span key={dayNumber}
+                    onClick={() => {
+                      if (window.__setCallSheetInitialDay) window.__setCallSheetInitialDay(dayNumber);
+                      if (setActiveModule) setTimeout(() => setActiveModule("CallSheet"), 0);
+                    }}
+                      style={{ backgroundColor: "#1565c0", color: "white", borderRadius: "4px", padding: "3px 8px", fontSize: "11px", fontWeight: "bold", cursor: "pointer" }}
+                      title="Go to Call Sheet"
+                    >
+                      Day {dayNumber} · {new Date(date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                  ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Scenes section */}
             <div
               style={{
                 marginTop: "15px",
@@ -2346,52 +2191,58 @@ function PropsModule({
                 borderRadius: "4px",
               }}
             >
-              <h4 style={{ margin: "0 0 10px 0" }}>
-                {selectedProp.contextScene !== null
-                  ? "Add Props to Scene"
-                  : "Manage Scenes for This Prop"}
-              </h4>
+              {/* Header: label + lock + collapse */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: scenesExpanded ? "10px" : 0 }}>
+                <h4 style={{ margin: 0, fontSize: "13px" }}>Scenes</h4>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  {/* Lock button */}
+                  {taggedItems[selectedProp.word]?.scenesLocked ? (
+                    <button
+                      onClick={() => {
+                        const updated = { ...taggedItems, [selectedProp.word]: { ...taggedItems[selectedProp.word], scenesLocked: false } };
+                        onUpdateTaggedItems(updated); onSyncTaggedItems(updated);
+                        setSelectedProp((prev) => ({ ...prev, scenesLocked: false }));
+                      }}
+                      style={{ fontSize: "10px", fontWeight: "bold", color: "white", backgroundColor: "#4CAF50", border: "none", borderRadius: "4px", padding: "2px 8px", cursor: "pointer" }}
+                    >
+                      Locked
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        const updated = { ...taggedItems, [selectedProp.word]: { ...taggedItems[selectedProp.word], scenesLocked: true } };
+                        onUpdateTaggedItems(updated); onSyncTaggedItems(updated);
+                        setSelectedProp((prev) => ({ ...prev, scenesLocked: true }));
+                      }}
+                      style={{ fontSize: "10px", fontWeight: "bold", color: "#555", backgroundColor: "#eee", border: "none", borderRadius: "4px", padding: "2px 8px", cursor: "pointer" }}
+                    >
+                      Unlocked
+                    </button>
+                  )}
+                  {/* Collapse toggle */}
+                  <button onClick={() => setScenesExpanded(p => !p)}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: "11px", color: "#555", padding: 0 }}>
+                    {scenesExpanded ? "▲" : "▼"}
+                  </button>
+                </div>
+              </div>
 
-              {selectedProp.contextScene === null ? (
+              {scenesExpanded && selectedProp.contextScene === null ? (
                 <div>
-                  <div
-                    style={{
-                      marginBottom: "8px",
-                      fontSize: "12px",
-                      color: "#666",
-                    }}
-                  >
-                    Click a scene to add or remove this prop.
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: "4px",
-                      maxHeight: "120px",
-                      overflowY: "auto",
-                    }}
-                  >
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
                     {scenes.map((scene, sceneIndex) => {
                       const liveProp = taggedItems[selectedProp.word];
-                      const isAssigned = (
-                        liveProp?.scenes ||
-                        selectedProp.scenes ||
-                        []
-                      ).some((s) => String(s) === String(scene.sceneNumber));
+                      const isAssigned = (liveProp?.scenes || selectedProp.scenes || []).some((s) => String(s) === String(scene.sceneNumber));
+                      const isLocked = !!taggedItems[selectedProp.word]?.scenesLocked;
                       return (
                         <button
                           key={sceneIndex}
                           onClick={() => {
+                            if (isLocked) return;
                             if (isAssigned) {
-                              if (onRemovePropFromScene)
-                                onRemovePropFromScene(
-                                  selectedProp.word,
-                                  sceneIndex
-                                );
+                              if (onRemovePropFromScene) onRemovePropFromScene(selectedProp.word, sceneIndex);
                             } else {
-                              if (onAddPropToScene)
-                                onAddPropToScene(selectedProp.word, sceneIndex);
+                              if (onAddPropToScene) onAddPropToScene(selectedProp.word, sceneIndex);
                             }
                           }}
                           style={{
@@ -2399,10 +2250,11 @@ function PropsModule({
                             fontSize: "11px",
                             border: "1px solid #ccc",
                             borderRadius: "4px",
-                            cursor: "pointer",
+                            cursor: isLocked ? "default" : "pointer",
                             backgroundColor: isAssigned ? "#4CAF50" : "#f5f5f5",
                             color: isAssigned ? "white" : "#333",
                             fontWeight: isAssigned ? "bold" : "normal",
+                            opacity: isLocked ? 0.8 : 1,
                           }}
                         >
                           {scene.sceneNumber}
@@ -2411,7 +2263,7 @@ function PropsModule({
                     })}
                   </div>
                 </div>
-              ) : (
+              ) : scenesExpanded && selectedProp.contextScene !== null ? (
                 // Scene context - add other props to this scene
                 <div>
                   <select
@@ -2498,45 +2350,10 @@ function PropsModule({
                     </button>
                   </div>
                 </div>
-              )}
-            </div>
-
-            {/* Create Variant - show for both contexts */}
-            <div
-              style={{
-                marginTop: "15px",
-                padding: "10px",
-                backgroundColor: "#fff3e0",
-                borderRadius: "4px",
-              }}
-            >
-              <h4 style={{ margin: "0 0 10px 0" }}>Prop Management</h4>
-              <button
-                onClick={() => {
-                  const variantName = prompt(
-                    `Create variant of "${
-                      selectedProp.customTitle || selectedProp.displayName
-                    }":`
-                  );
-                  if (variantName && onCreatePropVariant) {
-                    onCreatePropVariant(selectedProp.word, variantName);
-                  }
-                }}
-                style={{
-                  backgroundColor: "#FF9800",
-                  color: "white",
-                  padding: "6px 12px",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                }}
-              >
-                Create Variant
-              </button>
-            </div>
-
-            <div style={{ marginTop: "15px" }}>
+              ) : null}
+              </div>
+  
+              <div style={{ marginTop: "15px" }}>
               {selectedProp.contextScene !== null &&
                 !selectedProp.isNewCustomProp && (
                   <button
@@ -2642,6 +2459,7 @@ function PropsModule({
                                   propSubcategory: selectedProp.propSubcategory || "misc",
                                   propId: selectedProp.propId || generatePropId(selectedProp.propSubcategory || "misc"),
                                   propIdLocked: false,
+                                  scenesLocked: true,
                                 };
                                 onUpdateTaggedItems(latest);
                                 onSyncTaggedItems(latest);
@@ -2688,6 +2506,15 @@ function PropsModule({
                     alignItems: "center",
                   }}
                 >
+                  <button
+                    onClick={() => {
+                      const variantName = prompt(`Create variant of "${selectedProp.customTitle || selectedProp.displayName}":`);
+                      if (variantName && onCreatePropVariant) onCreatePropVariant(selectedProp.word, variantName);
+                    }}
+                    style={{ backgroundColor: "#FF9800", color: "white", padding: "8px 14px", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px" }}
+                  >
+                    Create Variant
+                  </button>
                   <button
                     onClick={async () => {
                       const confirmed = showConfirm

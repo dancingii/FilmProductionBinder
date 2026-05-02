@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getElementStyle } from "../../../utils.js";
+import { getElementStyle, calculateBlockLines, LINES_PER_PAGE } from "../../../utils.js";
 import * as database from "../../../services/database";
 import { uploadImage, deleteImage, extractPathFromUrl } from "../../../utils/imageStorage";
 import ImageUpload from "../../shared/ImageUpload";
@@ -30,6 +30,157 @@ function CharactersModule({
   isViewOnly,
 }) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(null);
+
+  const exportCharacterSides = (characterName, finalScenes) => {
+    const jsPDF = window.jspdf?.jsPDF || window.jsPDF?.jsPDF || window.jsPDF;
+    if (!jsPDF) { alert("PDF export library not available."); return; }
+
+    if (finalScenes.length === 0) { alert("No scenes found for this character."); return; }
+
+    const targetNums = new Set(finalScenes.map(String));
+    const doc = new jsPDF("portrait", "pt", "letter");
+    const PW = 612, LM = 108, RM = 540, TOP = 48, LH = 12, BOTTOM = 756, SLPP = LINES_PER_PAGE;
+    const COLS = {
+      "Scene Heading": { x: LM,       w: RM - LM },
+      "Action":        { x: LM,       w: RM - LM },
+      "Character":     { x: LM + 144, w: 216 },
+      "Dialogue":      { x: LM + 72,  w: 252 },
+      "Parenthetical": { x: LM + 108, w: 216 },
+      "Transition":    { x: LM + 144, w: RM - LM - 144 },
+    };
+
+    // Build flat content list with exact cumulative line positions
+    const sorted = [...scenes]
+      .filter(s => s.content)
+      .sort((a, b) => parseFloat(a.sceneNumber) - parseFloat(b.sceneNumber));
+
+    let cumLine = 0;
+    const flat = [];
+    sorted.forEach(scene => {
+      flat.push({ sceneNum: scene.sceneNumber, type: "Scene Heading", text: scene.heading?.toUpperCase() || "", startLine: cumLine, lineCount: 2, isHeading: true, isHighlighted: false });
+      cumLine += 2;
+
+      let charActive = false;
+      (scene.content || []).forEach(block => {
+        const lc = calculateBlockLines(block);
+        const isTarget = targetNums.has(String(scene.sceneNumber));
+        let text = block.text || "";
+        if (block.type === "Character") {
+          text = text.toUpperCase();
+          charActive = isTarget && text.trim() === characterName.toUpperCase();
+        }
+        const isHighlighted = isTarget && (
+          (block.type === "Character" && text.trim() === characterName.toUpperCase()) ||
+          ((block.type === "Dialogue" || block.type === "Parenthetical") && charActive)
+        );
+        if (block.type !== "Dialogue" && block.type !== "Parenthetical" && block.type !== "Character") charActive = false;
+        flat.push({ sceneNum: scene.sceneNumber, type: block.type, text, startLine: cumLine, lineCount: lc, isHighlighted });
+        cumLine += lc;
+      });
+      cumLine += 0.5;
+    });
+
+    // Find script pages containing target scenes
+    const targetPages = new Set();
+    flat.forEach(item => {
+      if (!targetNums.has(String(item.sceneNum))) return;
+      const sp = Math.floor(item.startLine / SLPP);
+      const ep = Math.floor((item.startLine + item.lineCount - 0.01) / SLPP);
+      for (let p = sp; p <= ep; p++) targetPages.add(p);
+    });
+
+    const pages = Array.from(targetPages).sort((a, b) => a - b);
+    if (pages.length === 0) { alert("No content found."); return; }
+
+    let firstPDFPage = true;
+    pages.forEach((scriptPage, pIdx) => {
+      if (!firstPDFPage) doc.addPage();
+      firstPDFPage = false;
+      const lineStart = scriptPage * SLPP;
+      const lineEnd = lineStart + SLPP;
+
+      doc.setFont("Courier", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      doc.text(`${scriptPage + 1}.`, PW - 50, TOP - 15);
+
+      if (pIdx === 0) {
+        doc.setFont("Courier", "bold");
+        doc.setFontSize(11);
+        doc.text(`${characterName} — Character Sides`, PW / 2, TOP - 28, { align: "center" });
+      }
+
+      const items = flat.filter(item => item.startLine < lineEnd && item.startLine + item.lineCount > lineStart);
+
+      // Render sequentially tracking actual y to avoid overlap from estimation mismatch
+      let yPos = TOP;
+      items.forEach(item => {
+        const isTarget = targetNums.has(String(item.sceneNum));
+        const c = COLS[item.type] || COLS["Action"];
+        const isBold = item.type === "Scene Heading";
+        doc.setFontSize(12);
+        doc.setFont("Courier", isBold ? "bold" : "normal");
+        const lines = doc.splitTextToSize(item.text, c.w);
+
+        // Add spacing before scene headings (except at top of page)
+        if (item.isHeading && yPos > TOP) yPos += LH;
+
+        const baseY = yPos;
+        if (baseY > BOTTOM) return;
+
+        if (!isTarget) {
+          doc.setFont("Courier", isBold ? "bold" : "normal");
+          doc.setTextColor(150, 150, 150);
+          doc.setDrawColor(150, 150, 150);
+          doc.setLineWidth(0.5);
+          lines.forEach((line, li) => {
+            const y = baseY + li * LH;
+            if (y > BOTTOM) return;
+            doc.text(line, c.x, y);
+            doc.line(c.x, y - 4, c.x + doc.getTextWidth(line), y - 4);
+          });
+          if (item.isHeading) {
+            doc.text(String(item.sceneNum), LM - 30, baseY);
+            doc.text(String(item.sceneNum), RM + 5, baseY);
+          }
+        } else if (item.isHighlighted) {
+          doc.setFont("Courier", "bold");
+          doc.setTextColor(0, 0, 0);
+          lines.forEach((line, li) => {
+            const y = baseY + li * LH;
+            if (y > BOTTOM) return;
+            const w = doc.getTextWidth(line);
+            doc.setFillColor(255, 255, 0);
+            doc.rect(c.x - 2, y - 10, w + 4, LH, "F");
+            doc.setTextColor(0, 0, 0);
+            doc.text(line, c.x, y);
+          });
+          doc.setFont("Courier", "normal");
+        } else {
+          doc.setFont("Courier", isBold ? "bold" : "normal");
+          doc.setTextColor(0, 0, 0);
+          lines.forEach((line, li) => {
+            const y = baseY + li * LH;
+            if (y > BOTTOM) return;
+            doc.text(line, c.x, y);
+          });
+          if (item.isHeading) {
+            doc.text(String(item.sceneNum), LM - 30, baseY);
+            doc.text(String(item.sceneNum), RM + 5, baseY);
+          }
+        }
+
+        // Advance yPos by actual rendered lines + 1 spacing line
+        yPos += lines.length * LH + LH;
+      });
+      doc.setTextColor(0, 0, 0);
+      doc.setFont("Courier", "normal");
+    });
+
+    const filename = `${characterName.toLowerCase().replace(/\s+/g, "_")}_sides.pdf`;
+    doc.save(filename);
+    alert(`Sides exported as: ${filename}`);
+  };
   const [editingCharacterNumber, setEditingCharacterNumber] = useState(null);
   const [editingCharacterNumberValue, setEditingCharacterNumberValue] = useState("");
   const [reassignTarget, setReassignTarget] = useState("");
@@ -609,7 +760,15 @@ function CharactersModule({
                   <h2 style={{ margin: "0 0 5px 0" }}>{showDetailsPopup}</h2>
                   <p style={{ margin: 0, fontSize: "13px", color: "#666" }}>Character #{character?.chronologicalNumber} • {finalScenes.length} scenes</p>
                 </div>
-                <button onClick={() => setShowDetailsPopup(null)} style={{ backgroundColor: "#f44336", color: "white", padding: "6px 12px", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px", fontWeight: "bold" }}>✕ Close</button>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <button
+                    onClick={() => exportCharacterSides(showDetailsPopup, finalScenes)}
+                    style={{ backgroundColor: "#9C27B0", color: "white", padding: "6px 12px", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px", fontWeight: "bold" }}
+                  >
+                    📄 Export Sides
+                  </button>
+                  <button onClick={() => setShowDetailsPopup(null)} style={{ backgroundColor: "#f44336", color: "white", padding: "6px 12px", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px", fontWeight: "bold" }}>✕ Close</button>
+                </div>
               </div>
 
               <div style={{ padding: "20px" }}>

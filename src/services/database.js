@@ -208,6 +208,7 @@ export const loadTaggedItemsFromDatabase = async (
         propId: item.prop_id || null,
         propSubcategory: item.prop_subcategory || null,
         propIdLocked: item.prop_id_locked || false,
+        scenesLocked: item.scenes_locked ?? true,
       };
     });
 
@@ -2590,6 +2591,7 @@ export const syncTaggedItemsToDatabase = async (
       prop_id: item.propId || null,
       prop_subcategory: item.propSubcategory || null,
       prop_id_locked: item.propIdLocked || false,
+      scenes_locked: item.scenesLocked || false,
     }));
 
     const { error: patchError } = await supabase

@@ -2578,7 +2578,7 @@ const MOBILE_PROP_SUBCATEGORIES = [
 ];
 const MOBILE_SUBCATEGORY_MAP = Object.fromEntries(MOBILE_PROP_SUBCATEGORIES.map((s) => [s.key, s]));
 
-function MobilePropsModule({ selectedProject, scenes = [], characters = {}, initialPropId }) {
+function MobilePropsModule({ selectedProject, scenes = [], characters = {}, initialPropId, stripboardScenes = [], shootingDays = [], onNavigate }) {
   const [taggedItems, setTaggedItems] = useState({});
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("props"); // "props" | "scenes"
@@ -2763,6 +2763,7 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
       prop_id: item.propId || null,
       prop_subcategory: item.propSubcategory || null,
       prop_id_locked: item.propIdLocked || false,
+      scenes_locked: item.scenesLocked || false,
     }));
     await supabase.from("tagged_items")
       .upsert(arr, { onConflict: "project_id,word" });
@@ -3172,7 +3173,57 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
                             ID is permanently locked and cannot be changed.
                           </div>
                         )}
+                        {/* Character badges */}
+                        {(item.assignedCharacters || []).length > 0 && (
+                          <div style={{ marginTop: "8px" }}>
+                            <div style={{ fontSize: "10px", fontWeight: "bold", color: "#888", textTransform: "uppercase", marginBottom: "4px" }}>Character</div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                              {(item.assignedCharacters || []).map((c) => (
+                                <span key={c} style={{ backgroundColor: item.color, color: "white", borderRadius: "10px", padding: "2px 10px", fontSize: "11px", fontWeight: "bold" }}>{c}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
+                      {/* Shoot Dates */}
+                      {(() => {
+                        const sceneShootDayMap = {};
+                        shootingDays.forEach(day => {
+                          (day.scheduleBlocks || []).forEach(block => {
+                            if (block.scene?.sceneNumber) {
+                              sceneShootDayMap[String(block.scene.sceneNumber)] = { dayNumber: day.dayNumber, date: day.date };
+                            }
+                          });
+                        });
+                        const seen = new Set();
+                        const badges = (item.scenes || []).map(sceneNum => {
+                          const entry = sceneShootDayMap[String(sceneNum)];
+                          if (!entry || seen.has(entry.dayNumber)) return null;
+                          seen.add(entry.dayNumber);
+                          return { dayNumber: entry.dayNumber, date: entry.date };
+                        }).filter(Boolean).sort((a, b) => a.dayNumber - b.dayNumber);
+                        if (badges.length === 0) return null;
+                        return (
+                          <div style={{ marginBottom: "10px" }}>
+                            <div style={{ fontSize: "10px", fontWeight: "bold", color: "#888", textTransform: "uppercase", marginBottom: "4px" }}>Shoot Dates</div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                            {badges.map(({ dayNumber, date }) => (
+                                <span key={dayNumber}
+                                onClick={() => {
+                                  if (window.__setMobileCallSheetDay) window.__setMobileCallSheetDay(dayNumber);
+                                  if (onNavigate) setTimeout(() => onNavigate("Call Sheet"), 0);
+                                }}
+                                  style={{ backgroundColor: "#1565c0", color: "white", borderRadius: "4px", padding: "2px 8px", fontSize: "11px", fontWeight: "bold", cursor: "pointer" }}
+                                  title="Go to Call Sheet"
+                                >
+                                  Day {dayNumber} · {new Date(date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {/* Scenes list */}
                       {(item.scenes || []).length > 0 && (
                         <div style={{ marginBottom: "10px" }}>
@@ -4281,15 +4332,23 @@ function MobileCallSheetModule({
   scriptLocations,
   callSheetData,
   projectSettings,
+  initialDayNumber,
 }) {
   const [selectedDay, setSelectedDay] = React.useState(null);
+
+  // Auto-select day from Props shoot date badge click
+  React.useEffect(() => {
+    if (!initialDayNumber || !shootingDays?.length) return;
+    const match = shootingDays.find(d => d.dayNumber === initialDayNumber);
+    if (match) setSelectedDay(match);
+  }, [initialDayNumber, shootingDays?.length]);
   const [scale, setScale] = React.useState(1);
   const containerRef = React.useRef(null);
   const dropdownRef = React.useRef(null);
 
   // Smart default day selection
   React.useEffect(() => {
-    if (shootingDays.length > 0 && selectedDay === null) {
+    if (shootingDays.length > 0 && selectedDay === null && !initialDayNumber) {
       const today = new Date().toISOString().split("T")[0];
       const todayMatch = shootingDays.find((d) => d.date === today);
       if (todayMatch) {
@@ -5349,6 +5408,12 @@ export default function MobileApp({ initialPropId, initialProjectId }) {
   const [authLoading, setAuthLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState(null);
   const [activeModule, setActiveModule] = useState(initialPropId ? "Props" : "Dashboard");
+  const [callSheetInitialDay, setCallSheetInitialDay] = useState(null);
+
+  React.useEffect(() => {
+    window.__setMobileCallSheetDay = setCallSheetInitialDay;
+    return () => { delete window.__setMobileCallSheetDay; };
+  }, []);
   const [castCrew, setCastCrew] = useState([]);
   const [todoItems, setTodoItems] = useState([]);
   const [shootingDays, setShootingDays] = useState([]);
@@ -5360,6 +5425,7 @@ export default function MobileApp({ initialPropId, initialProjectId }) {
   const [characters, setCharacters] = useState({});
   const [wardrobeItems, setWardrobeItems] = useState([]);
   const [projectSettings, setProjectSettings] = useState({});
+  const [stripboardScenes, setStripboardScenes] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
   // Auth
   useEffect(() => {
@@ -5404,6 +5470,7 @@ export default function MobileApp({ initialPropId, initialProjectId }) {
     database.loadWardrobeItemsFromDatabase(selectedProject, (items) =>
       setWardrobeItems(items || [])
     );
+    database.loadStripboardScenesAfterScenes(selectedProject, [], setStripboardScenes);
     database.loadProjectSettingsFromDatabase(
       selectedProject,
       setProjectSettings,
@@ -5510,6 +5577,7 @@ export default function MobileApp({ initialPropId, initialProjectId }) {
         )}
         {activeModule === "Call Sheet" && (
           <MobileCallSheetModule
+          initialDayNumber={callSheetInitialDay}
             selectedProject={selectedProject}
             shootingDays={shootingDays}
             scheduledScenes={scheduledScenes}
@@ -5537,6 +5605,9 @@ export default function MobileApp({ initialPropId, initialProjectId }) {
             scenes={scenes}
             characters={characters}
             initialPropId={initialPropId}
+            stripboardScenes={stripboardScenes}
+            shootingDays={shootingDays}
+            onNavigate={setActiveModule}
           />
         )}
         {activeModule === "Cost Report" && (

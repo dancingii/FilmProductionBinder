@@ -1602,7 +1602,13 @@ function App({ selectedProject, userRole, user }) {
   };
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [activeModule, setActiveModule] = React.useState("Dashboard");
+  const [activeModule, setActiveModule] = useState("Dashboard");
+  const [callSheetInitialDay, setCallSheetInitialDay] = useState(null);
+  // Expose to child modules that can't receive it as a prop
+  React.useEffect(() => {
+    window.__setCallSheetInitialDay = setCallSheetInitialDay;
+    return () => { delete window.__setCallSheetInitialDay; };
+  }, []);
   const [stripboardScenes, setStripboardScenes] = useState([]);
   const [scheduledScenes, setScheduledScenes] = useState({});
   React.useEffect(() => {
@@ -4093,6 +4099,7 @@ function App({ selectedProject, userRole, user }) {
           <CallSheetModule
             scenes={scenes}
             shootingDays={shootingDays}
+            initialDayNumber={callSheetInitialDay}
             castCrew={castCrew}
             onUpdateCastCrew={(updatedCastCrew) => {
               setCastCrew(updatedCastCrew);
@@ -4182,6 +4189,8 @@ function App({ selectedProject, userRole, user }) {
             stemWord={stemWord}
             projectSettings={projectSettings}
             projectId={selectedProject?.id}
+            stripboardScenes={stripboardScenes}
+            shootingDays={shootingDays}
             onDeleteProp={async (word) => {
               // State + renumbering is handled in Props.js before this is called.
               // This callback is responsible only for removing the DB row.

@@ -1,5 +1,5 @@
 import React from "react";
-import { getElementStyle } from "../../../utils.js";
+import { getElementStyle, calculateBlockLines, LINES_PER_PAGE } from "../../../utils.js";
 import { PDFExporter } from "../../../utils/pdfExport";
 import * as database from "../../../services/database";
 
@@ -23,6 +23,7 @@ function CallSheetModule({
   syncCallSheetData,
   selectedProject,
   taggedItems,
+  initialDayNumber,
 }) {
   const exportCallSheetPDF = async () => {
     if (!selectedDay) return;
@@ -365,116 +366,134 @@ function CallSheetModule({
 
   const exportSidesPDF = () => {
     if (!selectedDay) return;
-
     const jsPDF = window.jspdf?.jsPDF || window.jsPDF?.jsPDF || window.jsPDF;
+    if (!jsPDF) { alert("PDF export library not available."); return; }
 
-    if (!jsPDF) {
-      alert("PDF export library not available. Please add jsPDF to your project.");
-      return;
-    }
-
-    const dayScenes = getScheduledScenes()
-      .filter((scene) => scene.scene !== "LUNCH" && scene.scene !== "ADR")
-      .map((scene) => callSheetScenes.find((s) => s.sceneNumber == scene.scene))
+    const daySceneList = getScheduledScenes()
+      .filter(s => s.scene !== "LUNCH" && s.scene !== "ADR")
+      .map(s => callSheetScenes.find(sc => sc.sceneNumber == s.scene))
       .filter(Boolean)
-      .filter((scene) => {
-        const heading = scene.heading?.toUpperCase() || "";
-        const hasIntExt = heading.includes("INT.") || heading.includes("EXT.");
-        if (!hasIntExt) {
-          const hasWrittenBy = scene.content?.some((block) =>
-            block.text?.toLowerCase().includes("written by")
-          );
-          return !hasWrittenBy;
-        }
+      .filter(scene => {
+        const h = scene.heading?.toUpperCase() || "";
+        if (!h.includes("INT.") && !h.includes("EXT."))
+          return !scene.content?.some(b => b.text?.toLowerCase().includes("written by"));
         return true;
-      })
-      .sort((a, b) => {
-        const aNum = parseInt(a.sceneNumber);
-        const bNum = parseInt(b.sceneNumber);
-        if (aNum !== bNum) return aNum - bNum;
-        return String(a.sceneNumber).localeCompare(String(b.sceneNumber));
       });
 
-    if (dayScenes.length === 0) {
-      alert("No scenes scheduled for this day.");
-      return;
-    }
+    if (daySceneList.length === 0) { alert("No scenes scheduled for this day."); return; }
 
+    const targetNums = new Set(daySceneList.map(s => String(s.sceneNumber)));
     const doc = new jsPDF("portrait", "pt", "letter");
-    const pageWidth = 612;
-    const pageHeight = 792;
-    const margin = 72;
-    const lineHeight = 12;
-    const maxLinesPerPage = 59;
+    const PW = 612, LM = 108, RM = 540, TOP = 48, LH = 12, BOTTOM = 756, SLPP = LINES_PER_PAGE;
+    const COLS = {
+      "Scene Heading": { x: LM,       w: RM - LM },
+      "Action":        { x: LM,       w: RM - LM },
+      "Character":     { x: LM + 144, w: 216 },
+      "Dialogue":      { x: LM + 72,  w: 252 },
+      "Parenthetical": { x: LM + 108, w: 216 },
+      "Transition":    { x: LM + 144, w: RM - LM - 144 },
+    };
 
-    let yPos = margin;
-    let currentLine = 0;
+    // Build flat content list with exact cumulative line positions
+    const sorted = [...callSheetScenes]
+      .filter(s => s.content)
+      .sort((a, b) => parseFloat(a.sceneNumber) - parseFloat(b.sceneNumber));
 
-    doc.setFont("Courier", "normal");
-    doc.setFontSize(12);
-
-    const headerText = `Shoot Day ${selectedDay.dayNumber} - ${formatDate(selectedDay.date)}`;
-    doc.setFont("Courier", "bold");
-    doc.setFontSize(10);
-    doc.text(headerText, pageWidth / 2, yPos, { align: "center" });
-    doc.setFont("Courier", "normal");
-    doc.setFontSize(12);
-    yPos += 24;
-    currentLine += 2;
-
-    dayScenes.forEach((scene, sceneIndex) => {
-      if (currentLine + 3 > maxLinesPerPage) {
-        doc.addPage();
-        yPos = margin;
-        currentLine = 0;
-      }
-
-      doc.setFont("Courier", "bold");
-      yPos += lineHeight;
-      currentLine++;
-      doc.text(String(scene.sceneNumber), margin - 50, yPos);
-      doc.text(scene.heading.toUpperCase(), margin, yPos);
-      doc.text(String(scene.sceneNumber), pageWidth - margin + 10, yPos);
-
-      yPos += lineHeight * 2;
-      currentLine += 2;
-      doc.setFont("Courier", "normal");
-
-      scene.content.forEach((block) => {
-        const style = getElementStyle(block.type);
-        const leftMargin = margin + (parseInt(style.marginLeft) || 0);
-        const rightMargin = parseInt(style.marginRight) || 5;
-        const maxWidth = pageWidth - margin * 2 - (parseInt(style.marginLeft) || 0) - rightMargin;
-
-        let text = block.text;
-        if (block.type === "Character") {
-          text = text.toUpperCase();
-        }
-
-        const lines = doc.splitTextToSize(text, maxWidth);
-
-        if (currentLine + lines.length + 1 > maxLinesPerPage) {
-          doc.addPage();
-          yPos = margin;
-          currentLine = 0;
-        }
-
-        lines.forEach((line) => {
-          yPos += lineHeight;
-          currentLine++;
-          doc.text(line, leftMargin, yPos);
-        });
-
-        yPos += lineHeight;
-        currentLine++;
+    let cumLine = 0;
+    const flat = [];
+    sorted.forEach(scene => {
+      flat.push({ sceneNum: scene.sceneNumber, type: "Scene Heading", text: scene.heading?.toUpperCase() || "", startLine: cumLine, lineCount: 2, isHeading: true });
+      cumLine += 2;
+      (scene.content || []).forEach(block => {
+        const lc = calculateBlockLines(block);
+        flat.push({ sceneNum: scene.sceneNumber, type: block.type, text: block.type === "Character" ? (block.text || "").toUpperCase() : (block.text || ""), startLine: cumLine, lineCount: lc });
+        cumLine += lc;
       });
+      cumLine += 0.5;
     });
 
-    const date = new Date(selectedDay.date);
-    const dateStr = date.toISOString().split("T")[0];
-    const filename = `sides-day-${selectedDay.dayNumber}-${dateStr}.pdf`;
-    doc.save(filename);
-    alert(`Sides exported as: ${filename}`);
+    // Find script pages that contain target scenes
+    const targetPages = new Set();
+    flat.forEach(item => {
+      if (!targetNums.has(String(item.sceneNum))) return;
+      const sp = Math.floor(item.startLine / SLPP);
+      const ep = Math.floor((item.startLine + item.lineCount - 0.01) / SLPP);
+      for (let p = sp; p <= ep; p++) targetPages.add(p);
+    });
+
+    const pages = Array.from(targetPages).sort((a, b) => a - b);
+    if (pages.length === 0) { alert("No content found."); return; }
+
+    let firstPDFPage = true;
+    pages.forEach((scriptPage, pIdx) => {
+      if (!firstPDFPage) doc.addPage();
+      firstPDFPage = false;
+      const lineStart = scriptPage * SLPP;
+      const lineEnd = lineStart + SLPP;
+
+      doc.setFont("Courier", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      doc.text(`${scriptPage + 1}.`, PW - 50, TOP - 15);
+
+      if (pIdx === 0) {
+        doc.setFont("Courier", "bold");
+        doc.setFontSize(11);
+        doc.text(`Shoot Day ${selectedDay.dayNumber} - ${formatDate(selectedDay.date)}`, PW / 2, TOP - 28, { align: "center" });
+      }
+
+      const items = flat.filter(item => item.startLine < lineEnd && item.startLine + item.lineCount > lineStart);
+
+      let yPos = TOP;
+      items.forEach(item => {
+        const isTarget = targetNums.has(String(item.sceneNum));
+        const c = COLS[item.type] || COLS["Action"];
+        const isBold = item.type === "Scene Heading";
+        doc.setFontSize(12);
+        doc.setFont("Courier", isBold ? "bold" : "normal");
+        const lines = doc.splitTextToSize(item.text, c.w);
+
+        if (item.isHeading && yPos > TOP) yPos += LH;
+
+        const baseY = yPos;
+        if (baseY > BOTTOM) return;
+
+        if (!isTarget) {
+          doc.setTextColor(150, 150, 150);
+          doc.setDrawColor(150, 150, 150);
+          doc.setLineWidth(0.5);
+          lines.forEach((line, li) => {
+            const y = baseY + li * LH;
+            if (y > BOTTOM) return;
+            doc.text(line, c.x, y);
+            doc.line(c.x, y - 4, c.x + doc.getTextWidth(line), y - 4);
+          });
+          if (item.isHeading) {
+            doc.text(String(item.sceneNum), LM - 30, baseY);
+            doc.text(String(item.sceneNum), RM + 5, baseY);
+          }
+        } else {
+          doc.setTextColor(0, 0, 0);
+          lines.forEach((line, li) => {
+            const y = baseY + li * LH;
+            if (y > BOTTOM) return;
+            doc.text(line, c.x, y);
+          });
+          if (item.isHeading) {
+            doc.text(String(item.sceneNum), LM - 30, baseY);
+            doc.text(String(item.sceneNum), RM + 5, baseY);
+          }
+        }
+
+        yPos += lines.length * LH + LH;
+      });
+      doc.setTextColor(0, 0, 0);
+      doc.setFont("Courier", "normal");
+    });
+
+    const dateStr = new Date(selectedDay.date).toISOString().split("T")[0];
+    doc.save(`sides-day-${selectedDay.dayNumber}-${dateStr}.pdf`);
+    alert(`Sides exported: sides-day-${selectedDay.dayNumber}-${dateStr}.pdf`);
   };
 
   const getSmartDefaultDay = (shootingDays) => {
@@ -498,6 +517,13 @@ function CallSheetModule({
   };
 
   const [selectedDay, setSelectedDay] = React.useState(null);
+
+  // Auto-select day from deep link (e.g. clicking shoot date badge in Props)
+  React.useEffect(() => {
+    if (!initialDayNumber || !shootingDays?.length) return;
+    const match = shootingDays.find(d => d.dayNumber === initialDayNumber);
+    if (match) setSelectedDay(match);
+  }, [initialDayNumber, shootingDays?.length]);
   const [weather, setWeather] = React.useState(null);
   const [removalModal, setRemovalModal] = React.useState(null);
   const [manualCast, setManualCast] = React.useState([]);
@@ -817,7 +843,7 @@ function CallSheetModule({
   };
 
   React.useEffect(() => {
-    if (shootingDays.length > 0 && selectedDay === null) {
+    if (shootingDays.length > 0 && selectedDay === null && !initialDayNumber) {
       const smartDefault = getSmartDefaultDay(shootingDays);
       setSelectedDay(smartDefault);
     }
