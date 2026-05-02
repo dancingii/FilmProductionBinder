@@ -82,6 +82,26 @@ const EditablePropTitle = React.memo(
   }
 );
 
+// === CATEGORIES + ID SYSTEM INSERTED HERE ===
+
+// ── Prop subcategories with prefix codes ──────────────────────────────────────
+const PROP_SUBCATEGORIES = [
+  { key: "hand",        label: "Hand Props",     prefix: "HP", color: "#FF6B6B" },
+  { key: "weapons",     label: "Weapons",        prefix: "WP", color: "#D32F2F" },
+  { key: "food",        label: "Food & Drink",   prefix: "FD", color: "#8D6E63" },
+  { key: "documents",   label: "Documents",      prefix: "DC", color: "#1565C0" },
+  { key: "furniture",   label: "Furniture",      prefix: "FN", color: "#5D4037" },
+  { key: "electronics", label: "Electronics",    prefix: "EL", color: "#0288D1" },
+  { key: "vehicles",    label: "Vehicles",       prefix: "VH", color: "#37474F" },
+  { key: "medical",     label: "Medical",        prefix: "MD", color: "#00838F" },
+  { key: "money",       label: "Money",          prefix: "MN", color: "#2E7D32" },
+  { key: "misc",        label: "Miscellaneous",  prefix: "MS", color: "#757575" },
+];
+
+const SUBCATEGORY_MAP = Object.fromEntries(
+  PROP_SUBCATEGORIES.map((s) => [s.key, s])
+);
+
 function PropsModule({
   taggedItems,
   scenes,
@@ -101,14 +121,24 @@ function PropsModule({
   showConfirm,
   onUploadPropImage,
   onDeletePropImage,
+  projectSettings,
 }) {
   const [showScenesWithoutProps, setShowScenesWithoutProps] = useState(false);
   const [selectedProp, setSelectedProp] = useState(null);
   const [showScenePreview, setShowScenePreview] = useState(false);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [propImageUploading, setPropImageUploading] = useState(false);
-  const [characterFilter, setCharacterFilter] = useState([]); // [] = show all
-  const [showCharacterFilterDropdown, setShowCharacterFilterDropdown] = useState(false);
+  const [characterFilter, setCharacterFilter] = useState([]);
+  const [subcategoryFilter, setSubcategoryFilter] = useState([]); // [] = all (multi)
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [categoryAccordionOpen, setCategoryAccordionOpen] = useState(true);
+  const [characterAccordionOpen, setCharacterAccordionOpen] = useState(true);
+  // Print queue
+  const [printQueue, setPrintQueue] = useState([]);
+  const [showPrintQueue, setShowPrintQueue] = useState(false);
+  const [printFormat, setPrintFormat] = useState("avery5163");
+  const [usedSlots, setUsedSlots] = useState([]);
+  const [showBadgeSection, setShowBadgeSection] = useState(false);
 
   // --- Script search state for new custom props ---
   const [propSearchQuery, setPropSearchQuery] = useState("");
@@ -396,6 +426,19 @@ function PropsModule({
     propItems.map(([word], idx) => [word, idx + 1])
   );
 
+  // Generate unique prop ID like HP_001, WP_003
+  const generatePropId = (subcategoryKey) => {
+    const sub = SUBCATEGORY_MAP[subcategoryKey] || SUBCATEGORY_MAP["misc"];
+    const prefix = sub.prefix;
+    const existing = Object.values(taggedItems)
+      .filter((item) => item.category === "Props" && item.propId && item.propId.startsWith(prefix + "_"))
+      .map((item) => parseInt(item.propId.split("_")[1]) || 0)
+      .sort((a, b) => b - a);
+    const next = existing.length > 0 ? existing[0] + 1 : 1;
+    return `${prefix}_${String(next).padStart(3, "0")}`;
+  };
+
+
   // Sync chronologicalNumber back to DB whenever scene-sorted order
   // differs from stored values — keeps all modules in agreement
   const propNumberSyncedRef = React.useRef(false);
@@ -418,6 +461,208 @@ function PropsModule({
     propNumberSyncedRef.current = true;
   }, [propItems.map(([w]) => w).join(",")]);
 
+  // propId auto-assign removed — IDs are now manually assigned and locked by user
+
+  // ── Badge & Print helpers ─────────────────────────────────────────────────
+  const getPropDeepLink = (propId) =>
+    `${window.location.origin}/?prop=${encodeURIComponent(propId)}`;
+
+  const getPropQrImgUrl = (propId, size = 100) =>
+    `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(getPropDeepLink(propId))}`;
+
+  const generateDymoXml = (prop, filmTitle) => {
+    const esc = (s) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const chars = (prop.assignedCharacters || []).join(", ");
+    const qrUrl = getPropDeepLink(prop.propId || "");
+    return `<?xml version="1.0" encoding="utf-8"?>
+<DieCutLabel Version="8.0" Units="twips">
+  <PaperOrientation>Landscape</PaperOrientation>
+  <Id>LargeSplash</Id>
+  <PaperName>30346 Durable ID Label</PaperName>
+  <DrawCommands>
+    <RoundRectangle X="0" Y="0" Width="3240" Height="1800" Rx="270" Ry="270" />
+  </DrawCommands>
+  <ObjectInfo>
+    <TextObject>
+      <Name>FilmTitle</Name>
+      <ForeColor Alpha="255" Red="100" Green="100" Blue="100" />
+      <BackColor Alpha="0" Red="255" Green="255" Blue="255" />
+      <LinkedObjectName></LinkedObjectName>
+      <Rotation>Rotation0</Rotation>
+      <IsMirrored>False</IsMirrored>
+      <IsVariable>False</IsVariable>
+      <HorizontalAlignment>Left</HorizontalAlignment>
+      <VerticalAlignment>Top</VerticalAlignment>
+      <TextFitMode>ShrinkToFit</TextFitMode>
+      <UseFullFontHeight>True</UseFullFontHeight>
+      <Verticalized>False</Verticalized>
+      <StyledText><Element><String>${esc(filmTitle)}</String>
+        <Attributes><Font Family="Helvetica" Size="7" Bold="False" Italic="True" Underline="False" StrikeOut="False" />
+        <ForeColor Alpha="255" Red="100" Green="100" Blue="100" /></Attributes></Element></StyledText>
+    </TextObject>
+    <ObjectLayout><DYMOPoint><X>90</X><Y>90</Y></DYMOPoint><Size><Width>2160</Width><Height>200</Height></Size><ZOrder>0</ZOrder></ObjectLayout>
+  </ObjectInfo>
+  <ObjectInfo>
+    <TextObject>
+      <Name>PropName</Name>
+      <ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
+      <BackColor Alpha="0" Red="255" Green="255" Blue="255" />
+      <LinkedObjectName></LinkedObjectName>
+      <Rotation>Rotation0</Rotation>
+      <IsMirrored>False</IsMirrored>
+      <IsVariable>False</IsVariable>
+      <HorizontalAlignment>Left</HorizontalAlignment>
+      <VerticalAlignment>Middle</VerticalAlignment>
+      <TextFitMode>ShrinkToFit</TextFitMode>
+      <UseFullFontHeight>True</UseFullFontHeight>
+      <Verticalized>False</Verticalized>
+      <StyledText><Element><String>${esc(prop.customTitle || prop.displayName)}</String>
+        <Attributes><Font Family="Helvetica" Size="14" Bold="True" Italic="False" Underline="False" StrikeOut="False" />
+        <ForeColor Alpha="255" Red="0" Green="0" Blue="0" /></Attributes></Element></StyledText>
+    </TextObject>
+    <ObjectLayout><DYMOPoint><X>90</X><Y>300</Y></DYMOPoint><Size><Width>2160</Width><Height>600</Height></Size><ZOrder>1</ZOrder></ObjectLayout>
+  </ObjectInfo>
+  <ObjectInfo>
+    <TextObject>
+      <Name>PropId</Name>
+      <ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
+      <BackColor Alpha="0" Red="255" Green="255" Blue="255" />
+      <LinkedObjectName></LinkedObjectName>
+      <Rotation>Rotation0</Rotation>
+      <IsMirrored>False</IsMirrored>
+      <IsVariable>False</IsVariable>
+      <HorizontalAlignment>Left</HorizontalAlignment>
+      <VerticalAlignment>Middle</VerticalAlignment>
+      <TextFitMode>ShrinkToFit</TextFitMode>
+      <UseFullFontHeight>True</UseFullFontHeight>
+      <Verticalized>False</Verticalized>
+      <StyledText><Element><String>${esc(prop.propId || "UNASSIGNED")}</String>
+        <Attributes><Font Family="Courier New" Size="10" Bold="True" Italic="False" Underline="False" StrikeOut="False" />
+        <ForeColor Alpha="255" Red="0" Green="0" Blue="0" /></Attributes></Element></StyledText>
+    </TextObject>
+    <ObjectLayout><DYMOPoint><X>90</X><Y>900</Y></DYMOPoint><Size><Width>2160</Width><Height>300</Height></Size><ZOrder>2</ZOrder></ObjectLayout>
+  </ObjectInfo>
+  <ObjectInfo>
+    <TextObject>
+      <Name>Character</Name>
+      <ForeColor Alpha="255" Red="80" Green="80" Blue="80" />
+      <BackColor Alpha="0" Red="255" Green="255" Blue="255" />
+      <LinkedObjectName></LinkedObjectName>
+      <Rotation>Rotation0</Rotation>
+      <IsMirrored>False</IsMirrored>
+      <IsVariable>False</IsVariable>
+      <HorizontalAlignment>Left</HorizontalAlignment>
+      <VerticalAlignment>Middle</VerticalAlignment>
+      <TextFitMode>ShrinkToFit</TextFitMode>
+      <UseFullFontHeight>True</UseFullFontHeight>
+      <Verticalized>False</Verticalized>
+      <StyledText><Element><String>${esc(chars)}</String>
+        <Attributes><Font Family="Helvetica" Size="8" Bold="False" Italic="False" Underline="False" StrikeOut="False" />
+        <ForeColor Alpha="255" Red="80" Green="80" Blue="80" /></Attributes></Element></StyledText>
+    </TextObject>
+    <ObjectLayout><DYMOPoint><X>90</X><Y>1200</Y></DYMOPoint><Size><Width>2160</Width><Height>400</Height></Size><ZOrder>3</ZOrder></ObjectLayout>
+  </ObjectInfo>
+  <ObjectInfo>
+    <BarcodeObject>
+      <Name>QRCode</Name>
+      <ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
+      <BackColor Alpha="0" Red="255" Green="255" Blue="255" />
+      <LinkedObjectName></LinkedObjectName>
+      <Rotation>Rotation0</Rotation>
+      <IsMirrored>False</IsMirrored>
+      <IsVariable>False</IsVariable>
+      <Text>${qrUrl}</Text>
+      <Type>QRCode</Type>
+      <Size>Medium</Size>
+      <ECLevel>0</ECLevel>
+    </BarcodeObject>
+    <ObjectLayout><DYMOPoint><X>2340</X><Y>90</Y></DYMOPoint><Size><Width>810</Width><Height>1620</Height></Size><ZOrder>4</ZOrder></ObjectLayout>
+  </ObjectInfo>
+</DieCutLabel>`;
+  };
+
+  const exportDymoPdf = (prop, filmTitle) => {
+    const chars = (prop.assignedCharacters || []).join(", ");
+    const subMeta = SUBCATEGORY_MAP[prop.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"];
+    const qrUrl = getPropQrImgUrl(prop.propId || "", 54);
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${prop.propId} Badge</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  @page{size:2.25in 1.25in;margin:0}
+  body{width:2.25in;height:1.25in;font-family:Helvetica,Arial,sans-serif;overflow:hidden}
+  .badge{display:flex;width:2.25in;height:1.25in;padding:5px}
+  .text{flex:1;display:flex;flex-direction:column;justify-content:center;gap:2px;padding-right:4px;overflow:hidden}
+  .film{font-size:5pt;color:#888;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .name{font-size:9pt;font-weight:bold;line-height:1.1;overflow:hidden}
+  .pid{font-size:7pt;font-weight:bold;color:white;background:${subMeta.color};display:inline-block;padding:1px 4px;border-radius:2px;font-family:monospace}
+  .char{font-size:6pt;color:#555;margin-top:1px}
+  .qr{width:54px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+</style></head><body>
+<div class="badge">
+  <div class="text">
+    <div class="film">${filmTitle || ""}</div>
+    <div class="name">${prop.customTitle || prop.displayName}</div>
+    ${prop.propId ? `<div class="pid">${prop.propId}</div>` : ""}
+    ${chars ? `<div class="char">${chars}</div>` : ""}
+  </div>
+  <div class="qr"><img src="${qrUrl}" width="54" height="54" /></div>
+</div>
+<script>var img=document.querySelector('img');img.onload=function(){window.print()};img.onerror=function(){window.print()};setTimeout(function(){window.print()},3000);<\/script>
+</body></html>`;
+    const win = window.open("", "_blank");
+    win.document.write(html);
+    win.document.close();
+  };
+
+  const generateBadgePrintHtml = (props, format, usedSlots, filmTitle) => {
+    const fmtCfg = {
+      avery5163: { cols: 2, rows: 5, total: 10, lw: "4in", lh: "2in", mt: "0.5in", ml: "0.17in", gap: "0.17in", qSize: 72, namePt: 16, filmPt: 7, idPt: 9, charPt: 8 },
+      avery5160: { cols: 3, rows: 10, total: 30, lw: "2.625in", lh: "1in", mt: "0.5in", ml: "0.19in", gap: "0.125in", qSize: 44, namePt: 9, filmPt: 5, idPt: 7, charPt: 6 },
+    };
+    const cfg = fmtCfg[format];
+    const availSlots = Array.from({ length: cfg.total }, (_, i) => i).filter(i => !usedSlots.includes(i));
+    const labels = Array.from({ length: cfg.total }, (_, i) => {
+      if (usedSlots.includes(i)) return `<div class="label empty"></div>`;
+      const pIdx = availSlots.indexOf(i);
+      const prop = pIdx >= 0 && pIdx < props.length ? props[pIdx] : null;
+      if (!prop) return `<div class="label empty"></div>`;
+      const subMeta = SUBCATEGORY_MAP[prop.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"];
+      const chars = (prop.assignedCharacters || []).join(", ");
+      const qrSrc = getPropQrImgUrl(prop.propId || "", cfg.qSize);
+      return `<div class="label">
+        <div class="lc">
+          <div class="lt">
+            <div style="font-size:${cfg.filmPt}pt;color:#888;font-style:italic">${filmTitle || ""}</div>
+            <div style="font-size:${cfg.namePt}pt;font-weight:bold;line-height:1.1">${prop.customTitle || prop.displayName}</div>
+            ${prop.propId ? `<div style="font-size:${cfg.idPt}pt;font-weight:bold;color:white;background:${subMeta.color};display:inline-block;padding:1px 5px;border-radius:2px;font-family:monospace;margin-top:2px">${prop.propId}</div>` : ""}
+            ${chars ? `<div style="font-size:${cfg.charPt}pt;color:#444;margin-top:2px">${chars}</div>` : ""}
+          </div>
+          <div class="lq"><img src="${qrSrc}" width="${cfg.qSize}" height="${cfg.qSize}" /></div>
+        </div>
+      </div>`;
+    }).join("");
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Prop Badges</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  @page{size:8.5in 11in;margin:0}
+  body{font-family:Helvetica,Arial,sans-serif}
+  .sheet{display:grid;grid-template-columns:repeat(${cfg.cols},${cfg.lw});gap:0 ${cfg.gap};padding:${cfg.mt} ${cfg.ml}}
+  .label{width:${cfg.lw};height:${cfg.lh};overflow:hidden;padding:6px}
+  .label.empty{background:transparent}
+  .lc{display:flex;height:100%}
+  .lt{flex:1;display:flex;flex-direction:column;justify-content:center;gap:2px;padding-right:6px;overflow:hidden}
+  .lq{display:flex;align-items:center;justify-content:center;width:${cfg.qSize + 4}px;flex-shrink:0}
+  @media print{.label.empty{background:transparent}}
+</style></head><body>
+<div class="sheet">${labels}</div>
+<script>
+  var imgs=document.querySelectorAll('img'),loaded=0;
+  if(imgs.length===0){window.print();}
+  else{imgs.forEach(function(i){i.onload=i.onerror=function(){if(++loaded===imgs.length)window.print();}});}
+  setTimeout(function(){window.print()},5000);
+<\/script>
+</body></html>`;
+  };
   // Get props for a specific scene
   const getPropsForScene = (sceneIndex) => {
     const scene = scenes[sceneIndex];
@@ -533,6 +778,18 @@ function PropsModule({
         >
           <h2 style={{ margin: 0 }}>Props</h2>
           <button
+            onClick={() => setShowPrintQueue(true)}
+            style={{
+              backgroundColor: printQueue.length > 0 ? "#1976d2" : "#e0e0e0",
+              color: printQueue.length > 0 ? "white" : "#555",
+              border: "none", borderRadius: "4px",
+              padding: "8px 12px", cursor: "pointer",
+              fontSize: "12px", fontWeight: "bold",
+            }}
+          >
+            🖨{printQueue.length > 0 ? ` Queue (${printQueue.length})` : " Queue"}
+          </button>
+          <button
             onClick={() => {
               // Create a temporary prop object to open the popup
               const tempProp = {
@@ -548,6 +805,8 @@ function PropsModule({
                 scenes: [],
                 contextScene: null,
                 isNewCustomProp: true, // Flag to identify this as a new custom prop
+                propSubcategory: "misc",
+                propId: generatePropId("misc"),
               };
               setSelectedProp(tempProp);
             }}
@@ -565,116 +824,223 @@ function PropsModule({
             + Add Custom Prop
           </button>
         </div>
-        {/* Character filter dropdown */}
-        {Object.keys(characters || {}).length > 0 && (
-          <div style={{ marginBottom: "12px", position: "relative" }}>
-            <button
-              onClick={() => setShowCharacterFilterDropdown((prev) => !prev)}
-              style={{
-                width: "100%",
-                padding: "7px 10px",
-                border: "1px solid #ccc",
-                borderRadius: "4px",
-                backgroundColor: characterFilter.length > 0 ? "#e3f2fd" : "white",
-                cursor: "pointer",
-                fontSize: "12px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                boxSizing: "border-box",
-              }}
-            >
-              <span>
-                {characterFilter.length === 0
-                  ? "Filter by character…"
-                  : characterFilter.length === 1
-                  ? characterFilter[0]
-                  : `${characterFilter.length} characters selected`}
-              </span>
-              <span style={{ fontSize: "10px", opacity: 0.6 }}>
-                {showCharacterFilterDropdown ? "▲" : "▼"}
-              </span>
-            </button>
 
-            {showCharacterFilterDropdown && (
-              <>
-                {/* Click-away overlay */}
-                <div
-                  style={{
-                    position: "fixed",
-                    top: 0, left: 0,
-                    width: "100%", height: "100%",
-                    zIndex: 299,
-                  }}
-                  onClick={() => setShowCharacterFilterDropdown(false)}
-                />
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "100%",
-                    left: 0,
-                    width: "100%",
-                    backgroundColor: "white",
-                    border: "1px solid #90caf9",
-                    borderRadius: "4px",
-                    padding: "6px 8px",
-                    zIndex: 300,
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {/* Clear all */}
-                  {characterFilter.length > 0 && (
-                    <div
-                      onClick={() => setCharacterFilter([])}
-                      style={{
-                        fontSize: "11px",
-                        color: "#1976d2",
-                        cursor: "pointer",
-                        marginBottom: "5px",
-                        paddingBottom: "5px",
-                        borderBottom: "1px solid #eee",
+        {/* Combined filter dropdown */}
+        {(() => {
+          const hasAnyFilter = subcategoryFilter.length > 0 || characterFilter.length > 0;
+          const activeFilterCount = subcategoryFilter.length + characterFilter.length;
+          const activeCatsWithProps = PROP_SUBCATEGORIES.filter((sub) =>
+            Object.values(taggedItems).some(
+              (item) => item.category === "Props" && (item.propSubcategory || "misc") === sub.key
+            )
+          );
+          const hasCharacters = Object.keys(characters || {}).length > 0;
+          return (
+            <div style={{ marginBottom: "12px", position: "relative" }}>
+              {/* Trigger button */}
+              <button
+                onClick={() => setShowFilterDropdown((prev) => !prev)}
+                style={{
+                  width: "100%",
+                  padding: "7px 10px",
+                  border: `1px solid ${hasAnyFilter ? "#1976d2" : "#ccc"}`,
+                  borderRadius: "4px",
+                  backgroundColor: hasAnyFilter ? "#e3f2fd" : "white",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  boxSizing: "border-box",
+                }}
+              >
+                <span style={{ color: hasAnyFilter ? "#1565c0" : "#555", fontWeight: hasAnyFilter ? "bold" : "normal" }}>
+                  {hasAnyFilter ? `${activeFilterCount} filter${activeFilterCount !== 1 ? "s" : ""} active` : "Filter props…"}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  {hasAnyFilter && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSubcategoryFilter([]);
+                        setCharacterFilter([]);
                       }}
+                      style={{ fontSize: "11px", color: "#1976d2", fontWeight: "bold", cursor: "pointer", lineHeight: 1 }}
+                      title="Clear all filters"
                     >
-                      ✕ Clear filter
-                    </div>
+                      ✕
+                    </span>
                   )}
-                  {Object.keys(characters)
-                    .sort()
-                    .map((c) => (
-                      <label
-                        key={c}
+                  <span style={{ fontSize: "10px", opacity: 0.6 }}>{showFilterDropdown ? "▲" : "▼"}</span>
+                </div>
+              </button>
+
+              {showFilterDropdown && (
+                <>
+                  <div
+                    style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", zIndex: 299 }}
+                    onClick={() => setShowFilterDropdown(false)}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      width: "100%",
+                      backgroundColor: "white",
+                      border: "1px solid #ccc",
+                      borderRadius: "4px",
+                      zIndex: 300,
+                      boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+                      boxSizing: "border-box",
+                      maxHeight: "340px",
+                      overflowY: "auto",
+                    }}
+                  >
+                    {/* ── Categories accordion ── */}
+                    <div>
+                      <div
+                        onClick={() => setCategoryAccordionOpen((p) => !p)}
                         style={{
+                          padding: "7px 10px",
+                          cursor: "pointer",
                           display: "flex",
                           alignItems: "center",
-                          gap: "6px",
-                          fontSize: "12px",
-                          padding: "3px 0",
-                          cursor: "pointer",
-                          fontWeight: characterFilter.includes(c) ? "bold" : "normal",
-                          color: characterFilter.includes(c) ? "#1565c0" : "#333",
+                          justifyContent: "space-between",
+                          backgroundColor: "#f5f5f5",
+                          borderBottom: "1px solid #e0e0e0",
+                          userSelect: "none",
                         }}
                       >
-                        <input
-                          type="checkbox"
-                          checked={characterFilter.includes(c)}
-                          onChange={(e) =>
-                            setCharacterFilter((prev) =>
-                              e.target.checked
-                                ? [...prev, c]
-                                : prev.filter((x) => x !== c)
-                            )
-                          }
-                          style={{ cursor: "pointer" }}
-                        />
-                        {c}
-                      </label>
-                    ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
+                        <span style={{ fontSize: "11px", fontWeight: "bold", color: "#444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Categories
+                          {subcategoryFilter.length > 0 && (
+                            <span style={{ marginLeft: "6px", color: "#1976d2" }}>({subcategoryFilter.length})</span>
+                          )}
+                        </span>
+                        <span style={{ fontSize: "10px", color: "#888" }}>{categoryAccordionOpen ? "▲" : "▼"}</span>
+                      </div>
+                      {categoryAccordionOpen && (
+                        <div style={{ padding: "4px 0" }}>
+                          {activeCatsWithProps.map((sub) => {
+                            const count = Object.values(taggedItems).filter(
+                              (item) => item.category === "Props" && (item.propSubcategory || "misc") === sub.key
+                            ).length;
+                            const checked = subcategoryFilter.includes(sub.key);
+                            return (
+                              <label
+                                key={sub.key}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                  padding: "5px 10px",
+                                  cursor: "pointer",
+                                  backgroundColor: checked ? "#fff8e1" : "transparent",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) =>
+                                    setSubcategoryFilter((prev) =>
+                                      e.target.checked ? [...prev, sub.key] : prev.filter((k) => k !== sub.key)
+                                    )
+                                  }
+                                  style={{ cursor: "pointer", flexShrink: 0 }}
+                                />
+                                <span
+                                  style={{
+                                    fontSize: "9px",
+                                    fontWeight: "bold",
+                                    color: "white",
+                                    backgroundColor: sub.color,
+                                    borderRadius: "3px",
+                                    padding: "1px 5px",
+                                    fontFamily: "monospace",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {sub.prefix}
+                                </span>
+                                <span style={{ flex: 1, fontSize: "12px", color: checked ? "#333" : "#555", fontWeight: checked ? "bold" : "normal" }}>
+                                  {sub.label}
+                                </span>
+                                <span style={{ fontSize: "10px", color: "#999" }}>{count}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Characters accordion ── */}
+                    {hasCharacters && (
+                      <div>
+                        <div
+                          onClick={() => setCharacterAccordionOpen((p) => !p)}
+                          style={{
+                            padding: "7px 10px",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            backgroundColor: "#f5f5f5",
+                            borderTop: "1px solid #e0e0e0",
+                            borderBottom: "1px solid #e0e0e0",
+                            userSelect: "none",
+                          }}
+                        >
+                          <span style={{ fontSize: "11px", fontWeight: "bold", color: "#444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            Characters
+                            {characterFilter.length > 0 && (
+                              <span style={{ marginLeft: "6px", color: "#1976d2" }}>({characterFilter.length})</span>
+                            )}
+                          </span>
+                          <span style={{ fontSize: "10px", color: "#888" }}>{characterAccordionOpen ? "▲" : "▼"}</span>
+                        </div>
+                        {characterAccordionOpen && (
+                          <div style={{ padding: "4px 0" }}>
+                            {Object.keys(characters).sort().map((c) => {
+                              const checked = characterFilter.includes(c);
+                              return (
+                                <label
+                                  key={c}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "8px",
+                                    padding: "5px 10px",
+                                    cursor: "pointer",
+                                    backgroundColor: checked ? "#e3f2fd" : "transparent",
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) =>
+                                      setCharacterFilter((prev) =>
+                                        e.target.checked ? [...prev, c] : prev.filter((x) => x !== c)
+                                      )
+                                    }
+                                    style={{ cursor: "pointer", flexShrink: 0 }}
+                                  />
+                                  <span style={{ fontSize: "12px", color: checked ? "#1565c0" : "#555", fontWeight: checked ? "bold" : "normal" }}>
+                                    {c}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         <div style={{ marginBottom: "20px" }}>
           {propItems.length === 0 ? (
@@ -685,12 +1051,11 @@ function PropsModule({
           ) : (
             <p>
               Total Props: {propItems.length}
-              {characterFilter.length > 0 && (
+              {(characterFilter.length > 0 || subcategoryFilter.length > 0) && (
                 <span style={{ color: "#888", fontSize: "11px", marginLeft: "6px" }}>
                   ({propItems.filter(([, item]) =>
-                    (item.assignedCharacters || []).some((c) =>
-                      characterFilter.includes(c)
-                    )
+                    (characterFilter.length === 0 || (item.assignedCharacters || []).some((c) => characterFilter.includes(c))) &&
+                    (subcategoryFilter.length === 0 || subcategoryFilter.includes(item.propSubcategory || "misc"))
                   ).length} shown)
                 </span>
               )}
@@ -706,6 +1071,9 @@ function PropsModule({
                 : (item.assignedCharacters || []).some((c) =>
                     characterFilter.includes(c)
                   )
+            )
+            .filter(([, item]) =>
+              subcategoryFilter.length === 0 ? true : subcategoryFilter.includes(item.propSubcategory || "misc")
             )
             .map(([word, item]) => {
             // Convert hex color to more pastel version
@@ -750,7 +1118,7 @@ function PropsModule({
                 >
                 {/* Left: text content */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  {/* Line 1: prop name + Default badge */}
+                  {/* Line 1: prop number + name + Default badge */}
                   <div
                     style={{
                       display: "flex",
@@ -767,6 +1135,9 @@ function PropsModule({
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
+                        alignSelf: "flex-start",
+                        position: "relative",
+                        top: "-4px",
                       }}
                       onClick={() =>
                         setSelectedProp({ word, ...item, contextScene: null })
@@ -791,6 +1162,32 @@ function PropsModule({
                         }}
                       >
                         Default
+                      </span>
+                    )}
+                    {/* Spacer pushes ID badge right */}
+                    <span style={{ flex: 1 }} />
+                    {/* Prop ID badge */}
+                    {item.propId ? (
+                      <span style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, position: "relative" }}>
+                        <span style={{
+                          fontSize: "9px", fontWeight: "bold", color: "white",
+                          backgroundColor: (SUBCATEGORY_MAP[item.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"]).color,
+                          borderRadius: "3px", padding: "1px 6px", letterSpacing: "0.05em", fontFamily: "monospace",
+                          position: "relative", top: "-6px",
+                        }}>
+                          {item.propId}
+                        </span>
+                        {item.propIdLocked && (
+                          <span style={{ position: "absolute", bottom: "-20px", fontSize: "16px", lineHeight: 1 }}>🔒</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span style={{
+                        fontSize: "9px", fontWeight: "bold", color: "#888",
+                        backgroundColor: "#eee", borderRadius: "3px",
+                        padding: "1px 6px", flexShrink: 0, fontFamily: "monospace",
+                      }}>
+                        unassigned
                       </span>
                     )}
                   </div>
@@ -1207,6 +1604,38 @@ function PropsModule({
 
             {/* Search Script — only shown when creating a new custom prop */}
             {selectedProp.isNewCustomProp && (
+              <div style={{ marginBottom: "10px" }}>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: "bold", color: "#555", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>
+                  Prop Type
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <select
+                    value={selectedProp.propSubcategory || "misc"}
+                    onChange={(e) => {
+                      const newSub = e.target.value;
+                      const newId = generatePropId(newSub);
+                      setSelectedProp((prev) => ({ ...prev, propSubcategory: newSub, propId: newId }));
+                    }}
+                    style={{ flex: 1, padding: "6px 8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}
+                  >
+                    {PROP_SUBCATEGORIES.map((sub) => (
+                      <option key={sub.key} value={sub.key}>{sub.prefix} — {sub.label}</option>
+                    ))}
+                  </select>
+                  {selectedProp.propId && (
+                    <span style={{
+                      fontSize: "11px", fontWeight: "bold", color: "white",
+                      backgroundColor: (SUBCATEGORY_MAP[selectedProp.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"]).color,
+                      borderRadius: "3px", padding: "3px 8px", fontFamily: "monospace", flexShrink: 0,
+                    }}>
+                      {selectedProp.propId}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* Script search */}
+            {selectedProp.isNewCustomProp && (
               <div
                 style={{
                   marginBottom: "14px",
@@ -1332,6 +1761,154 @@ function PropsModule({
             <p style={{ margin: "4px 0", fontSize: "12px" }}>
               <strong>Category:</strong> {selectedProp.category}
             </p>
+            {/* Prop Subcategory — editable */}
+            <div style={{ margin: "8px 0 6px" }}>
+              <label style={{ fontSize: "11px", fontWeight: "bold", color: "#555", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: "4px" }}>
+                Prop Type
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <select
+                  value={selectedProp.propSubcategory || "misc"}
+                  disabled={!!(taggedItems[selectedProp.word]?.propIdLocked)}
+                  onChange={(e) => {
+                    const currentPropData = taggedItems[selectedProp.word] || {};
+                    if (currentPropData.propIdLocked) return;
+                    const newSub = e.target.value;
+                    const newPrefix = (SUBCATEGORY_MAP[newSub] || SUBCATEGORY_MAP["misc"]).prefix;
+                    const currentId = currentPropData.propId || "";
+                    const newId = currentId.startsWith(newPrefix + "_")
+                      ? currentId
+                      : generatePropId(newSub);
+                    const updated = {
+                      ...taggedItems,
+                      [selectedProp.word]: {
+                        ...currentPropData,
+                        propSubcategory: newSub,
+                        propId: newId,
+                      },
+                    };
+                    onUpdateTaggedItems(updated);
+                    onSyncTaggedItems(updated);
+                    setSelectedProp((prev) => ({ ...prev, propSubcategory: newSub, propId: newId }));
+                  }}
+                  style={{ flex: 1, padding: "6px 8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", opacity: taggedItems[selectedProp.word]?.propIdLocked ? 0.6 : 1 }}
+                >
+                  {PROP_SUBCATEGORIES.map((sub) => (
+                    <option key={sub.key} value={sub.key}>{sub.prefix} — {sub.label}</option>
+                  ))}
+                </select>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px", flexShrink: 0 }}>
+                  {selectedProp.propId ? (
+                    <span style={{
+                      fontSize: "11px", fontWeight: "bold", color: "white",
+                      backgroundColor: (SUBCATEGORY_MAP[selectedProp.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"]).color,
+                      borderRadius: "3px", padding: "3px 8px", fontFamily: "monospace",
+                    }}>
+                      {selectedProp.propId}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: "11px", fontWeight: "bold", color: "#888", backgroundColor: "#eee", borderRadius: "3px", padding: "3px 8px", fontFamily: "monospace" }}>
+                      unassigned
+                    </span>
+                  )}
+                  {selectedProp.propId && (
+                    taggedItems[selectedProp.word]?.propIdLocked ? (
+                      <span style={{ fontSize: "11px", fontWeight: "bold", color: "#4CAF50", display: "flex", alignItems: "center", gap: "4px" }}>
+                        🔒 ID Locked
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const currentPropData = taggedItems[selectedProp.word] || {};
+                          const updated = {
+                            ...taggedItems,
+                            [selectedProp.word]: { ...currentPropData, propIdLocked: true },
+                          };
+                          onUpdateTaggedItems(updated);
+                          onSyncTaggedItems(updated);
+                          setSelectedProp((prev) => ({ ...prev, propIdLocked: true }));
+                        }}
+                        title="Verify this ID and lock it permanently"
+                        style={{ backgroundColor: "#1976d2", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "11px", fontWeight: "bold", padding: "3px 8px", whiteSpace: "nowrap" }}
+                      >
+                        Verify & Lock
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+              {taggedItems[selectedProp.word]?.propIdLocked && (
+                <div style={{ fontSize: "10px", color: "#888", marginTop: "4px", fontStyle: "italic" }}>
+                  ID is permanently locked and cannot be changed.
+                </div>
+              )}
+            </div>
+            {/* Badge & Print */}
+            {!selectedProp.isNewCustomProp && selectedProp.propId && (
+              <div style={{ margin: "10px 0", padding: "10px", backgroundColor: "#f0f7ff", borderRadius: "6px", border: "1px solid #bbdefb" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: "bold", color: "#1565c0", textTransform: "uppercase", letterSpacing: "0.05em" }}>🏷 Badge & Print</span>
+                  <button onClick={() => setShowBadgeSection(p => !p)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "11px", color: "#1976d2" }}>
+                    {showBadgeSection ? "▲ Hide" : "▼ Show"}
+                  </button>
+                </div>
+                {showBadgeSection && (
+                  <div>
+                    <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", marginBottom: "10px" }}>
+                      <img
+                        src={getPropQrImgUrl(selectedProp.propId, 90)}
+                        alt="QR Code"
+                        style={{ width: "90px", height: "90px", border: "1px solid #ddd", borderRadius: "4px", flexShrink: 0 }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: "10px", color: "#555", marginBottom: "4px" }}>Scan to open on mobile</div>
+                        <div style={{ fontSize: "8px", color: "#999", wordBreak: "break-all", fontFamily: "monospace" }}>
+                          {getPropDeepLink(selectedProp.propId)}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => {
+                          if (!printQueue.includes(selectedProp.word)) {
+                            setPrintQueue(prev => [...prev, selectedProp.word]);
+                          }
+                        }}
+                        style={{
+                          backgroundColor: printQueue.includes(selectedProp.word) ? "#888" : "#1976d2",
+                          color: "white", border: "none", borderRadius: "4px",
+                          padding: "5px 10px", fontSize: "11px", fontWeight: "bold", cursor: "pointer",
+                        }}
+                      >
+                        {printQueue.includes(selectedProp.word) ? "✓ In Queue" : "+ Add to Queue"}
+                      </button>
+                      <button
+                        onClick={() => exportDymoPdf({ ...taggedItems[selectedProp.word], word: selectedProp.word }, projectSettings?.filmTitle)}
+                        style={{ backgroundColor: "#FF9800", color: "white", border: "none", borderRadius: "4px", padding: "5px 10px", fontSize: "11px", fontWeight: "bold", cursor: "pointer" }}
+                      >
+                        📄 Dymo PDF
+                      </button>
+                      <button
+                        onClick={() => {
+                          const xml = generateDymoXml({ ...taggedItems[selectedProp.word], word: selectedProp.word }, projectSettings?.filmTitle);
+                          const blob = new Blob([xml], { type: "application/xml" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `${selectedProp.propId}_badge.dymo`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                        style={{ backgroundColor: "#9C27B0", color: "white", border: "none", borderRadius: "4px", padding: "5px 10px", fontSize: "11px", fontWeight: "bold", cursor: "pointer" }}
+                      >
+                        📋 Dymo XML
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <p>
               <strong>Number:</strong>{" "}
               {propNumberMap[selectedProp.word] ??
@@ -2048,12 +2625,28 @@ function PropsModule({
                           const mainCharObj = primarySessionChar
                             ? { [primarySessionChar]: primarySessionChar }
                             : null;
-                          onCreateNewProp(
+                          const newWord = onCreateNewProp(
                             selectedProp.customTitle.trim(),
                             null,
                             mainPropScenes,
                             mainCharObj
                           );
+                          // Patch subcategory + propId onto newly created prop
+                          if (newWord && (selectedProp.propSubcategory || selectedProp.propId)) {
+                            setTimeout(() => {
+                              const latest = { ...taggedItems };
+                              if (latest[newWord]) {
+                                latest[newWord] = {
+                                  ...latest[newWord],
+                                  propSubcategory: selectedProp.propSubcategory || "misc",
+                                  propId: selectedProp.propId || generatePropId(selectedProp.propSubcategory || "misc"),
+                                  propIdLocked: false,
+                                };
+                                onUpdateTaggedItems(latest);
+                                onSyncTaggedItems(latest);
+                              }
+                            }, 100);
+                          }
                         }
                         closePropPopup();
                       }}
@@ -2168,6 +2761,139 @@ function PropsModule({
             </div>
           </div>
         </>
+      )}
+
+      {/* Print Queue Modal */}
+      {showPrintQueue && (
+        <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.55)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ backgroundColor: "white", borderRadius: "8px", width: "640px", maxWidth: "95vw", maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 8px 32px rgba(0,0,0,0.25)" }}>
+
+            {/* Header */}
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ margin: 0, fontSize: "16px" }}>🖨 Print Queue ({printQueue.length} prop{printQueue.length !== 1 ? "s" : ""})</h3>
+              <button onClick={() => setShowPrintQueue(false)} style={{ background: "none", border: "none", fontSize: "22px", cursor: "pointer", color: "#666" }}>×</button>
+            </div>
+
+            {/* Format selector */}
+            <div style={{ padding: "12px 20px", borderBottom: "1px solid #eee" }}>
+              <label style={{ fontSize: "11px", fontWeight: "bold", color: "#555", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Label Format</label>
+              <select value={printFormat} onChange={(e) => { setPrintFormat(e.target.value); setUsedSlots([]); }}
+                style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}>
+                <option value="avery5163">Avery 5163 — 2" × 4" shipping label (10/sheet, 2×5)</option>
+                <option value="avery5160">Avery 5160 — 1" × 2⅝" address label (30/sheet, 3×10)</option>
+                <option value="dymo">Dymo LW Durable — 2¼" × 1¼" (export per label)</option>
+              </select>
+            </div>
+
+            {/* Body */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+              {printQueue.length === 0 ? (
+                <div style={{ color: "#888", textAlign: "center", padding: "40px", fontStyle: "italic" }}>
+                  No props in queue. Open a prop's Manage popup and click "+ Add to Queue".
+                </div>
+              ) : (
+                <>
+                  {/* Queue list */}
+                  <div style={{ marginBottom: "16px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", textTransform: "uppercase", marginBottom: "8px" }}>Props in Queue</div>
+                    {printQueue.map(word => {
+                      const item = taggedItems[word];
+                      if (!item) return null;
+                      const subMeta = SUBCATEGORY_MAP[item.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"];
+                      return (
+                        <div key={word} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", backgroundColor: "#f9f9f9", borderRadius: "4px", marginBottom: "4px" }}>
+                          {item.propId && <span style={{ fontSize: "9px", fontWeight: "bold", color: "white", backgroundColor: subMeta.color, borderRadius: "3px", padding: "1px 5px", fontFamily: "monospace", flexShrink: 0 }}>{item.propId}</span>}
+                          <span style={{ flex: 1, fontSize: "13px", fontWeight: "500" }}>{item.customTitle || item.displayName}</span>
+                          {printFormat === "dymo" && (
+                            <div style={{ display: "flex", gap: "4px" }}>
+                              <button onClick={() => exportDymoPdf({ ...item, word }, projectSettings?.filmTitle)}
+                                style={{ backgroundColor: "#FF9800", color: "white", border: "none", borderRadius: "3px", padding: "3px 8px", fontSize: "10px", fontWeight: "bold", cursor: "pointer" }}>PDF</button>
+                              <button onClick={() => {
+                                const xml = generateDymoXml({ ...item, word }, projectSettings?.filmTitle);
+                                const blob = new Blob([xml], { type: "application/xml" });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement("a"); a.href = url;
+                                a.download = `${item.propId || "prop"}_badge.dymo`; a.click();
+                                URL.revokeObjectURL(url);
+                              }} style={{ backgroundColor: "#9C27B0", color: "white", border: "none", borderRadius: "3px", padding: "3px 8px", fontSize: "10px", fontWeight: "bold", cursor: "pointer" }}>XML</button>
+                            </div>
+                          )}
+                          <button onClick={() => setPrintQueue(prev => prev.filter(w => w !== word))}
+                            style={{ backgroundColor: "#f44336", color: "white", border: "none", borderRadius: "3px", padding: "3px 8px", fontSize: "10px", cursor: "pointer" }}>✕</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Avery: slot grid + export */}
+                  {printFormat !== "dymo" && (() => {
+                    const cfg = { avery5163: { cols: 2, rows: 5, total: 10, slotH: "52px" }, avery5160: { cols: 3, rows: 10, total: 30, slotH: "26px" } }[printFormat];
+                    const availSlots = Array.from({ length: cfg.total }, (_, i) => i).filter(i => !usedSlots.includes(i));
+                    const availCount = availSlots.length;
+                    return (
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                          <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", textTransform: "uppercase" }}>Sheet Layout</div>
+                          <div style={{ fontSize: "10px", color: "#888" }}>
+                            {availCount} slot{availCount !== 1 ? "s" : ""} available · {printQueue.length} in queue
+                            {printQueue.length > availCount && <span style={{ color: "#e53935", marginLeft: "6px" }}>⚠ More props than slots</span>}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: "10px", color: "#888", marginBottom: "8px" }}>Click a slot to mark it as already-used (gray = skip).</div>
+                        <div style={{ display: "grid", gridTemplateColumns: `repeat(${cfg.cols}, 1fr)`, gap: "3px", marginBottom: "16px", padding: "10px", backgroundColor: "#f5f5f5", borderRadius: "6px" }}>
+                          {Array.from({ length: cfg.total }, (_, i) => {
+                            const isUsed = usedSlots.includes(i);
+                            const pIdx = availSlots.indexOf(i);
+                            const assignedProp = !isUsed && pIdx >= 0 && pIdx < printQueue.length ? taggedItems[printQueue[pIdx]] : null;
+                            return (
+                              <div key={i}
+                                onClick={() => setUsedSlots(prev => prev.includes(i) ? prev.filter(s => s !== i) : [...prev, i])}
+                                title={isUsed ? `Slot ${i+1}: skipped — click to restore` : assignedProp ? `Slot ${i+1}: ${assignedProp.customTitle || assignedProp.displayName}` : `Slot ${i+1}: empty`}
+                                style={{
+                                  height: cfg.slotH, backgroundColor: isUsed ? "#ddd" : assignedProp ? `${assignedProp.color}30` : "white",
+                                  border: `1px solid ${isUsed ? "#bbb" : "#ddd"}`, borderRadius: "2px", cursor: "pointer",
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  fontSize: "8px", fontWeight: "bold", color: isUsed ? "#aaa" : "#777",
+                                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "2px 4px",
+                                }}>
+                                {isUsed ? "✕" : assignedProp ? (assignedProp.propId || (assignedProp.customTitle || assignedProp.displayName).slice(0, 10)) : <span style={{ color: "#ddd" }}>{i+1}</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <button
+                          onClick={() => {
+                            const propsToExport = printQueue.map(w => ({ ...taggedItems[w], word: w })).filter(Boolean);
+                            const html = generateBadgePrintHtml(propsToExport, printFormat, usedSlots, projectSettings?.filmTitle);
+                            const win = window.open("", "_blank");
+                            win.document.write(html);
+                            win.document.close();
+                          }}
+                          disabled={printQueue.length === 0}
+                          style={{ width: "100%", padding: "10px", backgroundColor: printQueue.length === 0 ? "#ccc" : "#1976d2", color: "white", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: "bold", cursor: printQueue.length === 0 ? "not-allowed" : "pointer" }}
+                        >
+                          🖨 Export & Print PDF
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: "12px 20px", borderTop: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <button onClick={() => { setPrintQueue([]); setUsedSlots([]); }}
+                style={{ background: "none", border: "1px solid #f44336", color: "#f44336", borderRadius: "4px", padding: "5px 14px", cursor: "pointer", fontSize: "12px" }}>
+                Clear Queue
+              </button>
+              <button onClick={() => setShowPrintQueue(false)}
+                style={{ backgroundColor: "#555", color: "white", border: "none", borderRadius: "4px", padding: "5px 18px", cursor: "pointer", fontSize: "12px" }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Props Script Viewer — for new custom prop search & confirm */}

@@ -12,12 +12,15 @@ const isMobile =
   /iPhone|iPad|Android/i.test(navigator.userAgent) ||
   window.innerWidth < 768;
 
-root.render(
-  isMobile ? (
-    <MobileApp />
-  ) : (
-    <AuthWrapper>
-      <App />
-    </AuthWrapper>
-  )
-);
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialPropId = urlParams.get("prop");
+  
+  root.render(
+    isMobile ? (
+      <MobileApp initialPropId={initialPropId} />
+    ) : (
+      <AuthWrapper>
+        <App />
+      </AuthWrapper>
+    )
+  );

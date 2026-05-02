@@ -205,6 +205,9 @@ export const loadTaggedItemsFromDatabase = async (
         defaultCharacter: item.default_character || false,
         scenesBeforeDefault: item.scenes_before_default ?? undefined,
         photos: item.photos || [],
+        propId: item.prop_id || null,
+        propSubcategory: item.prop_subcategory || null,
+        propIdLocked: item.prop_id_locked || false,
       };
     });
 
@@ -2584,6 +2587,9 @@ export const syncTaggedItemsToDatabase = async (
       default_character: item.defaultCharacter || false,
       scenes_before_default: item.scenesBeforeDefault ?? null,
       photos: item.photos || [],
+      prop_id: item.propId || null,
+      prop_subcategory: item.propSubcategory || null,
+      prop_id_locked: item.propIdLocked || false,
     }));
 
     const { error: patchError } = await supabase

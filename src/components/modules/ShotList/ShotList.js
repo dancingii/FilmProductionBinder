@@ -104,38 +104,41 @@ function ShotListModule({
   React.useEffect(() => {
     if (!stripboardScenes || stripboardScenes.length === 0) return;
 
-    let needsInitialization = false;
-    const updatedData = { ...shotListData };
+    // Defer initialization so the module renders immediately first
+    const timer = setTimeout(() => {
+      let needsInitialization = false;
+      const updatedData = { ...shotListData };
 
-    stripboardScenes.forEach((scene) => {
-      if (!updatedData[scene.sceneNumber]) {
-        needsInitialization = true;
-        const newShots = [];
-        for (let i = 0; i < 5; i++) {
-          newShots.push({
-            id: `${scene.sceneNumber}${String.fromCharCode(97 + i)}`,
-            colorCode: "",
-            shotType: "",
-            customShotType: "",
-            lens: "",
-            setup: "",
-            angle: "",
-            movement: "",
-            equipment: "",
-            customEquipment: "",
-            description: "",
-            additionalNotes: "",
-          });
+      stripboardScenes.forEach((scene) => {
+        if (!updatedData[scene.sceneNumber]) {
+          needsInitialization = true;
+          const newShots = [];
+          for (let i = 0; i < 5; i++) {
+            newShots.push({
+              id: `${scene.sceneNumber}${String.fromCharCode(97 + i)}`,
+              colorCode: "",
+              shotType: "",
+              customShotType: "",
+              lens: "",
+              setup: "",
+              angle: "",
+              movement: "",
+              equipment: "",
+              customEquipment: "",
+              description: "",
+              additionalNotes: "",
+            });
+          }
+          updatedData[scene.sceneNumber] = newShots;
         }
-        updatedData[scene.sceneNumber] = newShots;
-      }
-    });
+      });
 
-    // ONLY update local state, DO NOT sync to database
-    // Database sync will happen when user actually edits something
-    if (needsInitialization) {
-      setShotListData(updatedData);
-    }
+      if (needsInitialization) {
+        setShotListData(updatedData);
+      }
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, []); // Empty dependency array - only run ONCE on mount
 
   const getSceneCastNumbers = React.useCallback(
@@ -310,6 +313,8 @@ function ShotListModule({
     [draggedShot, shotListData, setShotListData, generateShotId]
   );
 
+  const syncTimeoutRef = React.useRef(null);
+
   const updateShotField = React.useCallback(
     (sceneNumber, shotIndex, field, value) => {
       const currentShots = shotListData[sceneNumber] || [];
@@ -325,7 +330,10 @@ function ShotListModule({
       setShotListData(updatedData);
 
       if (onSyncShotListData) {
-        onSyncShotListData(updatedData, sceneNotes);
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = setTimeout(() => {
+          onSyncShotListData(updatedData, sceneNotes);
+        }, 500);
       }
     },
     [shotListData, sceneNotes, setShotListData, onSyncShotListData]
@@ -340,7 +348,10 @@ function ShotListModule({
       setSceneNotes(updatedNotes);
 
       if (onSyncShotListData) {
-        onSyncShotListData(shotListData, updatedNotes);
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = setTimeout(() => {
+          onSyncShotListData(shotListData, updatedNotes);
+        }, 500);
       }
     },
     [sceneNotes, shotListData, setSceneNotes, onSyncShotListData]
@@ -935,6 +946,7 @@ function ShotListModule({
         const shots =
           shotListData[scene.sceneNumber] ||
           initializeSceneShots(scene.sceneNumber);
+        const sceneCastNumbers = getSceneCastNumbers(scene.sceneNumber);
 
         return (
           <div key={scene.sceneNumber} style={{ marginBottom: "5px" }}>
@@ -1057,18 +1069,12 @@ function ShotListModule({
                   style={{
                     display: "flex",
                     gap: "1px",
-                    backgroundColor:
-                      dragOverIndex === shotIndex &&
-                      draggedShot?.sceneNumber === scene.sceneNumber
-                        ? "#e3f2fd"
-                        : shot.colorCode &&
-                          colorOptions.find((c) => c.value === shot.colorCode)
-                            ?.color !== "transparent"
-                        ? colorOptions.find((c) => c.value === shot.colorCode)
-                            ?.color
-                        : shotIndex % 2 === 0
-                        ? "#E3F2FD"
-                        : "#FFE0E0",
+                    backgroundColor: (() => {
+                      if (dragOverIndex === shotIndex && draggedShot?.sceneNumber === scene.sceneNumber) return "#e3f2fd";
+                      const colorMatch = colorOptions.find((c) => c.value === shot.colorCode)?.color;
+                      if (shot.colorCode && colorMatch && colorMatch !== "transparent") return colorMatch;
+                      return shotIndex % 2 === 0 ? "#E3F2FD" : "#FFE0E0";
+                    })(),
                     border:
                       dragOverIndex === shotIndex &&
                       draggedShot?.sceneNumber === scene.sceneNumber
@@ -1113,8 +1119,7 @@ function ShotListModule({
                           height: "16px",
                           borderRadius: "50%",
                           backgroundColor:
-                            colorOptions.find((c) => c.value === shot.colorCode)
-                              ?.color || "transparent",
+                            colorOptions.find((c) => c.value === shot.colorCode)?.color || "transparent",
                           border:
                             shot.colorCode === ""
                               ? "1px dashed #ccc"
@@ -1234,8 +1239,8 @@ function ShotListModule({
                   </div>
 
                   <div style={{ width: "40px", minHeight: "16px" }}>
-                    <div style={{ fontSize: "10px", paddingTop: "4px" }}>
-                      {getSceneCastNumbers(scene.sceneNumber)}
+                  <div style={{ fontSize: "10px", paddingTop: "4px" }}>
+                      {sceneCastNumbers}
                     </div>
                   </div>
 

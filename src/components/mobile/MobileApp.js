@@ -2557,12 +2557,30 @@ function MobileWardrobeModule({
 }
 
 // ─── Mobile Props Module ──────────────────────────────────────────────────────
-function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
+const MOBILE_PROP_SUBCATEGORIES = [
+  { key: "hand",        label: "Hand Props",     prefix: "HP", color: "#FF6B6B" },
+  { key: "weapons",     label: "Weapons",        prefix: "WP", color: "#D32F2F" },
+  { key: "food",        label: "Food & Drink",   prefix: "FD", color: "#8D6E63" },
+  { key: "documents",   label: "Documents",      prefix: "DC", color: "#1565C0" },
+  { key: "furniture",   label: "Furniture",      prefix: "FN", color: "#5D4037" },
+  { key: "electronics", label: "Electronics",    prefix: "EL", color: "#0288D1" },
+  { key: "vehicles",    label: "Vehicles",       prefix: "VH", color: "#37474F" },
+  { key: "medical",     label: "Medical",        prefix: "MD", color: "#00838F" },
+  { key: "money",       label: "Money",          prefix: "MN", color: "#2E7D32" },
+  { key: "misc",        label: "Miscellaneous",  prefix: "MS", color: "#757575" },
+];
+const MOBILE_SUBCATEGORY_MAP = Object.fromEntries(MOBILE_PROP_SUBCATEGORIES.map((s) => [s.key, s]));
+
+function MobilePropsModule({ selectedProject, scenes = [], characters = {}, initialPropId }) {
   const [taggedItems, setTaggedItems] = useState({});
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("props"); // "props" | "scenes"
   const [characterFilter, setCharacterFilter] = useState([]);
-  const [showCharFilter, setShowCharFilter] = useState(false);
+  const [subcategoryFilter, setSubcategoryFilter] = useState([]);
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [categoryAccordionOpen, setCategoryAccordionOpen] = useState(true);
+  const [characterAccordionOpen, setCharacterAccordionOpen] = useState(true);
+  const [newPropSubcategory, setNewPropSubcategory] = useState("misc");
   const [expandedProp, setExpandedProp] = useState(null);
   const [lightboxImg, setLightboxImg] = useState(null);
   const [uploading, setUploading] = useState(null); // propWord being uploaded
@@ -2706,6 +2724,13 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
     return () => supabase.removeChannel(ch);
   }, [selectedProject?.id]);
 
+  // Deep link: auto-expand prop matching initialPropId
+  useEffect(() => {
+    if (!initialPropId || Object.keys(taggedItems).length === 0) return;
+    const entry = Object.entries(taggedItems).find(([, item]) => item.propId === initialPropId);
+    if (entry) setExpandedProp(entry[0]);
+  }, [initialPropId, Object.keys(taggedItems).join(",")]);
+
   const syncItems = useCallback(async (updated) => {
     await database.syncTaggedItemsToDatabase(selectedProject, updated);
     // Patch extended fields
@@ -2721,6 +2746,9 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
       default_character: item.defaultCharacter || false,
       scenes_before_default: item.scenesBeforeDefault ?? null,
       photos: item.photos || [],
+      prop_id: item.propId || null,
+      prop_subcategory: item.propSubcategory || null,
+      prop_id_locked: item.propIdLocked || false,
     }));
     await supabase.from("tagged_items")
       .upsert(arr, { onConflict: "project_id,word" });
@@ -2739,7 +2767,20 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
       return d !== 0 ? d : (a[1].chronologicalNumber || 0) - (b[1].chronologicalNumber || 0);
     });
 
-  const propNumberMap = Object.fromEntries(propItems.map(([w], i) => [w, i + 1]));
+    const propNumberMap = Object.fromEntries(propItems.map(([w], i) => [w, i + 1]));
+
+    const generatePropId = (subcategoryKey) => {
+      const sub = MOBILE_SUBCATEGORY_MAP[subcategoryKey] || MOBILE_SUBCATEGORY_MAP["misc"];
+      const prefix = sub.prefix;
+      const existing = Object.values(taggedItems)
+        .filter((item) => item.category === "Props" && item.propId && item.propId.startsWith(prefix + "_"))
+        .map((item) => parseInt(item.propId.split("_")[1]) || 0)
+        .sort((a, b) => b - a);
+      const next = existing.length > 0 ? existing[0] + 1 : 1;
+      return `${prefix}_${String(next).padStart(3, "0")}`;
+    };
+  
+    // propId auto-assign removed — IDs are now manually assigned and locked by user
 
   const getPropsForScene = (sceneIndex) => {
     const scene = scenes[sceneIndex];
@@ -2752,11 +2793,10 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
       .map(([word, prop]) => ({ word, ...prop }));
   };
 
-  const filteredProps = characterFilter.length === 0
-    ? propItems
-    : propItems.filter(([, item]) =>
-        (item.assignedCharacters || []).some((c) => characterFilter.includes(c))
-      );
+  const filteredProps = propItems.filter(([, item]) =>
+    (characterFilter.length === 0 || (item.assignedCharacters || []).some((c) => characterFilter.includes(c))) &&
+    (subcategoryFilter.length === 0 || subcategoryFilter.includes(item.propSubcategory || "misc"))
+  );
 
   // ── Script viewer helpers ─────────────────────────────────────────────────
   const currentSceneIndex = fullScriptMode
@@ -2814,6 +2854,7 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
     const propColor = Object.values(taggedItems).find((i) => i.category === "Props")?.color || "#FF6B6B";
     const nextNum = propItems.length + 1;
     const cleanWord = `custom_prop_${newPropName.toLowerCase().replace(/[^\w]/g, "_")}_${Date.now()}`;
+    const newPropId = generatePropId(newPropSubcategory);
     const newItem = {
       displayName: newPropName, customTitle: newPropName,
       category: "Props", color: propColor,
@@ -2821,6 +2862,9 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
       scenes: mainScenes, instances: [],
       assignedCharacters: primarySessionChar ? [primarySessionChar] : [],
       manuallyCreated: true, photos: [],
+      propSubcategory: newPropSubcategory,
+      propId: newPropId,
+      propIdLocked: false,
     };
     const updated = { ...taggedItems, [cleanWord]: newItem };
     // Add variants from sessionVariants
@@ -2841,6 +2885,8 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
           chronologicalNumber: nextNum + Object.keys(sessionVariants).indexOf(char) + 1,
           position: 0, scenes: variantScenes, instances: [],
           assignedCharacters: [char], manuallyCreated: true, photos: [],
+          propSubcategory: newPropSubcategory,
+          propId: generatePropId(newPropSubcategory),
         };
       }
     });
@@ -2852,6 +2898,7 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
     setNewPropName(""); setInstanceStatuses({});
     setInstanceCharacters({}); setPendingScenes([]);
     setPrimarySessionChar(null); setSessionVariants({});
+    setNewPropSubcategory("misc");
   };
 
   const getElementStyle = (type) => {
@@ -2896,34 +2943,88 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
         )}
       </div>
 
-      {/* Character filter */}
-      {activeTab === "props" && Object.keys(characters).length > 0 && (
-        <div style={{ marginBottom: "10px", position: "relative" }}>
-          <button onClick={() => setShowCharFilter((p) => !p)}
-            style={{ width: "100%", padding: "8px 10px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: characterFilter.length > 0 ? "#e3f2fd" : "white", cursor: "pointer", fontSize: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", boxSizing: "border-box" }}>
-            <span>{characterFilter.length === 0 ? "Filter by character…" : characterFilter.length === 1 ? characterFilter[0] : `${characterFilter.length} characters`}</span>
-            <span style={{ fontSize: "10px", opacity: 0.5 }}>{showCharFilter ? "▲" : "▼"}</span>
-          </button>
-          {showCharFilter && (
-            <>
-              <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", zIndex: 299 }} onClick={() => setShowCharFilter(false)} />
-              <div style={{ position: "absolute", top: "100%", left: 0, width: "100%", backgroundColor: "white", border: "1px solid #90caf9", borderRadius: "4px", padding: "6px 8px", zIndex: 300, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", boxSizing: "border-box" }}>
-                {characterFilter.length > 0 && (
-                  <div onClick={() => setCharacterFilter([])} style={{ fontSize: "11px", color: "#1976d2", cursor: "pointer", marginBottom: "5px", paddingBottom: "5px", borderBottom: "1px solid #eee" }}>✕ Clear filter</div>
+      {/* Combined filter dropdown */}
+      {activeTab === "props" && (() => {
+        const hasAnyFilter = subcategoryFilter.length > 0 || characterFilter.length > 0;
+        const activeCount = subcategoryFilter.length + characterFilter.length;
+        const activeCatsWithProps = MOBILE_PROP_SUBCATEGORIES.filter((sub) =>
+          Object.values(taggedItems).some(
+            (item) => item.category === "Props" && (item.propSubcategory || "misc") === sub.key
+          )
+        );
+        const hasChars = Object.keys(characters || {}).length > 0;
+        return (
+          <div style={{ marginBottom: "10px", position: "relative" }}>
+            <button onClick={() => setShowFilterDropdown((p) => !p)}
+              style={{ width: "100%", padding: "8px 10px", border: `1px solid ${hasAnyFilter ? "#1976d2" : "#ccc"}`, borderRadius: "4px", backgroundColor: hasAnyFilter ? "#e3f2fd" : "white", cursor: "pointer", fontSize: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", boxSizing: "border-box" }}>
+              <span style={{ color: hasAnyFilter ? "#1565c0" : "#555", fontWeight: hasAnyFilter ? "bold" : "normal" }}>
+                {hasAnyFilter ? `${activeCount} filter${activeCount !== 1 ? "s" : ""} active` : "Filter props…"}
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                {hasAnyFilter && (
+                  <span onClick={(e) => { e.stopPropagation(); setSubcategoryFilter([]); setCharacterFilter([]); }}
+                    style={{ fontSize: "12px", color: "#1976d2", fontWeight: "bold", cursor: "pointer", lineHeight: 1 }}>✕</span>
                 )}
-                {Object.keys(characters).sort().map((c) => (
-                  <label key={c} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", padding: "5px 0", cursor: "pointer", fontWeight: characterFilter.includes(c) ? "bold" : "normal" }}>
-                    <input type="checkbox" checked={characterFilter.includes(c)}
-                      onChange={(e) => setCharacterFilter((prev) => e.target.checked ? [...prev, c] : prev.filter((x) => x !== c))} />
-                    {c}
-                  </label>
-                ))}
+                <span style={{ fontSize: "10px", opacity: 0.5 }}>{showFilterDropdown ? "▲" : "▼"}</span>
               </div>
-            </>
-          )}
-        </div>
-      )}
-
+            </button>
+            {showFilterDropdown && (
+              <>
+                <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", zIndex: 299 }} onClick={() => setShowFilterDropdown(false)} />
+                <div style={{ position: "absolute", top: "100%", left: 0, width: "100%", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", zIndex: 300, boxShadow: "0 4px 16px rgba(0,0,0,0.15)", boxSizing: "border-box", maxHeight: "320px", overflowY: "auto" }}>
+                  {/* Categories accordion */}
+                  <div onClick={() => setCategoryAccordionOpen((p) => !p)}
+                    style={{ padding: "8px 10px", backgroundColor: "#f5f5f5", borderBottom: "1px solid #e0e0e0", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}>
+                    <span style={{ fontSize: "11px", fontWeight: "bold", color: "#444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Categories{subcategoryFilter.length > 0 && <span style={{ marginLeft: "6px", color: "#1976d2" }}>({subcategoryFilter.length})</span>}
+                    </span>
+                    <span style={{ fontSize: "10px", color: "#888" }}>{categoryAccordionOpen ? "▲" : "▼"}</span>
+                  </div>
+                  {categoryAccordionOpen && activeCatsWithProps.map((sub) => {
+                    const count = Object.values(taggedItems).filter(
+                      (item) => item.category === "Props" && (item.propSubcategory || "misc") === sub.key
+                    ).length;
+                    const checked = subcategoryFilter.includes(sub.key);
+                    return (
+                      <label key={sub.key} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", cursor: "pointer", backgroundColor: checked ? "#fff8e1" : "transparent" }}>
+                        <input type="checkbox" checked={checked}
+                          onChange={(e) => setSubcategoryFilter((prev) => e.target.checked ? [...prev, sub.key] : prev.filter((k) => k !== sub.key))}
+                          style={{ cursor: "pointer", flexShrink: 0 }} />
+                        <span style={{ fontSize: "9px", fontWeight: "bold", color: "white", backgroundColor: sub.color, borderRadius: "3px", padding: "1px 5px", fontFamily: "monospace", flexShrink: 0 }}>{sub.prefix}</span>
+                        <span style={{ flex: 1, fontSize: "13px", color: checked ? "#333" : "#555", fontWeight: checked ? "bold" : "normal" }}>{sub.label}</span>
+                        <span style={{ fontSize: "11px", color: "#999" }}>{count}</span>
+                      </label>
+                    );
+                  })}
+                  {/* Characters accordion */}
+                  {hasChars && (
+                    <>
+                      <div onClick={() => setCharacterAccordionOpen((p) => !p)}
+                        style={{ padding: "8px 10px", backgroundColor: "#f5f5f5", borderTop: "1px solid #e0e0e0", borderBottom: "1px solid #e0e0e0", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "bold", color: "#444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Characters{characterFilter.length > 0 && <span style={{ marginLeft: "6px", color: "#1976d2" }}>({characterFilter.length})</span>}
+                        </span>
+                        <span style={{ fontSize: "10px", color: "#888" }}>{characterAccordionOpen ? "▲" : "▼"}</span>
+                      </div>
+                      {characterAccordionOpen && Object.keys(characters).sort().map((c) => {
+                        const checked = characterFilter.includes(c);
+                        return (
+                          <label key={c} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", cursor: "pointer", backgroundColor: checked ? "#e3f2fd" : "transparent" }}>
+                            <input type="checkbox" checked={checked}
+                              onChange={(e) => setCharacterFilter((prev) => e.target.checked ? [...prev, c] : prev.filter((x) => x !== c))}
+                              style={{ cursor: "pointer", flexShrink: 0 }} />
+                            <span style={{ fontSize: "13px", color: checked ? "#1565c0" : "#555", fontWeight: checked ? "bold" : "normal" }}>{c}</span>
+                          </label>
+                        );
+                      })}
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
       {/* ── PROPS TAB ── */}
       {activeTab === "props" && (
         <div>
@@ -2932,7 +3033,8 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
           ) : (
             filteredProps.map(([word, item]) => {
               const isExpanded = expandedProp === word;
-              const name = item.customTitle || item.displayName || word;
+              const rawName = item.customTitle || item.displayName || word;
+              const name = rawName.charAt(0).toUpperCase() + rawName.slice(1);
               const chars = item.assignedCharacters || [];
               const photos = item.photos || [];
               return (
@@ -2941,12 +3043,42 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
                   <div onClick={() => setExpandedProp(isExpanded ? null : word)}
                     style={{ padding: "8px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                        <span style={{ fontWeight: "bold", fontSize: "14px" }}>{propNumberMap[word]}. {name}</span>
+                      {/* Line 1: title + spacer + ID badge */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "6px", marginBottom: "3px" }}>
+                        <span style={{
+                          fontWeight: "bold", fontSize: "14px",
+                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                          alignSelf: "flex-start", position: "relative", top: "-2px",
+                        }}>
+                          {propNumberMap[word]}. {name}
+                        </span>
                         {item.defaultCharacter && (
-                          <span style={{ fontSize: "9px", fontWeight: "bold", color: item.color, backgroundColor: "white", border: `1.5px solid ${item.color}`, borderRadius: "4px", padding: "1px 5px", textTransform: "uppercase" }}>Default</span>
+                          <span style={{ fontSize: "9px", fontWeight: "bold", color: item.color, backgroundColor: "white", border: `1.5px solid ${item.color}`, borderRadius: "4px", padding: "1px 5px", textTransform: "uppercase", flexShrink: 0 }}>Default</span>
+                        )}
+                        {/* Spacer pushes ID badge right */}
+                        <span style={{ flex: 1 }} />
+                        {/* ID badge + lock */}
+                        {item.propId ? (
+                          <span style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, position: "relative" }}>
+                            <span style={{
+                              fontSize: "9px", fontWeight: "bold", color: "white",
+                              backgroundColor: (MOBILE_SUBCATEGORY_MAP[item.propSubcategory || "misc"] || MOBILE_SUBCATEGORY_MAP["misc"]).color,
+                              borderRadius: "3px", padding: "1px 6px", fontFamily: "monospace",
+                              position: "relative", top: "-2px",
+                            }}>
+                              {item.propId}
+                            </span>
+                            {item.propIdLocked && (
+                              <span style={{ position: "absolute", bottom: "-22px", fontSize: "14px", lineHeight: 1 }}>🔒</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: "9px", fontWeight: "bold", color: "#888", backgroundColor: "#eee", borderRadius: "3px", padding: "1px 6px", flexShrink: 0, fontFamily: "monospace" }}>
+                            unassigned
+                          </span>
                         )}
                       </div>
+                      {/* Line 2: character pills */}
                       <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "2px" }}>
                         {chars.map((c) => (
                           <span key={c} style={{ backgroundColor: item.color, color: "white", borderRadius: "10px", padding: "1px 7px", fontSize: "9px", fontWeight: "bold" }}>{c}</span>
@@ -2964,6 +3096,69 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
                   {/* Expanded content */}
                   {isExpanded && (
                     <div style={{ padding: "10px", borderTop: `1px solid ${item.color}40`, backgroundColor: "white" }}>
+                      {/* Prop Type (subcategory) */}
+                      <div style={{ marginBottom: "10px" }}>
+                        <div style={{ fontSize: "10px", fontWeight: "bold", color: "#888", textTransform: "uppercase", marginBottom: "4px" }}>Prop Type</div>
+                        <select
+                          value={item.propSubcategory || "misc"}
+                          disabled={!!item.propIdLocked}
+                          onChange={(e) => {
+                            if (item.propIdLocked) return;
+                            const newSub = e.target.value;
+                            const currentId = item.propId || "";
+                            const newPrefix = (MOBILE_SUBCATEGORY_MAP[newSub] || MOBILE_SUBCATEGORY_MAP["misc"]).prefix;
+                            const newId = currentId.startsWith(newPrefix + "_") ? currentId : generatePropId(newSub);
+                            const updated = { ...taggedItems, [word]: { ...item, propSubcategory: newSub, propId: newId } };
+                            setTaggedItems(updated);
+                            syncItems(updated);
+                          }}
+                          style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", opacity: item.propIdLocked ? 0.6 : 1 }}
+                        >
+                          {MOBILE_PROP_SUBCATEGORIES.map((sub) => (
+                            <option key={sub.key} value={sub.key}>{sub.prefix} — {sub.label}</option>
+                          ))}
+                        </select>
+                        {/* ID badge + lock */}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "6px" }}>
+                          {item.propId ? (
+                            <span style={{
+                              fontSize: "11px", fontWeight: "bold", color: "white",
+                              backgroundColor: (MOBILE_SUBCATEGORY_MAP[item.propSubcategory || "misc"] || MOBILE_SUBCATEGORY_MAP["misc"]).color,
+                              borderRadius: "3px", padding: "3px 10px", fontFamily: "monospace",
+                            }}>
+                              {item.propId}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: "11px", fontWeight: "bold", color: "#888", backgroundColor: "#eee", borderRadius: "3px", padding: "3px 10px", fontFamily: "monospace" }}>
+                              unassigned
+                            </span>
+                          )}
+                          {item.propId && (
+                            item.propIdLocked ? (
+                              <span style={{ fontSize: "13px", fontWeight: "bold", color: "#4CAF50", display: "flex", alignItems: "center", gap: "4px" }}>
+                                🔒 ID Locked
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  const updated = { ...taggedItems, [word]: { ...item, propIdLocked: true } };
+                                  setTaggedItems(updated);
+                                  syncItems(updated);
+                                }}
+                                style={{ backgroundColor: "#1976d2", color: "white", border: "none", borderRadius: "4px", padding: "6px 14px", fontSize: "13px", fontWeight: "bold", cursor: "pointer" }}
+                                title="Verify this ID and lock it permanently"
+                              >
+                                Verify & Lock
+                              </button>
+                            )
+                          )}
+                        </div>
+                        {item.propIdLocked && (
+                          <div style={{ fontSize: "10px", color: "#888", marginTop: "4px", fontStyle: "italic" }}>
+                            ID is permanently locked and cannot be changed.
+                          </div>
+                        )}
+                      </div>
                       {/* Scenes list */}
                       {(item.scenes || []).length > 0 && (
                         <div style={{ marginBottom: "10px" }}>
@@ -3070,6 +3265,28 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {} }) {
               style={{ background: "transparent", border: "none", color: "white", fontSize: "24px", cursor: "pointer" }}>×</button>
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+            {/* Subcategory picker */}
+            <div style={{ marginBottom: "12px" }}>
+              <label style={{ fontSize: "11px", fontWeight: "bold", color: "#555", textTransform: "uppercase", display: "block", marginBottom: "4px" }}>Prop Type</label>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <select
+                  value={newPropSubcategory}
+                  onChange={(e) => setNewPropSubcategory(e.target.value)}
+                  style={{ flex: 1, padding: "10px", border: "1px solid #ccc", borderRadius: "6px", fontSize: "14px" }}
+                >
+                  {MOBILE_PROP_SUBCATEGORIES.map((sub) => (
+                    <option key={sub.key} value={sub.key}>{sub.prefix} — {sub.label}</option>
+                  ))}
+                </select>
+                <span style={{
+                  fontSize: "11px", fontWeight: "bold", color: "white",
+                  backgroundColor: (MOBILE_SUBCATEGORY_MAP[newPropSubcategory] || MOBILE_SUBCATEGORY_MAP["misc"]).color,
+                  borderRadius: "3px", padding: "4px 10px", fontFamily: "monospace", flexShrink: 0,
+                }}>
+                  {(MOBILE_SUBCATEGORY_MAP[newPropSubcategory] || MOBILE_SUBCATEGORY_MAP["misc"]).prefix}
+                </span>
+              </div>
+            </div>
             <div style={{ marginBottom: "12px" }}>
               <label style={{ fontSize: "11px", fontWeight: "bold", color: "#555", textTransform: "uppercase", display: "block", marginBottom: "4px" }}>Prop Name / Search Script</label>
               <input type="text" value={propSearchQuery}
@@ -5113,11 +5330,11 @@ function MobileDashboard({
   );
 }
 
-export default function MobileApp() {
+export default function MobileApp({ initialPropId }) {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState(null);
-  const [activeModule, setActiveModule] = useState("Dashboard");
+  const [activeModule, setActiveModule] = useState(initialPropId ? "Props" : "Dashboard");
   const [castCrew, setCastCrew] = useState([]);
   const [todoItems, setTodoItems] = useState([]);
   const [shootingDays, setShootingDays] = useState([]);
@@ -5304,6 +5521,7 @@ export default function MobileApp() {
             selectedProject={selectedProject}
             scenes={scenes}
             characters={characters}
+            initialPropId={initialPropId}
           />
         )}
         {activeModule === "Cost Report" && (
