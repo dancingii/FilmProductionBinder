@@ -18,6 +18,7 @@ import ToDoListModule from "./components/modules/ToDoList";
 import BudgetModule from "./components/modules/Budget/Budget";
 import ShotListModule from "./components/modules/ShotList/ShotList";
 import TimelineModule from "./components/modules/Timeline/Timeline";
+import MoodBoard from "./components/modules/MoodBoard/MoodBoard";
 import Dashboard from "./components/modules/Dashboard/Dashboard";
 import CostReportModule from "./components/modules/CostReport/CostReport";
 import {
@@ -66,7 +67,29 @@ const canDelete = (userRole) => userRole === "owner";
 const canManageTeam = (userRole) => userRole === "owner";
 const isViewOnly = (userRole) => userRole === "viewer";
 
-function App({ selectedProject, userRole, user }) {
+const ALL_MODULES = [
+  "Script", "Stripboard", "StripboardSchedule", "Calendar", "Day Out of Days",
+  "Cast & Crew", "Characters", "Locations", "CallSheet", "ShotList", "ToDoList",
+  "Timeline", "MoodBoard", "Props", "Makeup", "Production Design", "Wardrobe",
+  "Cost Report", "Reports", "Budget",
+];
+
+const ROLE_MODULES = {
+  owner:          ALL_MODULES,
+  producer:       ALL_MODULES,
+  line_producer:  ALL_MODULES,
+  department_head: ALL_MODULES.filter(m => !["Budget"].includes(m)),
+  crew:           ALL_MODULES.filter(m => !["Budget", "Cost Report", "Reports"].includes(m)),
+  editor:         ALL_MODULES,
+  viewer:         ALL_MODULES,
+};
+
+const getAccessibleModules = (userRole, modulePermissions) => {
+  if (userRole === "custom" && modulePermissions) return modulePermissions;
+  return ROLE_MODULES[userRole] || ALL_MODULES;
+};
+
+function App({ selectedProject, userRole, modulePermissions, user }) {
   // Removed app render logging - causing sync loops
   // console.log("🔄 App render:", { projectId: selectedProject?.id, userRole });
   // Database-synced scenes state
@@ -3954,6 +3977,15 @@ function App({ selectedProject, userRole, user }) {
   }, []);
 
   const renderModule = () => {
+    const accessible = getAccessibleModules(userRole, modulePermissions);
+    if (activeModule && activeModule !== "Dashboard" && !accessible.includes(activeModule)) {
+      return (
+        <div style={{ padding: "40px", textAlign: "center", color: "#888" }}>
+          <h2>Access Restricted</h2>
+          <p>You don't have permission to view this module.</p>
+        </div>
+      );
+    }
     if (!activeModule || activeModule === "Dashboard") {
       return (
         <Dashboard
@@ -3996,6 +4028,8 @@ function App({ selectedProject, userRole, user }) {
             untagWordInstance={untagWordInstance}
             isWordInstanceTagged={isWordInstanceTagged}
             onSceneNumberChange={onSceneNumberChange}
+            setScenes={setScenes}
+            saveScenesDatabase={saveScenesDatabase}
             stripboardScenes={stripboardScenes}
             userRole={userRole}
             canEdit={canEdit(userRole)}
@@ -4458,6 +4492,15 @@ function App({ selectedProject, userRole, user }) {
             isViewOnly={isViewOnly(userRole)}
           />
         );
+        case "MoodBoard":
+  return (
+    <MoodBoard
+      selectedProject={selectedProject}
+      userRole={userRole}
+      canEdit={canEdit(userRole)}
+      isViewOnly={isViewOnly(userRole)}
+    />
+  );
       case "Budget":
         return (
           <BudgetModule
@@ -4726,28 +4769,8 @@ function App({ selectedProject, userRole, user }) {
           🏠 Home
         </button>
 
-        {[
-          "Script",
-          "Stripboard",
-          "StripboardSchedule",
-          "Calendar",
-          "Day Out of Days",
-          "Cast & Crew",
-          "Characters",
-          "Locations",
-          "CallSheet",
-          "ShotList",
-          "ToDoList",
-          "Timeline",
-          "Props",
-          "Makeup",
-          "Production Design",
-          "Wardrobe",
-          "Cost Report",
-          "Reports",
-          "Budget",
-        ]
-          .filter((mod) => mod !== "Dashboard")
+        {ALL_MODULES
+          .filter((mod) => getAccessibleModules(userRole, modulePermissions).includes(mod))
           .map((mod) => (
             <button
               key={mod}

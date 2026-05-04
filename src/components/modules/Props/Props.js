@@ -86,16 +86,16 @@ const EditablePropTitle = React.memo(
 
 // ── Prop subcategories with prefix codes ──────────────────────────────────────
 const PROP_SUBCATEGORIES = [
-  { key: "hand",        label: "Hand Props",     prefix: "HP", color: "#FF6B6B" },
-  { key: "weapons",     label: "Weapons",        prefix: "WP", color: "#D32F2F" },
-  { key: "food",        label: "Food & Drink",   prefix: "FD", color: "#8D6E63" },
-  { key: "documents",   label: "Documents",      prefix: "DC", color: "#1565C0" },
-  { key: "furniture",   label: "Furniture",      prefix: "FN", color: "#5D4037" },
-  { key: "electronics", label: "Electronics",    prefix: "EL", color: "#0288D1" },
-  { key: "vehicles",    label: "Vehicles",       prefix: "VH", color: "#37474F" },
-  { key: "medical",     label: "Medical",        prefix: "MD", color: "#00838F" },
-  { key: "money",       label: "Money",          prefix: "MN", color: "#2E7D32" },
-  { key: "misc",        label: "Miscellaneous",  prefix: "MS", color: "#757575" },
+  { key: "hand",        label: "Hand Props",     prefix: "HP", color: "#EF9A9A", badgeColor: "#E53935" },
+  { key: "weapons",     label: "Weapons",        prefix: "WP", color: "#B0BEC5", badgeColor: "#546E7A" },
+  { key: "food",        label: "Food & Drink",   prefix: "FD", color: "#FFCC80", badgeColor: "#F57C00" },
+  { key: "documents",   label: "Documents",      prefix: "DC", color: "#90CAF9", badgeColor: "#1E88E5" },
+  { key: "furniture",   label: "Furniture",      prefix: "FN", color: "#C5E1A5", badgeColor: "#7CB342" },
+  { key: "electronics", label: "Electronics",    prefix: "EL", color: "#80DEEA", badgeColor: "#00ACC1" },
+  { key: "vehicles",    label: "Vehicles",       prefix: "VH", color: "#FFAB91", badgeColor: "#F4511E" },
+  { key: "medical",     label: "Medical",        prefix: "MD", color: "#A5D6A7", badgeColor: "#43A047" },
+  { key: "money",       label: "Money",          prefix: "MN", color: "#FFE082", badgeColor: "#FFB300" },
+  { key: "misc",        label: "Miscellaneous",  prefix: "MS", color: "#CE93D8", badgeColor: "#8E24AA" },
 ];
 
 const SUBCATEGORY_MAP = Object.fromEntries(
@@ -131,10 +131,15 @@ function PropsModule({
   const [lightboxImage, setLightboxImage] = useState(null);
   const [propImageUploading, setPropImageUploading] = useState(false);
   const [characterFilter, setCharacterFilter] = useState([]);
-  const [subcategoryFilter, setSubcategoryFilter] = useState([]); // [] = all (multi)
+  const [subcategoryFilter, setSubcategoryFilter] = useState([]);
+  const [shootDayFilter, setShootDayFilter] = useState([]);
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
-  const [categoryAccordionOpen, setCategoryAccordionOpen] = useState(true);
-  const [characterAccordionOpen, setCharacterAccordionOpen] = useState(true);
+  const [categoryAccordionOpen, setCategoryAccordionOpen] = useState(false);
+  const [characterAccordionOpen, setCharacterAccordionOpen] = useState(false);
+  const [shootDayAccordionOpen, setShootDayAccordionOpen] = useState(false);
+  // "Only" solo state — tracks which section is soloed and snapshots other filters
+  const [soloSection, setSoloSection] = useState(null); // null | "category" | "character" | "shootday"
+  const [soloSnapshot, setSoloSnapshot] = useState({});
   // Print queue
   const [printQueue, setPrintQueue] = useState([]);
   const [showPrintQueue, setShowPrintQueue] = useState(false);
@@ -728,6 +733,10 @@ function PropsModule({
   useEffect(() => {
     const handleEsc = (e) => {
       if (e.key !== "Escape") return;
+      if (showFilterDropdown) {
+        setShowFilterDropdown(false);
+        return;
+      }
       if (instancePopup) {
         setInstancePopup(null);
         return;
@@ -747,7 +756,7 @@ function PropsModule({
     };
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
-  }, [instancePopup, showPropScriptViewer, showScenePreview, selectedProp]);
+  }, [showFilterDropdown, instancePopup, showPropScriptViewer, showScenePreview, selectedProp]);
 
   return (
     <div
@@ -831,8 +840,34 @@ function PropsModule({
 
         {/* Combined filter dropdown */}
         {(() => {
-          const hasAnyFilter = subcategoryFilter.length > 0 || characterFilter.length > 0;
-          const activeFilterCount = subcategoryFilter.length + characterFilter.length;
+          // Build scene → shoot day map
+          const sceneShootDayMap = {};
+          (shootingDays || []).forEach(day => {
+            (day.scheduleBlocks || []).forEach(block => {
+              if (block.scene?.sceneNumber) {
+                sceneShootDayMap[String(block.scene.sceneNumber)] = { dayNumber: day.dayNumber, date: day.date };
+              }
+            });
+          });
+
+          // Build list of shoot days that have at least one prop
+          const shootDaysWithProps = [];
+          const seenDays = new Set();
+          (shootingDays || [])
+            .sort((a, b) => a.dayNumber - b.dayNumber)
+            .forEach(day => {
+              const dayHasProp = Object.values(taggedItems).some(item => {
+                if (item.category !== "Props") return false;
+                return (item.scenes || []).some(sn => sceneShootDayMap[String(sn)]?.dayNumber === day.dayNumber);
+              });
+              if (dayHasProp && !seenDays.has(day.dayNumber)) {
+                seenDays.add(day.dayNumber);
+                shootDaysWithProps.push(day);
+              }
+            });
+
+          const hasAnyFilter = subcategoryFilter.length > 0 || characterFilter.length > 0 || shootDayFilter.length > 0;
+          const activeFilterCount = subcategoryFilter.length + characterFilter.length + shootDayFilter.length;
           const activeCatsWithProps = PROP_SUBCATEGORIES.filter((sub) =>
             Object.values(taggedItems).some(
               (item) => item.category === "Props" && (item.propSubcategory || "misc") === sub.key
@@ -868,6 +903,9 @@ function PropsModule({
                         e.stopPropagation();
                         setSubcategoryFilter([]);
                         setCharacterFilter([]);
+                        setShootDayFilter([]);
+                        setSoloSection(null);
+                        setSoloSnapshot({});
                       }}
                       style={{ fontSize: "11px", color: "#1976d2", fontWeight: "bold", cursor: "pointer", lineHeight: 1 }}
                       title="Clear all filters"
@@ -881,164 +919,133 @@ function PropsModule({
 
               {showFilterDropdown && (
                 <>
-                  <div
-                    style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", zIndex: 299 }}
-                    onClick={() => setShowFilterDropdown(false)}
-                  />
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: "100%",
-                      left: 0,
-                      width: "100%",
-                      backgroundColor: "white",
-                      border: "1px solid #ccc",
-                      borderRadius: "4px",
-                      zIndex: 300,
-                      boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
-                      boxSizing: "border-box",
-                      maxHeight: "340px",
-                      overflowY: "auto",
-                    }}
-                  >
-                    {/* ── Categories accordion ── */}
-                    <div>
-                      <div
-                        onClick={() => setCategoryAccordionOpen((p) => !p)}
-                        style={{
-                          padding: "7px 10px",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          backgroundColor: "#f5f5f5",
-                          borderBottom: "1px solid #e0e0e0",
-                          userSelect: "none",
-                        }}
-                      >
-                        <span style={{ fontSize: "11px", fontWeight: "bold", color: "#444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Categories
-                          {subcategoryFilter.length > 0 && (
-                            <span style={{ marginLeft: "6px", color: "#1976d2" }}>({subcategoryFilter.length})</span>
-                          )}
-                        </span>
-                        <span style={{ fontSize: "10px", color: "#888" }}>{categoryAccordionOpen ? "▲" : "▼"}</span>
-                      </div>
-                      {categoryAccordionOpen && (
-                        <div style={{ padding: "4px 0" }}>
-                          {activeCatsWithProps.map((sub) => {
-                            const count = Object.values(taggedItems).filter(
-                              (item) => item.category === "Props" && (item.propSubcategory || "misc") === sub.key
-                            ).length;
-                            const checked = subcategoryFilter.includes(sub.key);
-                            return (
-                              <label
-                                key={sub.key}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "8px",
-                                  padding: "5px 10px",
-                                  cursor: "pointer",
-                                  backgroundColor: checked ? "#fff8e1" : "transparent",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(e) =>
-                                    setSubcategoryFilter((prev) =>
-                                      e.target.checked ? [...prev, sub.key] : prev.filter((k) => k !== sub.key)
-                                    )
-                                  }
-                                  style={{ cursor: "pointer", flexShrink: 0 }}
-                                />
-                                <span
-                                  style={{
-                                    fontSize: "9px",
-                                    fontWeight: "bold",
-                                    color: "white",
-                                    backgroundColor: sub.color,
-                                    borderRadius: "3px",
-                                    padding: "1px 5px",
-                                    fontFamily: "monospace",
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  {sub.prefix}
-                                </span>
-                                <span style={{ flex: 1, fontSize: "12px", color: checked ? "#333" : "#555", fontWeight: checked ? "bold" : "normal" }}>
-                                  {sub.label}
-                                </span>
-                                <span style={{ fontSize: "10px", color: "#999" }}>{count}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
+                  <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", zIndex: 299 }} onClick={() => setShowFilterDropdown(false)} />
+                  <div style={{ position: "absolute", top: "100%", left: 0, width: "100%", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", zIndex: 300, boxShadow: "0 4px 16px rgba(0,0,0,0.15)", boxSizing: "border-box", maxHeight: "calc(100vh - 200px)", overflowY: "auto" }}>
 
-                    {/* ── Characters accordion ── */}
-                    {hasCharacters && (
-                      <div>
-                        <div
-                          onClick={() => setCharacterAccordionOpen((p) => !p)}
-                          style={{
-                            padding: "7px 10px",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            backgroundColor: "#f5f5f5",
-                            borderTop: "1px solid #e0e0e0",
-                            borderBottom: "1px solid #e0e0e0",
-                            userSelect: "none",
-                          }}
-                        >
-                          <span style={{ fontSize: "11px", fontWeight: "bold", color: "#444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                            Characters
-                            {characterFilter.length > 0 && (
-                              <span style={{ marginLeft: "6px", color: "#1976d2" }}>({characterFilter.length})</span>
-                            )}
-                          </span>
-                          <span style={{ fontSize: "10px", color: "#888" }}>{characterAccordionOpen ? "▲" : "▼"}</span>
-                        </div>
-                        {characterAccordionOpen && (
-                          <div style={{ padding: "4px 0" }}>
-                            {Object.keys(characters).sort().map((c) => {
-                              const checked = characterFilter.includes(c);
-                              return (
-                                <label
-                                  key={c}
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "8px",
-                                    padding: "5px 10px",
-                                    cursor: "pointer",
-                                    backgroundColor: checked ? "#e3f2fd" : "transparent",
-                                  }}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={(e) =>
-                                      setCharacterFilter((prev) =>
-                                        e.target.checked ? [...prev, c] : prev.filter((x) => x !== c)
-                                      )
-                                    }
-                                    style={{ cursor: "pointer", flexShrink: 0 }}
-                                  />
-                                  <span style={{ fontSize: "12px", color: checked ? "#1565c0" : "#555", fontWeight: checked ? "bold" : "normal" }}>
-                                    {c}
-                                  </span>
-                                </label>
-                              );
-                            })}
+                    {/* Solo helper */}
+                    {(() => {
+                      const handleSolo = (section) => {
+                        if (soloSection === section) {
+                          // Unsolo — restore snapshot
+                          setSubcategoryFilter(soloSnapshot.subcategoryFilter || []);
+                          setCharacterFilter(soloSnapshot.characterFilter || []);
+                          setShootDayFilter(soloSnapshot.shootDayFilter || []);
+                          setSoloSection(null);
+                          setSoloSnapshot({});
+                        } else {
+                          // Solo this section — snapshot current state
+                          setSoloSnapshot({ subcategoryFilter, characterFilter, shootDayFilter });
+                          setSoloSection(section);
+                          if (section !== "category") setSubcategoryFilter([]);
+                          if (section !== "character") setCharacterFilter([]);
+                          if (section !== "shootday") setShootDayFilter([]);
+                        }
+                      };
+
+                      const SectionHeader = ({ section, label, count, open, onToggle }) => (
+                        <div onClick={onToggle} style={{ padding: "7px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", backgroundColor: "#f5f5f5", borderBottom: "1px solid #e0e0e0", borderTop: section !== "category" ? "1px solid #e0e0e0" : "none", userSelect: "none", cursor: "pointer" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1 }}>
+                            <span style={{ fontSize: "11px", fontWeight: "bold", color: "#444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                              {label}
+                              {count > 0 && <span style={{ marginLeft: "6px", color: "#1976d2" }}>({count})</span>}
+                            </span>
                           </div>
-                        )}
-                      </div>
-                    )}
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <label
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "10px", color: soloSection === section ? "#1976d2" : "#888", fontWeight: soloSection === section ? "bold" : "normal", cursor: "pointer", userSelect: "none" }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={soloSection === section}
+                                onChange={() => handleSolo(section)}
+                                style={{ cursor: "pointer" }}
+                              />
+                              Only
+                            </label>
+                            <span style={{ fontSize: "10px", color: "#888" }}>{open ? "▲" : "▼"}</span>
+                          </div>
+                        </div>
+                      );
+
+                      const activeCatsWithProps = PROP_SUBCATEGORIES.filter((sub) =>
+                        Object.values(taggedItems).some(
+                          (item) => item.category === "Props" && (item.propSubcategory || "misc") === sub.key
+                        )
+                      );
+
+                      return (
+                        <>
+                          {/* ── Categories ── */}
+                          <SectionHeader section="category" label="Categories" count={subcategoryFilter.length} open={categoryAccordionOpen} onToggle={() => setCategoryAccordionOpen(p => !p)} />
+                          {categoryAccordionOpen && (
+                            <div style={{ padding: "4px 0" }}>
+                              {activeCatsWithProps.map((sub) => {
+                                const count = Object.values(taggedItems).filter(
+                                  (item) => item.category === "Props" && (item.propSubcategory || "misc") === sub.key
+                                ).length;
+                                const checked = subcategoryFilter.includes(sub.key);
+                                return (
+                                  <label key={sub.key} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "5px 10px", cursor: "pointer", backgroundColor: checked ? "#fff8e1" : "transparent" }}>
+                                    <input type="checkbox" checked={checked}
+                                      onChange={(e) => setSubcategoryFilter((prev) => e.target.checked ? [...prev, sub.key] : prev.filter((k) => k !== sub.key))}
+                                      style={{ cursor: "pointer", flexShrink: 0 }} />
+                                    <span style={{ fontSize: "9px", fontWeight: "bold", color: "white", backgroundColor: sub.color, borderRadius: "3px", padding: "1px 5px", fontFamily: "monospace", flexShrink: 0 }}>{sub.prefix}</span>
+                                    <span style={{ flex: 1, fontSize: "12px", color: checked ? "#333" : "#555", fontWeight: checked ? "bold" : "normal" }}>{sub.label}</span>
+                                    <span style={{ fontSize: "10px", color: "#999" }}>{count}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* ── Characters ── */}
+                          {hasCharacters && (
+                            <>
+                              <SectionHeader section="character" label="Characters" count={characterFilter.length} open={characterAccordionOpen} onToggle={() => setCharacterAccordionOpen(p => !p)} />
+                              {characterAccordionOpen && (
+                                <div style={{ padding: "4px 0" }}>
+                                  {Object.keys(characters).sort().map((c) => {
+                                    const checked = characterFilter.includes(c);
+                                    return (
+                                      <label key={c} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "5px 10px", cursor: "pointer", backgroundColor: checked ? "#e3f2fd" : "transparent" }}>
+                                        <input type="checkbox" checked={checked}
+                                          onChange={(e) => setCharacterFilter((prev) => e.target.checked ? [...prev, c] : prev.filter((x) => x !== c))}
+                                          style={{ cursor: "pointer", flexShrink: 0 }} />
+                                        <span style={{ fontSize: "12px", color: checked ? "#1565c0" : "#555", fontWeight: checked ? "bold" : "normal" }}>{c}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </>
+                          )}
+
+                          {/* ── Shoot Days ── */}
+                          {shootDaysWithProps.length > 0 && (
+                            <>
+                              <SectionHeader section="shootday" label="Shoot Days" count={shootDayFilter.length} open={shootDayAccordionOpen} onToggle={() => setShootDayAccordionOpen(p => !p)} />
+                              {shootDayAccordionOpen && (
+                                <div style={{ padding: "4px 0" }}>
+                                  {shootDaysWithProps.map((day) => {
+                                    const checked = shootDayFilter.includes(day.dayNumber);
+                                    const label = `Day ${day.dayNumber} — ${new Date(day.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+                                    return (
+                                      <label key={day.dayNumber} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "5px 10px", cursor: "pointer", backgroundColor: checked ? "#e8f5e9" : "transparent" }}>
+                                        <input type="checkbox" checked={checked}
+                                          onChange={(e) => setShootDayFilter((prev) => e.target.checked ? [...prev, day.dayNumber] : prev.filter((d) => d !== day.dayNumber))}
+                                          style={{ cursor: "pointer", flexShrink: 0 }} />
+                                        <span style={{ fontSize: "12px", color: checked ? "#2e7d32" : "#555", fontWeight: checked ? "bold" : "normal" }}>{label}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </>
               )}
@@ -1055,12 +1062,24 @@ function PropsModule({
           ) : (
             <p>
               Total Props: {propItems.length}
-              {(characterFilter.length > 0 || subcategoryFilter.length > 0) && (
+              {(characterFilter.length > 0 || subcategoryFilter.length > 0 || shootDayFilter.length > 0) && (
                 <span style={{ color: "#888", fontSize: "11px", marginLeft: "6px" }}>
-                  ({propItems.filter(([, item]) =>
-                    (characterFilter.length === 0 || (item.assignedCharacters || []).some((c) => characterFilter.includes(c))) &&
-                    (subcategoryFilter.length === 0 || subcategoryFilter.includes(item.propSubcategory || "misc"))
-                  ).length} shown)
+                  ({propItems.filter(([, item]) => {
+                    const effectiveSub = soloSection === "category" ? subcategoryFilter : soloSection ? [] : subcategoryFilter;
+                    const effectiveChar = soloSection === "character" ? characterFilter : soloSection ? [] : characterFilter;
+                    const effectiveDay = soloSection === "shootday" ? shootDayFilter : soloSection ? [] : shootDayFilter;
+                    const sceneMap = {};
+                    (shootingDays || []).forEach(day => {
+                      (day.scheduleBlocks || []).forEach(block => {
+                        if (block.scene?.sceneNumber) sceneMap[String(block.scene.sceneNumber)] = day.dayNumber;
+                      });
+                    });
+                    return (
+                      (effectiveSub.length === 0 || effectiveSub.includes(item.propSubcategory || "misc")) &&
+                      (effectiveChar.length === 0 || (item.assignedCharacters || []).some((c) => effectiveChar.includes(c))) &&
+                      (effectiveDay.length === 0 || (item.scenes || []).some(sn => effectiveDay.includes(sceneMap[String(sn)])))
+                    );
+                  }).length} shown)
                 </span>
               )}
             </p>
@@ -1068,18 +1087,23 @@ function PropsModule({
         </div>
 
         <div style={{ width: "100%" }}>
-          {propItems
-            .filter(([, item]) =>
-              characterFilter.length === 0
-                ? true
-                : (item.assignedCharacters || []).some((c) =>
-                    characterFilter.includes(c)
-                  )
-            )
-            .filter(([, item]) =>
-              subcategoryFilter.length === 0 ? true : subcategoryFilter.includes(item.propSubcategory || "misc")
-            )
-            .map(([word, item]) => {
+          {(() => {
+            const effectiveSub = soloSection === "category" ? subcategoryFilter : soloSection ? [] : subcategoryFilter;
+            const effectiveChar = soloSection === "character" ? characterFilter : soloSection ? [] : characterFilter;
+            const effectiveDay = soloSection === "shootday" ? shootDayFilter : soloSection ? [] : shootDayFilter;
+            const sceneMap = {};
+            (shootingDays || []).forEach(day => {
+              (day.scheduleBlocks || []).forEach(block => {
+                if (block.scene?.sceneNumber) sceneMap[String(block.scene.sceneNumber)] = day.dayNumber;
+              });
+            });
+            return propItems
+              .filter(([, item]) =>
+                (effectiveSub.length === 0 || effectiveSub.includes(item.propSubcategory || "misc")) &&
+                (effectiveChar.length === 0 || (item.assignedCharacters || []).some((c) => effectiveChar.includes(c))) &&
+                (effectiveDay.length === 0 || (item.scenes || []).some(sn => effectiveDay.includes(sceneMap[String(sn)])))
+              )
+              .map(([word, item]) => {
             // Convert hex color to more pastel version
             const getPastelColor = (hexColor) => {
               const r = parseInt(hexColor.slice(1, 3), 16);
@@ -1175,7 +1199,7 @@ function PropsModule({
                       <span style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, position: "relative" }}>
                         <span style={{
                           fontSize: "9px", fontWeight: "bold", color: "white",
-                          backgroundColor: (SUBCATEGORY_MAP[item.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"]).color,
+                          backgroundColor: (SUBCATEGORY_MAP[item.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"]).badgeColor,
                           borderRadius: "3px", padding: "1px 6px", letterSpacing: "0.05em", fontFamily: "monospace",
                           position: "relative", top: "-6px",
                         }}>
@@ -1225,7 +1249,7 @@ function PropsModule({
                       <span
                         key={char}
                         style={{
-                          backgroundColor: item.color,
+                          backgroundColor: "#E53935",
                           color: "white",
                           borderRadius: "10px",
                           padding: "1px 6px",
@@ -1292,6 +1316,7 @@ function PropsModule({
               </div>
             );
           })}
+          )()}
         </div>
       </div>
 
@@ -1459,7 +1484,7 @@ function PropsModule({
                                   <span
                                     key={char}
                                     style={{
-                                      backgroundColor: prop.color,
+                                      backgroundColor: "#E53935",
                                       color: "white",
                                       borderRadius: "8px",
                                       padding: "1px 5px",
@@ -1623,7 +1648,7 @@ function PropsModule({
                   {selectedProp.propId && (
                     <span style={{
                       fontSize: "11px", fontWeight: "bold", color: "white",
-                      backgroundColor: (SUBCATEGORY_MAP[selectedProp.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"]).color,
+                      backgroundColor: (SUBCATEGORY_MAP[selectedProp.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"]).badgeColor,
                       borderRadius: "3px", padding: "3px 8px", fontFamily: "monospace", flexShrink: 0,
                     }}>
                       {selectedProp.propId}
@@ -1769,17 +1794,19 @@ function PropsModule({
                     const newId = currentId.startsWith(newPrefix + "_")
                       ? currentId
                       : generatePropId(newSub);
-                    const updated = {
-                      ...taggedItems,
-                      [selectedProp.word]: {
-                        ...currentPropData,
-                        propSubcategory: newSub,
-                        propId: newId,
-                      },
-                    };
-                    onUpdateTaggedItems(updated);
-                    onSyncTaggedItems(updated);
-                    setSelectedProp((prev) => ({ ...prev, propSubcategory: newSub, propId: newId }));
+                      const newColor = (SUBCATEGORY_MAP[newSub] || SUBCATEGORY_MAP["misc"]).color;
+                      const updated = {
+                        ...taggedItems,
+                        [selectedProp.word]: {
+                          ...currentPropData,
+                          propSubcategory: newSub,
+                          propId: newId,
+                          color: newColor,
+                        },
+                      };
+                      onUpdateTaggedItems(updated);
+                      onSyncTaggedItems(updated);
+                      setSelectedProp((prev) => ({ ...prev, propSubcategory: newSub, propId: newId, color: newColor }));
                   }}
                   style={{ flex: 1, padding: "6px 8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", opacity: taggedItems[selectedProp.word]?.propIdLocked ? 0.6 : 1 }}
                 >
@@ -1788,10 +1815,10 @@ function PropsModule({
                   ))}
                 </select>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px", flexShrink: 0 }}>
-                  {selectedProp.propId ? (
+                {selectedProp.propId ? (
                     <span style={{
                       fontSize: "11px", fontWeight: "bold", color: "white",
-                      backgroundColor: (SUBCATEGORY_MAP[selectedProp.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"]).color,
+                      backgroundColor: (SUBCATEGORY_MAP[selectedProp.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"]).badgeColor,
                       borderRadius: "3px", padding: "3px 8px", fontFamily: "monospace",
                     }}>
                       {selectedProp.propId}
@@ -1916,7 +1943,7 @@ function PropsModule({
               <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: showReassignChar ? "8px" : 0 }}>
                 {(selectedProp.assignedCharacters || []).length > 0
                   ? (selectedProp.assignedCharacters || []).map((c) => (
-                      <span key={c} style={{ backgroundColor: selectedProp.color || "#888", color: "white", borderRadius: "10px", padding: "2px 10px", fontSize: "11px", fontWeight: "bold" }}>{c}</span>
+                    <span key={c} style={{ backgroundColor: "#E53935", color: "white", borderRadius: "10px", padding: "2px 10px", fontSize: "11px", fontWeight: "bold" }}>{c}</span>
                     ))
                   : <span style={{ fontSize: "12px", color: "#aaa", fontStyle: "italic" }}>None assigned</span>
                 }
@@ -2460,6 +2487,7 @@ function PropsModule({
                                   propId: selectedProp.propId || generatePropId(selectedProp.propSubcategory || "misc"),
                                   propIdLocked: false,
                                   scenesLocked: true,
+                                  color: (SUBCATEGORY_MAP[selectedProp.propSubcategory || "misc"] || SUBCATEGORY_MAP["misc"]).color,
                                 };
                                 onUpdateTaggedItems(latest);
                                 onSyncTaggedItems(latest);

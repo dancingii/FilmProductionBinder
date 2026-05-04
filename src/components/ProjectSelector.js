@@ -31,6 +31,7 @@ function ProjectSelector({ user, onProjectSelected }) {
           `
           project_id,
           role,
+          module_permissions,
           projects (*)
         `
         )
@@ -44,6 +45,7 @@ function ProjectSelector({ user, onProjectSelected }) {
         ...(memberProjects || []).map((m) => ({
           ...m.projects,
           userRole: m.role,
+          modulePermissions: m.module_permissions || null,
         })),
       ];
 

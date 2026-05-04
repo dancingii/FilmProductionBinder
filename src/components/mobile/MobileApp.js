@@ -58,6 +58,7 @@ const styles = {
     fontWeight: "bold",
     letterSpacing: "0.05em",
     color: "#ffffff",
+    textTransform: "uppercase",
   },
   headerProject: {
     fontSize: "11px",
@@ -288,6 +289,9 @@ const styles = {
 function MobileLogin({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -295,11 +299,18 @@ function MobileLogin({ onLogin }) {
     e.preventDefault();
     setLoading(true);
     setError("");
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) setError(error.message);
+    if (isSignUp) {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) { setError(error.message); setLoading(false); return; }
+      const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+      if (data?.user && fullName) {
+        await supabase.from("users").update({ display_name: fullName }).eq("id", data.user.id);
+      }
+      setError("Account created! Please check your email to confirm, then sign in.");
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) setError(error.message);
+    }
     setLoading(false);
   };
 
@@ -329,14 +340,34 @@ function MobileLogin({ onLogin }) {
           >
             Production Binder
           </div>
-          <div
-            style={{ fontSize: "22px", fontWeight: "bold", color: "#222222" }}
-          >
-            Sign In
+          </div>
+
+        <div style={{ textAlign: "center", marginBottom: "20px" }}>
+          <div style={{ fontSize: "22px", fontWeight: "bold", color: "#222" }}>
+            {isSignUp ? "Create Account" : "Sign In"}
           </div>
         </div>
-
         <form onSubmit={handleLogin}>
+          {isSignUp && (
+            <>
+              <label style={styles.label}>First Name</label>
+              <input
+                type="text"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                style={styles.input}
+                placeholder="First name"
+              />
+              <label style={styles.label}>Last Name</label>
+              <input
+                type="text"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                style={styles.input}
+                placeholder="Last name"
+              />
+            </>
+          )}
           <label style={styles.label}>Email</label>
           <input
             type="email"
@@ -353,31 +384,26 @@ function MobileLogin({ onLogin }) {
             onChange={(e) => setPassword(e.target.value)}
             style={styles.input}
             placeholder="••••••••"
-            autoComplete="current-password"
+            autoComplete={isSignUp ? "new-password" : "current-password"}
           />
           {error && (
-            <div
-              style={{
-                color: "#e05555",
-                fontSize: "13px",
-                marginBottom: "12px",
-              }}
-            >
+            <div style={{ color: isSignUp && !error.includes("!") ? "#e05555" : "#2e7d32", fontSize: "13px", marginBottom: "12px" }}>
               {error}
             </div>
           )}
           <button
             type="submit"
             disabled={loading}
-            style={{
-              ...styles.btn("primary"),
-              width: "100%",
-              justifyContent: "center",
-              padding: "14px",
-              fontSize: "14px",
-            }}
+            style={{ ...styles.btn("primary"), width: "100%", justifyContent: "center", padding: "14px", fontSize: "14px" }}
           >
-            {loading ? "Signing in..." : "Sign In"}
+            {loading ? "Please wait..." : isSignUp ? "Create Account" : "Sign In"}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setIsSignUp(!isSignUp); setError(""); setFirstName(""); setLastName(""); }}
+            style={{ width: "100%", marginTop: "12px", background: "none", border: "none", color: "#2196F3", fontSize: "13px", cursor: "pointer", textDecoration: "underline" }}
+          >
+            {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
           </button>
         </form>
       </div>
@@ -2565,16 +2591,16 @@ function MobileWardrobeModule({
 
 // ─── Mobile Props Module ──────────────────────────────────────────────────────
 const MOBILE_PROP_SUBCATEGORIES = [
-  { key: "hand",        label: "Hand Props",     prefix: "HP", color: "#FF6B6B" },
-  { key: "weapons",     label: "Weapons",        prefix: "WP", color: "#D32F2F" },
-  { key: "food",        label: "Food & Drink",   prefix: "FD", color: "#8D6E63" },
-  { key: "documents",   label: "Documents",      prefix: "DC", color: "#1565C0" },
-  { key: "furniture",   label: "Furniture",      prefix: "FN", color: "#5D4037" },
-  { key: "electronics", label: "Electronics",    prefix: "EL", color: "#0288D1" },
-  { key: "vehicles",    label: "Vehicles",       prefix: "VH", color: "#37474F" },
-  { key: "medical",     label: "Medical",        prefix: "MD", color: "#00838F" },
-  { key: "money",       label: "Money",          prefix: "MN", color: "#2E7D32" },
-  { key: "misc",        label: "Miscellaneous",  prefix: "MS", color: "#757575" },
+  { key: "hand",        label: "Hand Props",     prefix: "HP", color: "#EF9A9A", badgeColor: "#E53935" },
+  { key: "weapons",     label: "Weapons",        prefix: "WP", color: "#B0BEC5", badgeColor: "#546E7A" },
+  { key: "food",        label: "Food & Drink",   prefix: "FD", color: "#FFCC80", badgeColor: "#F57C00" },
+  { key: "documents",   label: "Documents",      prefix: "DC", color: "#90CAF9", badgeColor: "#1E88E5" },
+  { key: "furniture",   label: "Furniture",      prefix: "FN", color: "#C5E1A5", badgeColor: "#7CB342" },
+  { key: "electronics", label: "Electronics",    prefix: "EL", color: "#80DEEA", badgeColor: "#00ACC1" },
+  { key: "vehicles",    label: "Vehicles",       prefix: "VH", color: "#FFAB91", badgeColor: "#F4511E" },
+  { key: "medical",     label: "Medical",        prefix: "MD", color: "#A5D6A7", badgeColor: "#43A047" },
+  { key: "money",       label: "Money",          prefix: "MN", color: "#FFE082", badgeColor: "#FFB300" },
+  { key: "misc",        label: "Miscellaneous",  prefix: "MS", color: "#CE93D8", badgeColor: "#8E24AA" },
 ];
 const MOBILE_SUBCATEGORY_MAP = Object.fromEntries(MOBILE_PROP_SUBCATEGORIES.map((s) => [s.key, s]));
 
@@ -2584,9 +2610,13 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
   const [activeTab, setActiveTab] = useState("props"); // "props" | "scenes"
   const [characterFilter, setCharacterFilter] = useState([]);
   const [subcategoryFilter, setSubcategoryFilter] = useState([]);
+  const [shootDayFilter, setShootDayFilter] = useState([]);
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
-  const [categoryAccordionOpen, setCategoryAccordionOpen] = useState(true);
-  const [characterAccordionOpen, setCharacterAccordionOpen] = useState(true);
+  const [categoryAccordionOpen, setCategoryAccordionOpen] = useState(false);
+  const [characterAccordionOpen, setCharacterAccordionOpen] = useState(false);
+  const [shootDayAccordionOpen, setShootDayAccordionOpen] = useState(false);
+  const [soloSection, setSoloSection] = useState(null);
+  const [soloSnapshot, setSoloSnapshot] = useState({});
   const [newPropSubcategory, setNewPropSubcategory] = useState("misc");
   const [expandedProp, setExpandedProp] = useState(null);
   const [lightboxImg, setLightboxImg] = useState(null);
@@ -2808,10 +2838,22 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
       .map(([word, prop]) => ({ word, ...prop }));
   };
 
-  const filteredProps = propItems.filter(([, item]) =>
-    (characterFilter.length === 0 || (item.assignedCharacters || []).some((c) => characterFilter.includes(c))) &&
-    (subcategoryFilter.length === 0 || subcategoryFilter.includes(item.propSubcategory || "misc"))
-  );
+  const filteredProps = (() => {
+    const effectiveSub = soloSection === "category" ? subcategoryFilter : soloSection ? [] : subcategoryFilter;
+    const effectiveChar = soloSection === "character" ? characterFilter : soloSection ? [] : characterFilter;
+    const effectiveDay = soloSection === "shootday" ? shootDayFilter : soloSection ? [] : shootDayFilter;
+    const sceneMap = {};
+    (shootingDays || []).forEach(day => {
+      (day.scheduleBlocks || []).forEach(block => {
+        if (block.scene?.sceneNumber) sceneMap[String(block.scene.sceneNumber)] = day.dayNumber;
+      });
+    });
+    return propItems.filter(([, item]) =>
+      (effectiveSub.length === 0 || effectiveSub.includes(item.propSubcategory || "misc")) &&
+      (effectiveChar.length === 0 || (item.assignedCharacters || []).some((c) => effectiveChar.includes(c))) &&
+      (effectiveDay.length === 0 || (item.scenes || []).some(sn => effectiveDay.includes(sceneMap[String(sn)])))
+    );
+  })();
 
   // ── Script viewer helpers ─────────────────────────────────────────────────
   const currentSceneIndex = fullScriptMode
@@ -2880,6 +2922,7 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
       propSubcategory: newPropSubcategory,
       propId: newPropId,
       propIdLocked: false,
+      color: (MOBILE_SUBCATEGORY_MAP[newPropSubcategory] || MOBILE_SUBCATEGORY_MAP["misc"]).color,
     };
     const updated = { ...taggedItems, [cleanWord]: newItem };
     // Add variants from sessionVariants
@@ -2960,75 +3003,124 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
 
       {/* Combined filter dropdown */}
       {activeTab === "props" && (() => {
-        const hasAnyFilter = subcategoryFilter.length > 0 || characterFilter.length > 0;
-        const activeCount = subcategoryFilter.length + characterFilter.length;
+        const sceneMap = {};
+        (shootingDays || []).forEach(day => {
+          (day.scheduleBlocks || []).forEach(block => {
+            if (block.scene?.sceneNumber) sceneMap[String(block.scene.sceneNumber)] = day.dayNumber;
+          });
+        });
+        const shootDaysWithProps = [];
+        const seenDays = new Set();
+        (shootingDays || []).sort((a, b) => a.dayNumber - b.dayNumber).forEach(day => {
+          const dayHasProp = Object.values(taggedItems).some(item =>
+            item.category === "Props" && (item.scenes || []).some(sn => sceneMap[String(sn)] === day.dayNumber)
+          );
+          if (dayHasProp && !seenDays.has(day.dayNumber)) {
+            seenDays.add(day.dayNumber);
+            shootDaysWithProps.push(day);
+          }
+        });
         const activeCatsWithProps = MOBILE_PROP_SUBCATEGORIES.filter((sub) =>
           Object.values(taggedItems).some(
             (item) => item.category === "Props" && (item.propSubcategory || "misc") === sub.key
           )
         );
         const hasChars = Object.keys(characters || {}).length > 0;
+        const hasAnyFilter = subcategoryFilter.length > 0 || characterFilter.length > 0 || shootDayFilter.length > 0;
+        const activeCount = subcategoryFilter.length + characterFilter.length + shootDayFilter.length;
+
+        const handleSolo = (section) => {
+          if (soloSection === section) {
+            setSubcategoryFilter(soloSnapshot.subcategoryFilter || []);
+            setCharacterFilter(soloSnapshot.characterFilter || []);
+            setShootDayFilter(soloSnapshot.shootDayFilter || []);
+            setSoloSection(null);
+            setSoloSnapshot({});
+          } else {
+            setSoloSnapshot({ subcategoryFilter, characterFilter, shootDayFilter });
+            setSoloSection(section);
+            if (section !== "category") setSubcategoryFilter([]);
+            if (section !== "character") setCharacterFilter([]);
+            if (section !== "shootday") setShootDayFilter([]);
+          }
+        };
+
+        const SectionHeader = ({ section, label, count, open, onToggle }) => (
+          <div style={{ padding: "8px 10px", backgroundColor: "#f5f5f5", borderBottom: "1px solid #e0e0e0", borderTop: section !== "category" ? "1px solid #e0e0e0" : "none", display: "flex", justifyContent: "space-between", alignItems: "center", userSelect: "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", flex: 1 }} onClick={onToggle}>
+              <span style={{ fontSize: "11px", fontWeight: "bold", color: "#444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                {label}{count > 0 && <span style={{ marginLeft: "6px", color: "#1976d2" }}>({count})</span>}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <label onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "11px", color: soloSection === section ? "#1976d2" : "#888", fontWeight: soloSection === section ? "bold" : "normal", cursor: "pointer" }}>
+                <input type="checkbox" checked={soloSection === section} onChange={() => handleSolo(section)} style={{ cursor: "pointer" }} />
+                Only
+              </label>
+              <span style={{ fontSize: "10px", color: "#888", cursor: "pointer" }} onClick={onToggle}>{open ? "▲" : "▼"}</span>
+            </div>
+          </div>
+        );
+
         return (
           <div style={{ marginBottom: "10px", position: "relative" }}>
             <button onClick={() => setShowFilterDropdown((p) => !p)}
               style={{ width: "100%", padding: "8px 10px", border: `1px solid ${hasAnyFilter ? "#1976d2" : "#ccc"}`, borderRadius: "4px", backgroundColor: hasAnyFilter ? "#e3f2fd" : "white", cursor: "pointer", fontSize: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", boxSizing: "border-box" }}>
-              <span style={{ color: hasAnyFilter ? "#1565c0" : "#555", fontWeight: hasAnyFilter ? "bold" : "normal" }}>
-                {hasAnyFilter ? `${activeCount} filter${activeCount !== 1 ? "s" : ""} active` : "Filter props…"}
-              </span>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1 }}>
+                <span style={{ color: hasAnyFilter ? "#1565c0" : "#555", fontWeight: hasAnyFilter ? "bold" : "normal" }}>
+                  {hasAnyFilter ? `${activeCount} filter${activeCount !== 1 ? "s" : ""} active` : "Filter props…"}
+                </span>
                 {hasAnyFilter && (
-                  <span onClick={(e) => { e.stopPropagation(); setSubcategoryFilter([]); setCharacterFilter([]); }}
+                  <span onClick={(e) => { e.stopPropagation(); setSubcategoryFilter([]); setCharacterFilter([]); setShootDayFilter([]); setSoloSection(null); setSoloSnapshot({}); }}
                     style={{ fontSize: "12px", color: "#1976d2", fontWeight: "bold", cursor: "pointer", lineHeight: 1 }}>✕</span>
                 )}
-                <span style={{ fontSize: "10px", opacity: 0.5 }}>{showFilterDropdown ? "▲" : "▼"}</span>
               </div>
+              <span style={{ fontSize: "10px", opacity: 0.5 }}>{showFilterDropdown ? "▲" : "▼"}</span>
             </button>
             {showFilterDropdown && (
               <>
                 <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", zIndex: 299 }} onClick={() => setShowFilterDropdown(false)} />
-                <div style={{ position: "absolute", top: "100%", left: 0, width: "100%", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", zIndex: 300, boxShadow: "0 4px 16px rgba(0,0,0,0.15)", boxSizing: "border-box", maxHeight: "320px", overflowY: "auto" }}>
-                  {/* Categories accordion */}
-                  <div onClick={() => setCategoryAccordionOpen((p) => !p)}
-                    style={{ padding: "8px 10px", backgroundColor: "#f5f5f5", borderBottom: "1px solid #e0e0e0", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}>
-                    <span style={{ fontSize: "11px", fontWeight: "bold", color: "#444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      Categories{subcategoryFilter.length > 0 && <span style={{ marginLeft: "6px", color: "#1976d2" }}>({subcategoryFilter.length})</span>}
-                    </span>
-                    <span style={{ fontSize: "10px", color: "#888" }}>{categoryAccordionOpen ? "▲" : "▼"}</span>
-                  </div>
+                <div style={{ position: "absolute", top: "100%", left: 0, width: "100%", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", zIndex: 300, boxShadow: "0 4px 16px rgba(0,0,0,0.15)", boxSizing: "border-box", maxHeight: "380px", overflowY: "auto" }}>
+                  {/* Categories */}
+                  <SectionHeader section="category" label="Categories" count={subcategoryFilter.length} open={categoryAccordionOpen} onToggle={() => setCategoryAccordionOpen(p => !p)} />
                   {categoryAccordionOpen && activeCatsWithProps.map((sub) => {
-                    const count = Object.values(taggedItems).filter(
-                      (item) => item.category === "Props" && (item.propSubcategory || "misc") === sub.key
-                    ).length;
+                    const count = Object.values(taggedItems).filter(item => item.category === "Props" && (item.propSubcategory || "misc") === sub.key).length;
                     const checked = subcategoryFilter.includes(sub.key);
                     return (
                       <label key={sub.key} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", cursor: "pointer", backgroundColor: checked ? "#fff8e1" : "transparent" }}>
-                        <input type="checkbox" checked={checked}
-                          onChange={(e) => setSubcategoryFilter((prev) => e.target.checked ? [...prev, sub.key] : prev.filter((k) => k !== sub.key))}
-                          style={{ cursor: "pointer", flexShrink: 0 }} />
+                        <input type="checkbox" checked={checked} onChange={(e) => setSubcategoryFilter((prev) => e.target.checked ? [...prev, sub.key] : prev.filter((k) => k !== sub.key))} style={{ cursor: "pointer", flexShrink: 0 }} />
                         <span style={{ fontSize: "9px", fontWeight: "bold", color: "white", backgroundColor: sub.color, borderRadius: "3px", padding: "1px 5px", fontFamily: "monospace", flexShrink: 0 }}>{sub.prefix}</span>
                         <span style={{ flex: 1, fontSize: "13px", color: checked ? "#333" : "#555", fontWeight: checked ? "bold" : "normal" }}>{sub.label}</span>
                         <span style={{ fontSize: "11px", color: "#999" }}>{count}</span>
                       </label>
                     );
                   })}
-                  {/* Characters accordion */}
+                  {/* Characters */}
                   {hasChars && (
                     <>
-                      <div onClick={() => setCharacterAccordionOpen((p) => !p)}
-                        style={{ padding: "8px 10px", backgroundColor: "#f5f5f5", borderTop: "1px solid #e0e0e0", borderBottom: "1px solid #e0e0e0", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}>
-                        <span style={{ fontSize: "11px", fontWeight: "bold", color: "#444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Characters{characterFilter.length > 0 && <span style={{ marginLeft: "6px", color: "#1976d2" }}>({characterFilter.length})</span>}
-                        </span>
-                        <span style={{ fontSize: "10px", color: "#888" }}>{characterAccordionOpen ? "▲" : "▼"}</span>
-                      </div>
+                      <SectionHeader section="character" label="Characters" count={characterFilter.length} open={characterAccordionOpen} onToggle={() => setCharacterAccordionOpen(p => !p)} />
                       {characterAccordionOpen && Object.keys(characters).sort().map((c) => {
                         const checked = characterFilter.includes(c);
                         return (
                           <label key={c} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", cursor: "pointer", backgroundColor: checked ? "#e3f2fd" : "transparent" }}>
-                            <input type="checkbox" checked={checked}
-                              onChange={(e) => setCharacterFilter((prev) => e.target.checked ? [...prev, c] : prev.filter((x) => x !== c))}
-                              style={{ cursor: "pointer", flexShrink: 0 }} />
+                            <input type="checkbox" checked={checked} onChange={(e) => setCharacterFilter((prev) => e.target.checked ? [...prev, c] : prev.filter((x) => x !== c))} style={{ cursor: "pointer", flexShrink: 0 }} />
                             <span style={{ fontSize: "13px", color: checked ? "#1565c0" : "#555", fontWeight: checked ? "bold" : "normal" }}>{c}</span>
+                          </label>
+                        );
+                      })}
+                    </>
+                  )}
+                  {/* Shoot Days */}
+                  {shootDaysWithProps.length > 0 && (
+                    <>
+                      <SectionHeader section="shootday" label="Shoot Days" count={shootDayFilter.length} open={shootDayAccordionOpen} onToggle={() => setShootDayAccordionOpen(p => !p)} />
+                      {shootDayAccordionOpen && shootDaysWithProps.map((day) => {
+                        const checked = shootDayFilter.includes(day.dayNumber);
+                        const label = `Day ${day.dayNumber} — ${new Date(day.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+                        return (
+                          <label key={day.dayNumber} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", cursor: "pointer", backgroundColor: checked ? "#e8f5e9" : "transparent" }}>
+                            <input type="checkbox" checked={checked} onChange={(e) => setShootDayFilter((prev) => e.target.checked ? [...prev, day.dayNumber] : prev.filter((d) => d !== day.dayNumber))} style={{ cursor: "pointer", flexShrink: 0 }} />
+                            <span style={{ fontSize: "13px", color: checked ? "#2e7d32" : "#555", fontWeight: checked ? "bold" : "normal" }}>{label}</span>
                           </label>
                         );
                       })}
@@ -3077,7 +3169,7 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
                           <span style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, position: "relative" }}>
                             <span style={{
                               fontSize: "9px", fontWeight: "bold", color: "white",
-                              backgroundColor: (MOBILE_SUBCATEGORY_MAP[item.propSubcategory || "misc"] || MOBILE_SUBCATEGORY_MAP["misc"]).color,
+                              backgroundColor: (MOBILE_SUBCATEGORY_MAP[item.propSubcategory || "misc"] || MOBILE_SUBCATEGORY_MAP["misc"]).badgeColor,
                               borderRadius: "3px", padding: "1px 6px", fontFamily: "monospace",
                               position: "relative", top: "-2px",
                             }}>
@@ -3096,7 +3188,7 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
                       {/* Line 2: character pills */}
                       <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "2px" }}>
                         {chars.map((c) => (
-                          <span key={c} style={{ backgroundColor: item.color, color: "white", borderRadius: "10px", padding: "1px 7px", fontSize: "9px", fontWeight: "bold" }}>{c}</span>
+                          <span key={c} style={{ backgroundColor: "#E53935", color: "white", borderRadius: "10px", padding: "1px 7px", fontSize: "9px", fontWeight: "bold" }}>{c}</span>
                         ))}
                       </div>
                     </div>
@@ -3123,7 +3215,8 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
                             const currentId = item.propId || "";
                             const newPrefix = (MOBILE_SUBCATEGORY_MAP[newSub] || MOBILE_SUBCATEGORY_MAP["misc"]).prefix;
                             const newId = currentId.startsWith(newPrefix + "_") ? currentId : generatePropId(newSub);
-                            const updated = { ...taggedItems, [word]: { ...item, propSubcategory: newSub, propId: newId } };
+                            const newColor = (MOBILE_SUBCATEGORY_MAP[newSub] || MOBILE_SUBCATEGORY_MAP["misc"]).color;
+                            const updated = { ...taggedItems, [word]: { ...item, propSubcategory: newSub, propId: newId, color: newColor } };
                             setTaggedItems(updated);
                             syncItems(updated);
                           }}
@@ -3178,8 +3271,8 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
                           <div style={{ marginTop: "8px" }}>
                             <div style={{ fontSize: "10px", fontWeight: "bold", color: "#888", textTransform: "uppercase", marginBottom: "4px" }}>Character</div>
                             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                              {(item.assignedCharacters || []).map((c) => (
-                                <span key={c} style={{ backgroundColor: item.color, color: "white", borderRadius: "10px", padding: "2px 10px", fontSize: "11px", fontWeight: "bold" }}>{c}</span>
+                            {(item.assignedCharacters || []).map((c) => (
+                                <span key={c} style={{ backgroundColor: "#E53935", color: "white", borderRadius: "10px", padding: "2px 10px", fontSize: "11px", fontWeight: "bold" }}>{c}</span>
                               ))}
                             </div>
                           </div>

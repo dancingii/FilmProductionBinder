@@ -126,10 +126,13 @@ function AuthWrapper({ children }) {
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState(null);
   const [userRole, setUserRole] = useState(null);
+  const [modulePermissions, setModulePermissions] = useState(null);
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
@@ -164,11 +167,18 @@ function AuthWrapper({ children }) {
         });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: email,
           password: password,
         });
         if (error) throw error;
+        // Save display name if provided
+        const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+        if (data?.user && fullName) {
+          await supabase.from("users").update({
+            display_name: fullName
+          }).eq("id", data.user.id);
+        }
       }
     } catch (error) {
       setError(error.message);
@@ -230,6 +240,34 @@ function AuthWrapper({ children }) {
           </h2>
 
           <form onSubmit={handleAuth}>
+          {!isLogin && (
+              <>
+                <div style={{ marginBottom: "20px" }}>
+                  <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
+                    First Name
+                  </label>
+                  <input
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="First name"
+                    style={{ width: "100%", padding: "12px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px", boxSizing: "border-box" }}
+                  />
+                </div>
+                <div style={{ marginBottom: "20px" }}>
+                  <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
+                    Last Name
+                  </label>
+                  <input
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Last name"
+                    style={{ width: "100%", padding: "12px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px", boxSizing: "border-box" }}
+                  />
+                </div>
+              </>
+            )}
             <div style={{ marginBottom: "20px" }}>
               <label
                 style={{
@@ -340,7 +378,7 @@ function AuthWrapper({ children }) {
             <div style={{ textAlign: "center" }}>
               <button
                 type="button"
-                onClick={() => setIsLogin(!isLogin)}
+                onClick={() => { setIsLogin(!isLogin); setFirstName(""); setLastName(""); setError(""); }}
                 style={{
                   backgroundColor: "transparent",
                   color: "#2196F3",
@@ -364,7 +402,34 @@ function AuthWrapper({ children }) {
   const TeamManagementModal = () => {
     const [teamMembers, setTeamMembers] = useState([]);
     const [inviteEmail, setInviteEmail] = useState("");
-    const [inviteRole, setInviteRole] = useState("editor");
+    const [inviteRole, setInviteRole] = useState("crew");
+
+    useEffect(() => {
+      const handleEsc = (e) => {
+        if (e.key === "Escape") setShowTeamModal(false);
+      };
+      document.addEventListener("keydown", handleEsc);
+      return () => document.removeEventListener("keydown", handleEsc);
+    }, []);
+    const [inviteCustomModules, setInviteCustomModules] = useState([]);
+    const [expandedCustomMember, setExpandedCustomMember] = useState(null);
+    const [emailSuggestions, setEmailSuggestions] = useState([]);
+
+    const ALL_MODULES_LIST = [
+      "Script", "Stripboard", "StripboardSchedule", "Calendar", "Day Out of Days",
+      "Cast & Crew", "Characters", "Locations", "CallSheet", "ShotList", "ToDoList",
+      "Timeline", "Props", "Makeup", "Production Design", "Wardrobe",
+      "Cost Report", "Reports", "Budget",
+    ];
+
+    const ROLE_LABELS = {
+      owner: { label: "Owner", color: "#4CAF50" },
+      producer: { label: "Producer", color: "#9C27B0" },
+      line_producer: { label: "Line Producer", color: "#673AB7" },
+      department_head: { label: "Dept. Head", color: "#1976D2" },
+      crew: { label: "Crew", color: "#F57C00" },
+      custom: { label: "Custom", color: "#607D8B" },
+    };
     const [loading, setLoading] = useState(false);
     const [inviteError, setInviteError] = useState("");
 
@@ -379,7 +444,7 @@ function AuthWrapper({ children }) {
         // Get project members
         const { data: members, error: membersError } = await supabase
           .from("project_members")
-          .select("id, user_id, role, created_at")
+          .select("id, user_id, role, module_permissions, created_at")
           .eq("project_id", selectedProject.id);
 
         if (membersError) throw membersError;
@@ -453,13 +518,14 @@ function AuthWrapper({ children }) {
               project_id: selectedProject.id,
               user_id: userData.id,
               role: inviteRole,
+              module_permissions: inviteRole === "custom" ? inviteCustomModules : null,
             },
           ]);
 
         if (insertError) throw insertError;
 
         setInviteEmail("");
-        setInviteRole("editor");
+        setInviteRole("crew");
         loadTeamMembers();
         alert(`User invited successfully as ${inviteRole}!`);
       } catch (error) {
@@ -484,11 +550,14 @@ function AuthWrapper({ children }) {
       }
     };
 
-    const changeRole = async (memberId, newRole) => {
+    const changeRole = async (memberId, newRole, modulePerms = null) => {
       try {
         const { error } = await supabase
           .from("project_members")
-          .update({ role: newRole })
+          .update({
+            role: newRole,
+            module_permissions: newRole === "custom" ? modulePerms : null,
+          })
           .eq("id", memberId);
 
         if (error) throw error;
@@ -565,57 +634,80 @@ function AuthWrapper({ children }) {
                 </div>
               </div>
 
-              {teamMembers.map((member) => (
-                <div
-                  key={member.id}
-                  style={{
-                    backgroundColor: "#f9f9f9",
-                    padding: "10px",
-                    marginBottom: "5px",
-                    borderRadius: "4px",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <div>
-                    <strong>{member.email || "Unknown"}</strong>
-                    <select
-                      value={member.role}
-                      onChange={(e) => changeRole(member.id, e.target.value)}
-                      style={{
-                        marginLeft: "10px",
-                        padding: "2px 8px",
-                        borderRadius: "4px",
-                        fontSize: "11px",
-                        fontWeight: "bold",
-                        backgroundColor:
-                          member.role === "editor" ? "#2196F3" : "#FF9800",
-                        color: "white",
-                        border: "none",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <option value="editor">EDITOR</option>
-                      <option value="viewer">VIEWER</option>
-                    </select>
+              {teamMembers.map((member) => {
+                const roleMeta = ROLE_LABELS[member.role] || ROLE_LABELS["crew"];
+                const isCustomExpanded = expandedCustomMember === member.id;
+                const currentCustomModules = member.module_permissions || [];
+                return (
+                  <div key={member.id} style={{ backgroundColor: "#f9f9f9", padding: "10px", marginBottom: "5px", borderRadius: "4px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      {/* ✕ remove button left-aligned, small */}
+                      <button
+                        onClick={() => removeMember(member.id)}
+                        title="Remove member"
+                        style={{ background: "none", border: "none", color: "#f44336", fontSize: "14px", fontWeight: "bold", cursor: "pointer", padding: "0 2px", lineHeight: 1, flexShrink: 0 }}
+                      >
+                        ✕
+                      </button>
+                      {/* Name / email */}
+                      <strong style={{ flex: 1, fontSize: "13px" }}>{member.email || "Unknown"}</strong>
+                      {/* Role dropdown right-justified */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}>
+                        <select
+                          value={member.role}
+                          onChange={(e) => {
+                            if (e.target.value === "custom") {
+                              setExpandedCustomMember(member.id);
+                              changeRole(member.id, "custom", currentCustomModules);
+                            } else {
+                              setExpandedCustomMember(null);
+                              changeRole(member.id, e.target.value);
+                            }
+                          }}
+                          style={{ padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: "bold", backgroundColor: roleMeta.color, color: "white", border: "none", cursor: "pointer" }}
+                        >
+                          <option value="owner">Owner</option>
+                          <option value="producer">Producer</option>
+                          <option value="line_producer">Line Producer</option>
+                          <option value="department_head">Dept. Head</option>
+                          <option value="crew">Crew</option>
+                          <option value="custom">Custom</option>
+                        </select>
+                        {member.role === "custom" && (
+                          <button onClick={() => setExpandedCustomMember(isCustomExpanded ? null : member.id)}
+                            style={{ fontSize: "10px", padding: "2px 8px", border: "1px solid #ccc", borderRadius: "4px", cursor: "pointer", backgroundColor: "white" }}>
+                            {isCustomExpanded ? "▲" : "▼"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {/* Custom module picker */}
+                    {member.role === "custom" && isCustomExpanded && (
+                      <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f0f0f0", borderRadius: "4px" }}>
+                        <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", marginBottom: "8px", textTransform: "uppercase" }}>Module Access</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                          {ALL_MODULES_LIST.map(mod => {
+                            const checked = currentCustomModules.includes(mod);
+                            return (
+                              <label key={mod} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", cursor: "pointer", backgroundColor: checked ? "#e3f2fd" : "white", padding: "3px 8px", borderRadius: "4px", border: `1px solid ${checked ? "#90caf9" : "#ddd"}` }}>
+                                <input type="checkbox" checked={checked}
+                                  onChange={(e) => {
+                                    const updated = e.target.checked
+                                      ? [...currentCustomModules, mod]
+                                      : currentCustomModules.filter(m => m !== mod);
+                                    changeRole(member.id, "custom", updated);
+                                  }}
+                                  style={{ cursor: "pointer" }} />
+                                {mod}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <button
-                    onClick={() => removeMember(member.id)}
-                    style={{
-                      backgroundColor: "#f44336",
-                      color: "white",
-                      border: "none",
-                      padding: "6px 12px",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontSize: "12px",
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
+                );
+              })}
 
               {teamMembers.length === 0 && (
                 <p style={{ color: "#999", fontStyle: "italic" }}>
@@ -628,25 +720,43 @@ function AuthWrapper({ children }) {
           <div>
             <h3>Invite New Member</h3>
             <form onSubmit={inviteUser}>
-              <div style={{ marginBottom: "15px" }}>
+            <div style={{ marginBottom: "15px", position: "relative" }}>
                 <label style={{ display: "block", marginBottom: "5px" }}>
                   Email Address
                 </label>
                 <input
-                  type="email"
+                  type="text"
                   value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  required
-                  placeholder="user@example.com"
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    border: "1px solid #ddd",
-                    borderRadius: "4px",
-                    fontSize: "14px",
-                    boxSizing: "border-box",
+                  onChange={async (e) => {
+                    const val = e.target.value;
+                    setInviteEmail(val);
+                    if (val.length < 2) { setEmailSuggestions([]); return; }
+                    const { data } = await supabase
+                      .from("users")
+                      .select("id, email, display_name")
+                      .ilike("email", `%${val}%`)
+                      .limit(6);
+                    setEmailSuggestions(data || []);
                   }}
+                  required
+                  placeholder="Search by email..."
+                  style={{ width: "100%", padding: "10px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px", boxSizing: "border-box" }}
                 />
+                {emailSuggestions.length > 0 && (
+                  <div style={{ position: "absolute", top: "100%", left: 0, width: "100%", backgroundColor: "white", border: "1px solid #ddd", borderRadius: "4px", zIndex: 100, boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}>
+                    {emailSuggestions.map(u => (
+                      <div key={u.id}
+                        onClick={() => { setInviteEmail(u.email); setEmailSuggestions([]); }}
+                        style={{ padding: "8px 12px", cursor: "pointer", fontSize: "13px", borderBottom: "1px solid #f0f0f0" }}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = "#f5f5f5"}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = "white"}
+                      >
+                        <div style={{ fontWeight: "bold" }}>{u.email}</div>
+                        {u.display_name && <div style={{ fontSize: "11px", color: "#888" }}>{u.display_name}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div style={{ marginBottom: "15px" }}>
@@ -655,18 +765,34 @@ function AuthWrapper({ children }) {
                 </label>
                 <select
                   value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    border: "1px solid #ddd",
-                    borderRadius: "4px",
-                    fontSize: "14px",
-                  }}
+                  onChange={(e) => { setInviteRole(e.target.value); setInviteCustomModules([]); }}
+                  style={{ width: "100%", padding: "10px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "14px" }}
                 >
-                  <option value="editor">Editor - Can edit all data</option>
-                  <option value="viewer">Viewer - Read-only access</option>
+                  <option value="owner">Owner — Full access</option>
+                  <option value="producer">Producer — Full access</option>
+                  <option value="line_producer">Line Producer — Full access</option>
+                  <option value="department_head">Dept. Head — No budget access</option>
+                  <option value="crew">Crew — No budget or cost reports</option>
+                  <option value="custom">Custom — Choose modules</option>
                 </select>
+                {inviteRole === "custom" && (
+                  <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f9f9f9", borderRadius: "4px", border: "1px solid #ddd" }}>
+                    <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", marginBottom: "8px", textTransform: "uppercase" }}>Select Accessible Modules</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {ALL_MODULES_LIST.map(mod => {
+                        const checked = inviteCustomModules.includes(mod);
+                        return (
+                          <label key={mod} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", cursor: "pointer", backgroundColor: checked ? "#e3f2fd" : "white", padding: "3px 8px", borderRadius: "4px", border: `1px solid ${checked ? "#90caf9" : "#ddd"}` }}>
+                            <input type="checkbox" checked={checked}
+                              onChange={(e) => setInviteCustomModules(prev => e.target.checked ? [...prev, mod] : prev.filter(m => m !== mod))}
+                              style={{ cursor: "pointer" }} />
+                            {mod}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {inviteError && (
@@ -745,6 +871,23 @@ function AuthWrapper({ children }) {
         <div>
           Welcome, <DisplayNameEditor user={user} />
         </div>
+        {selectedProject && (
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              transform: "translateX(-50%)",
+              fontWeight: "bold",
+              fontSize: "16px",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              pointerEvents: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {selectedProject.name}
+          </div>
+        )}
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
           {selectedProject && (
             <>
@@ -762,7 +905,7 @@ function AuthWrapper({ children }) {
               >
                 Projects
               </button>
-              {userRole === "owner" && (
+              {(userRole === "owner" || userRole === "producer") && (
                 <button
                   onClick={() => setShowTeamModal(true)}
                   style={{
@@ -800,7 +943,7 @@ function AuthWrapper({ children }) {
       {selectedProject ? (
         <React.Fragment>
           <TeamManagementModal />
-          {React.cloneElement(children, { selectedProject, userRole, user })}
+          {React.cloneElement(children, { selectedProject, userRole, modulePermissions, user })}
         </React.Fragment>
       ) : (
         <ProjectSelector
@@ -808,6 +951,7 @@ function AuthWrapper({ children }) {
           onProjectSelected={(project) => {
             setSelectedProject(project);
             setUserRole(project.userRole || "owner");
+            setModulePermissions(project.modulePermissions || null);
           }}
         />
       )}
