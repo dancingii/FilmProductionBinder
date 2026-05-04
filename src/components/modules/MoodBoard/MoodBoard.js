@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Rnd } from "react-rnd";
+import { supabase } from "../../../supabase";
 
 const GRID_SIZE = 10;
 const STORAGE_VERSION = 2;
@@ -37,39 +37,6 @@ const FONT_OPTIONS = [
   { name: "Copperplate", vibe: "Poster title" },
   { name: "Marker Felt", vibe: "Handmade" },
   { name: "Brush Script MT", vibe: "Script" },
-];
-
-const SAMPLE_IMAGES = [
-  {
-    id: "sample_1",
-    sourceLinkId: null,
-    title: "Sample Reference 1",
-    url: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80",
-    originalUrl: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee",
-    width: 900,
-    height: 600,
-    source: "sample",
-  },
-  {
-    id: "sample_2",
-    sourceLinkId: null,
-    title: "Sample Reference 2",
-    url: "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=900&q=80",
-    originalUrl: "https://images.unsplash.com/photo-1519608487953-e999c86e7455",
-    width: 900,
-    height: 600,
-    source: "sample",
-  },
-  {
-    id: "sample_3",
-    sourceLinkId: null,
-    title: "Sample Reference 3",
-    url: "https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=900&q=80",
-    originalUrl: "https://images.unsplash.com/photo-1493246507139-91e8fad9978e",
-    width: 900,
-    height: 600,
-    source: "sample",
-  },
 ];
 
 function makeId(prefix) {
@@ -134,12 +101,13 @@ function makePage(index = 1, presetKey = "pitch_16x9") {
   };
 }
 
-function makeBoard(index = 1) {
+function makeBoard(index = 1, createdBy = "") {
   const page = makePage(1);
   return {
     id: makeId("board"),
     name: `Mood Board ${index}`,
     createdAt: new Date().toISOString(),
+    createdBy,
     pages: [page],
     activePageId: page.id,
   };
@@ -172,7 +140,7 @@ function normalizeImportedState(parsed) {
     boards: migratedBoards,
     activeBoardId: parsed?.activeBoardId || firstBoard?.id || null,
     links: parsed?.links || [],
-    images: parsed?.images?.length ? parsed.images : SAMPLE_IMAGES,
+    images: parsed?.images?.length ? parsed.images : [],
     canvasItems: (parsed?.canvasItems || []).map((item) => {
       if (item.pageId) return item;
       const board = migratedBoards.find((b) => b.id === item.boardId) || firstBoard;
@@ -183,17 +151,123 @@ function normalizeImportedState(parsed) {
   };
 }
 
-function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = false }) {
+function getContrastColor(url) {
+  // Returns a promise resolving to "white" or "black" based on image brightness
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const size = 20;
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        // Sample bottom strip where the label will appear
+        ctx.drawImage(img, 0, img.height * 0.75, img.width, img.height * 0.25, 0, 0, size, size);
+        const data = ctx.getImageData(0, 0, size, size).data;
+        let brightness = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          brightness += (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
+        }
+        brightness /= (data.length / 4);
+        resolve(brightness > 128 ? "#111111" : "#ffffff");
+      } catch {
+        resolve("#ffffff");
+      }
+    };
+    img.onerror = () => resolve("#ffffff");
+    img.src = url;
+  });
+}
+
+function RollImage({ image, canEdit, isViewOnly, onDragStart, onDragEnd, onDragOver, onDoubleClick, onDelete, onRenameTitle, onLightbox, isDragging, isDragOver }) {
+  const [textColor, setTextColor] = useState("#ffffff");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(image.title || "");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    getContrastColor(image.url).then(setTextColor);
+  }, [image.url]);
+
+  useEffect(() => {
+    if (editing) {
+      setDraft(image.title || "");
+      setTimeout(() => { inputRef.current?.select(); }, 10);
+    }
+  }, [editing]);
+
+  const commitRename = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== image.title) onRenameTitle(trimmed);
+    setEditing(false);
+  };
+
+  return (
+    <div
+    draggable
+    onDragStart={onDragStart}
+    onDragEnd={onDragEnd}
+    onDragOver={(e) => { e.preventDefault(); onDragOver?.(); }}
+    onDoubleClick={onDoubleClick}
+    style={{ breakInside: "avoid", marginBottom: "8px", backgroundColor: "#222", border: isDragOver ? "2px solid #2196F3" : "1px solid #ddd", borderRadius: "4px", overflow: "hidden", cursor: "grab", position: "relative", opacity: isDragging ? 0.4 : 1, transition: "opacity 0.15s, border 0.1s" }}
+    >
+      {image.uploading && (
+        <div style={{ position: "absolute", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3 }}>
+          <div style={{ color: "white", fontSize: "10px", fontWeight: "bold" }}>Saving…</div>
+        </div>
+      )}
+      <img src={image.url} alt={image.title || "Reference"} draggable={false} onClick={(e) => { e.stopPropagation(); onLightbox?.(); }} style={{ width: "100%", height: "auto", display: "block", cursor: "zoom-in" }} />
+
+      {/* Bottom label — always visible over image */}
+      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "3px 22px 3px 4px", background: "linear-gradient(transparent, rgba(0,0,0,0.45))", minHeight: "20px", display: "flex", alignItems: "flex-end" }}>
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setEditing(false); }}
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "100%", fontSize: "9px", background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", outline: "1px solid #2196F3", borderRadius: "2px", padding: "1px 3px" }}
+          />
+        ) : (
+          <span
+            onDoubleClick={(e) => { e.stopPropagation(); if (canEdit && !isViewOnly) setEditing(true); }}
+            style={{ fontSize: "9px", color: textColor, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%", display: "block", textShadow: textColor === "#ffffff" ? "0 1px 2px rgba(0,0,0,0.8)" : "0 1px 2px rgba(255,255,255,0.6)", cursor: canEdit && !isViewOnly ? "text" : "default" }}>
+            {image.title || "Untitled"}
+          </span>
+        )}
+      </div>
+
+      {/* Delete button — bottom right */}
+      {canEdit && !isViewOnly && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          title="Remove from Roll"
+          style={{ position: "absolute", bottom: "2px", right: "2px", width: "14px", height: "14px", backgroundColor: "#E53935", color: "white", border: "none", borderRadius: "50%", fontSize: "9px", lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", padding: 0, zIndex: 2 }}
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = false, user = null }) {
   const fileInputRef = useRef(null);
   const boardScrollRef = useRef(null);
   const didLoadRef = useRef(false);
   const draggingRollImageRef = useRef(null);
   const pageRefs = useRef({});
+  const dragRef = useRef(null);
+  const selectionBoxRef = useRef(null);
+  const zoomRef = useRef(0.65);
+  const gridSizeRef = useRef(GRID_SIZE);
 
   const [boards, setBoards] = useState([makeBoard(1)]);
   const [activeBoardId, setActiveBoardId] = useState(null);
   const [links, setLinks] = useState([]);
-  const [images, setImages] = useState(SAMPLE_IMAGES);
+  const [images, setImages] = useState([]);
   const [canvasItems, setCanvasItems] = useState([]);
   const [selectedItemIds, setSelectedItemIds] = useState([]);
   const [activeInputTab, setActiveInputTab] = useState("links");
@@ -210,33 +284,65 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   const [showFontDropdown, setShowFontDropdown] = useState(false);
   const [presentMode, setPresentMode] = useState(false);
   const [presentPageIndex, setPresentPageIndex] = useState(0);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState(null); // { url, title }
+  const pageExportRefs = useRef({});
   const [editingTextId, setEditingTextId] = useState(null);
   const [resizingPage, setResizingPage] = useState(null);
   const [gridSize, setGridSize] = useState(GRID_SIZE);
-  const [pinterestUrl, setPinterestUrl] = useState("");
-  const [pinterestLoading, setPinterestLoading] = useState(false);
+  const [selectionBox, setSelectionBox] = useState(null);
+  const [alignmentGuides, setAlignmentGuides] = useState({ pageId: null, x: [], y: [] });
+  const [layerDrag, setLayerDrag] = useState(null);
+  const [renamingLayerId, setRenamingLayerId] = useState(null);
+  const [renamingLayerDraft, setRenamingLayerDraft] = useState("");
+  const [userDisplayName, setUserDisplayName] = useState("");
+  const userDisplayNameRef = useRef("");
+  const [rollDragId, setRollDragId] = useState(null);
+  const [rollDragOverId, setRollDragOverId] = useState(null);
+  const dbSaveTimerRef = useRef(null);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => { gridSizeRef.current = gridSize; }, [gridSize]);
+
+  // Stamp createdBy on boards that were loaded before display name was ready
+  useEffect(() => {
+    if (!userDisplayName || !didLoadRef.current) return;
+    setBoards(prev => prev.map(b => b.createdBy ? b : { ...b, createdBy: userDisplayName }));
+  }, [userDisplayName]);
+
+  useEffect(() => {
+    const fetchName = async () => {
+      try {
+        // Get auth user directly — don't depend on prop being passed
+        const { data: authData } = await supabase.auth.getUser();
+        const authUser = authData?.user;
+        if (!authUser) return;
+        const { data } = await supabase
+          .from("users")
+          .select("display_name")
+          .eq("id", authUser.id)
+          .single();
+        const name = data?.display_name || authUser.email?.split("@")[0] || "";
+        if (name) {
+          setUserDisplayName(name);
+          userDisplayNameRef.current = name;
+        }
+      } catch (err) {
+        console.error("MoodBoard: failed to fetch display name", err);
+      }
+    };
+    fetchName();
+  }, []);
 
   const storageKey = useMemo(() => getStorageKey(selectedProject), [selectedProject]);
 
   useEffect(() => {
     didLoadRef.current = false;
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (!raw) {
-        const board = makeBoard(1);
-        setBoards([board]);
-        setActiveBoardId(board.id);
-        setLinks([]);
-        setImages(SAMPLE_IMAGES);
-        setCanvasItems([]);
-        setSelectedItemIds([]);
-        setStatusMessage("No saved local moodboard yet. Using starter sample images.");
-        didLoadRef.current = true;
-        return;
-      }
-
-      const normalized = normalizeImportedState(JSON.parse(raw));
-      setBoards(normalized.boards);
+    const applyNormalized = (normalized, currentUserName) => {
+      // Stamp createdBy on existing boards that predate this feature
+      const stamped = normalized.boards.map(b =>
+        b.createdBy ? b : { ...b, createdBy: currentUserName || "" }
+      );
+      setBoards(stamped);
       setActiveBoardId(normalized.activeBoardId);
       setLinks(normalized.links);
       setImages(normalized.images);
@@ -244,39 +350,86 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
       setZoom(normalized.zoom);
       setShowGrid(normalized.showGrid);
       setSelectedItemIds([]);
-      setStatusMessage("Loaded saved local MoodBoard data.");
-    } catch (error) {
-      console.error("Failed to load MoodBoard local data:", error);
-      setStatusMessage("Could not load local MoodBoard data. Starting clean.");
-    } finally {
-      setTimeout(() => {
-        didLoadRef.current = true;
-      }, 0);
-    }
-  }, [storageKey]);
+    };
+
+    const loadFromLocal = () => {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (!raw) {
+          const board = makeBoard(1, userDisplayNameRef.current || user?.email || "");
+          setBoards([board]);
+          setActiveBoardId(board.id);
+          setLinks([]); setImages([]); setCanvasItems([]); setSelectedItemIds([]);
+          setStatusMessage("New moodboard ready.");
+          return;
+        }
+        applyNormalized(normalizeImportedState(JSON.parse(raw)), userDisplayNameRef.current);
+        setStatusMessage("Loaded local MoodBoard data.");
+      } catch (err) {
+        console.error("Failed to load local MoodBoard:", err);
+        setStatusMessage("Could not load MoodBoard data.");
+      }
+    };
+
+    const load = async () => {
+      if (!selectedProject?.id) { loadFromLocal(); didLoadRef.current = true; return; }
+      try {
+        const { data, error } = await supabase
+          .from("moodboard_data")
+          .select("*")
+          .eq("project_id", selectedProject.id)
+          .single();
+          if (!error && data) {
+            applyNormalized(normalizeImportedState({
+              boards: data.boards, activeBoardId: data.active_board_id,
+              links: data.links, images: data.images,
+              canvasItems: data.canvas_items, zoom: data.zoom, showGrid: data.show_grid,
+            }), userDisplayNameRef.current);
+            setStatusMessage("Loaded MoodBoard from database.");
+          } else {
+            loadFromLocal();
+          }
+      } catch (err) {
+        console.error("MoodBoard DB load error:", err);
+        loadFromLocal();
+      } finally {
+        setTimeout(() => { didLoadRef.current = true; }, 0);
+      }
+    };
+
+    load();
+  }, [storageKey, selectedProject?.id]);
 
   useEffect(() => {
     if (!didLoadRef.current) return;
+    // Always save to localStorage immediately
     try {
-      localStorage.setItem(
-        storageKey,
-        JSON.stringify({
-          version: STORAGE_VERSION,
-          savedAt: new Date().toISOString(),
-          activeBoardId,
-          boards,
-          links,
-          images,
-          canvasItems,
-          zoom,
-          showGrid,
-        })
-      );
-    } catch (error) {
-      console.error("Failed to save MoodBoard local data:", error);
-      setStatusMessage("Local save failed. Browser storage may be full.");
+      localStorage.setItem(storageKey, JSON.stringify({
+        version: STORAGE_VERSION, savedAt: new Date().toISOString(),
+        activeBoardId, boards, links, images, canvasItems, zoom, showGrid,
+      }));
+    } catch (err) {
+      console.error("Local save failed:", err);
     }
-  }, [storageKey, activeBoardId, boards, links, images, canvasItems, zoom, showGrid]);
+    // Debounced save to Supabase
+    clearTimeout(dbSaveTimerRef.current);
+    dbSaveTimerRef.current = setTimeout(async () => {
+      if (!selectedProject?.id) return;
+      try {
+        const { error } = await supabase.from("moodboard_data").upsert({
+          project_id: selectedProject.id,
+          active_board_id: activeBoardId,
+          boards, links, images,
+          canvas_items: canvasItems,
+          zoom, show_grid: showGrid,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "project_id" });
+        if (error) throw error;
+      } catch (err) {
+        console.error("MoodBoard DB save error:", err);
+      }
+    }, 2000);
+  }, [storageKey, activeBoardId, boards, links, images, canvasItems, zoom, showGrid, selectedProject?.id]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -358,7 +511,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
 
   const addBoard = () => {
     const name = newBoardName.trim() || `Mood Board ${boards.length + 1}`;
-    const board = makeBoard(boards.length + 1);
+    const board = makeBoard(boards.length + 1, userDisplayNameRef.current || userDisplayName || user?.email || "");
     board.name = name;
     setBoards((prev) => [...prev, board]);
     setActiveBoardId(board.id);
@@ -502,50 +655,83 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   const addManualImageUrl = async () => {
     const url = manualImageUrl.trim();
     if (!url) return;
-    setStatusMessage("Adding image URL...");
-    const dimensions = await getImageDimensions(url);
-    const image = {
-      id: makeId("img"),
+    setManualImageUrl("");
+    const title = `Image URL ${images.length + 1}`;
+    const tempId = makeId("img");
+
+    // Add immediately with original URL so it appears in Roll right away
+    setImages(prev => [...prev, {
+      id: tempId,
       sourceLinkId: null,
-      title: manualImageTitle.trim() || `Image URL ${images.length + 1}`,
+      title,
       url,
       originalUrl: url,
-      width: dimensions.width,
-      height: dimensions.height,
+      width: 900,
+      height: 600,
       source: "image-url",
-    };
-    setImages((prev) => [...prev, image]);
-    setManualImageUrl("");
-    setManualImageTitle("");
-    setStatusMessage("Image URL added to Roll.");
+      uploading: true,
+    }]);
+
+    // Try to download via proxy and store in Supabase
+    const { supabaseUrl } = await uploadImageFromUrl(url, title);
+    setImages(prev => prev.map(img =>
+      img.id === tempId
+        ? { ...img, url: supabaseUrl || url, uploading: false }
+        : img
+    ));
+    setStatusMessage(supabaseUrl ? "Image saved to storage." : "Image added (original URL).");
   };
 
-  const addLocalFiles = (event) => {
+  const addLocalFiles = async (event) => {
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
-    files.forEach((file) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        setImages((prev) => [
-          ...prev,
-          {
-            id: makeId("img"),
-            sourceLinkId: null,
-            title: file.name,
-            url,
-            originalUrl: url,
-            width: img.naturalWidth || 900,
-            height: img.naturalHeight || 600,
-            localOnly: true,
-            source: "local",
-          },
-        ]);
-      };
-      img.src = url;
-    });
     event.target.value = "";
-    setStatusMessage("Local upload added. Note: local object URLs are temporary until real storage is added.");
+    setStatusMessage(`Uploading ${files.length} image${files.length > 1 ? "s" : ""}...`);
+
+    for (const file of files) {
+      const tempId = makeId("img");
+      const localUrl = URL.createObjectURL(file);
+
+      // Add immediately with local blob URL
+      setImages(prev => [...prev, {
+        id: tempId,
+        sourceLinkId: null,
+        title: file.name.replace(/\.[^/.]+$/, ""),
+        url: localUrl,
+        originalUrl: localUrl,
+        width: 900,
+        height: 600,
+        source: "upload",
+        uploading: true,
+      }]);
+
+      try {
+        const ext = file.name.split(".").pop() || "jpg";
+        const filename = `${selectedProject?.id || "shared"}/${tempId}.${ext}`;
+        const { error } = await supabase.storage
+          .from("moodboard-images")
+          .upload(filename, file, { contentType: file.type, upsert: false });
+
+        if (error) throw error;
+
+        const { data: urlData } = supabase.storage
+          .from("moodboard-images")
+          .getPublicUrl(filename);
+
+        setImages(prev => prev.map(img =>
+          img.id === tempId
+            ? { ...img, url: urlData.publicUrl, originalUrl: urlData.publicUrl, uploading: false }
+            : img
+        ));
+      } catch (err) {
+        console.error("Upload error:", err);
+        // Keep local URL as fallback
+        setImages(prev => prev.map(img =>
+          img.id === tempId ? { ...img, uploading: false } : img
+        ));
+      }
+    }
+    setStatusMessage(`Added ${files.length} image${files.length > 1 ? "s" : ""} to Roll.`);
   };
 
   const createCanvasImageItem = (image, page, x, y) => {
@@ -607,6 +793,8 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
       fontWeight: "bold",
       color: "#111111",
       backgroundColor: "transparent",
+      letterSpacing: 0,
+      lineHeight: 1.1,
       opacity: 1,
       locked: false,
       hidden: false,
@@ -633,6 +821,195 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     } else {
       setSelectedItemIds([itemId]);
     }
+  };
+
+  const deleteImage = (imageId) => {
+    setImages((prev) => prev.filter((img) => img.id !== imageId));
+  };
+
+  const proxyImageToBase64 = async (url) => {
+    try {
+      const res = await fetch(`/.netlify/functions/image-proxy?url=${encodeURIComponent(url)}`);
+      const data = await res.json();
+      return data.dataUrl || null;
+    } catch { return null; }
+  };
+
+  const uploadImageFromUrl = async (originalUrl, title = "") => {
+    try {
+      setStatusMessage("Downloading image...");
+      // Fetch via proxy
+      const proxyRes = await fetch(`/.netlify/functions/image-proxy?url=${encodeURIComponent(originalUrl)}`);
+      const proxyData = await proxyRes.json();
+      if (!proxyData.dataUrl) throw new Error("Proxy returned no data");
+
+      // Convert base64 dataUrl to blob
+      const [meta, b64] = proxyData.dataUrl.split(",");
+      const mime = meta.match(/:(.*?);/)[1];
+      const byteString = atob(b64);
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+      const blob = new Blob([ab], { type: mime });
+
+      // Upload to Supabase Storage
+      const ext = mime.split("/")[1] || "jpg";
+      const filename = `${selectedProject?.id || "shared"}/${makeId("img")}.${ext}`;
+      const { data: uploadData, error } = await supabase.storage
+        .from("moodboard-images")
+        .upload(filename, blob, { contentType: mime, upsert: false });
+
+      if (error) throw error;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from("moodboard-images")
+        .getPublicUrl(filename);
+
+      setStatusMessage("Image saved to storage.");
+      return { supabaseUrl: urlData.publicUrl, originalUrl };
+    } catch (err) {
+      console.error("uploadImageFromUrl error:", err);
+      setStatusMessage("Could not download image — using original URL.");
+      return { supabaseUrl: null, originalUrl };
+    }
+  };
+
+  const exportBoardToPdf = async () => {
+    if (exportingPdf || !activeBoard || boardPages.length === 0) return;
+    setExportingPdf(true);
+    setStatusMessage("Preparing PDF export...");
+    try {
+      if (!window.jspdf) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+          s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+      if (!window.html2canvas) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+          s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+
+      const { jsPDF } = window.jspdf;
+      const firstPage = boardPages[0];
+      const pdf = new jsPDF({
+        orientation: firstPage.width > firstPage.height ? "landscape" : "portrait",
+        unit: "px",
+        format: [firstPage.width, firstPage.height],
+        hotfixes: ["px_scaling"],
+      });
+
+      // Pre-fetch all unique image URLs as base64 via proxy
+      setStatusMessage("Fetching images...");
+      const urlCache = {};
+      const allImageItems = canvasItems.filter(item =>
+        item.boardId === activeBoard.id && item.type === "image" && !item.hidden
+      );
+      await Promise.all(allImageItems.map(async item => {
+        const imgData = images.find(img => img.id === item.imageId);
+        if (imgData?.url && !urlCache[imgData.url]) {
+          const b64 = await proxyImageToBase64(imgData.url);
+          if (b64) urlCache[imgData.url] = b64;
+        }
+      }));
+
+      for (let i = 0; i < boardPages.length; i++) {
+        const page = boardPages[i];
+        setStatusMessage(`Rendering page ${i + 1} of ${boardPages.length}...`);
+
+        const container = document.createElement("div");
+        container.style.cssText = `position:fixed;left:-${page.width + 400}px;top:0;width:${page.width}px;height:${page.height}px;background-color:${page.backgroundColor || "#ffffff"};overflow:hidden;box-sizing:border-box;`;
+        document.body.appendChild(container);
+
+        const pageItems = canvasItems
+          .filter(item => item.boardId === activeBoard.id && item.pageId === page.id && !item.hidden)
+          .sort((a, b) => a.zIndex - b.zIndex);
+
+        for (const item of pageItems) {
+          const el = document.createElement("div");
+          el.style.cssText = `position:absolute;left:${item.x}px;top:${item.y}px;width:${item.width}px;height:${item.height}px;z-index:${item.zIndex};opacity:${item.opacity ?? 1};overflow:hidden;box-sizing:border-box;`;
+
+          if (item.type === "image") {
+            const imgData = images.find(img => img.id === item.imageId);
+            if (imgData) {
+              const src = urlCache[imgData.url] || imgData.url;
+              const imgEl = document.createElement("img");
+              imgEl.src = src;
+              imgEl.style.cssText = `width:100%;height:100%;object-fit:${item.objectFit || "contain"};display:block;`;
+              el.appendChild(imgEl);
+            }
+          } else if (item.type === "text") {
+            if (item.backgroundColor && item.backgroundColor !== "transparent") {
+              el.style.backgroundColor = item.backgroundColor;
+            }
+            const textEl = document.createElement("div");
+            textEl.style.cssText = `color:${item.color};font-family:${item.fontFamily},sans-serif;font-size:${item.fontSize}px;font-weight:${item.fontWeight};line-height:${item.lineHeight ?? 1.1};letter-spacing:${item.letterSpacing ? item.letterSpacing + "px" : "normal"};padding:6px;white-space:pre-wrap;width:100%;height:100%;box-sizing:border-box;overflow:hidden;`;
+            textEl.textContent = item.text;
+            el.appendChild(textEl);
+          }
+          container.appendChild(el);
+        }
+
+        // Wait for any remaining non-proxied images
+        const imgEls = Array.from(container.querySelectorAll("img"));
+        await Promise.all(imgEls.map(img =>
+          new Promise(res => {
+            if (img.complete && img.naturalWidth > 0) res();
+            else { img.onload = res; img.onerror = res; }
+          })
+        ));
+        await new Promise(r => setTimeout(r, 80));
+
+        const canvas = await window.html2canvas(container, {
+          useCORS: true,
+          allowTaint: false,
+          scale: 1,
+          width: page.width,
+          height: page.height,
+          backgroundColor: page.backgroundColor || "#ffffff",
+          logging: false,
+          imageTimeout: 0,
+        });
+
+        document.body.removeChild(container);
+
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.94);
+        if (i > 0) pdf.addPage([page.width, page.height], page.width > page.height ? "landscape" : "portrait");
+        pdf.addImage(dataUrl, "JPEG", 0, 0, page.width, page.height);
+      }
+
+      pdf.save(`${activeBoard.name || "MoodBoard"}.pdf`);
+      setStatusMessage(`Exported ${boardPages.length} page${boardPages.length > 1 ? "s" : ""} to PDF.`);
+    } catch (err) {
+      console.error("PDF export error:", err);
+      setStatusMessage("PDF export failed: " + err.message);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
+  const reorderImages = (dragId, overId) => {
+    if (!dragId || !overId || dragId === overId) return;
+    setImages(prev => {
+      const arr = [...prev];
+      const fromIdx = arr.findIndex(img => img.id === dragId);
+      const toIdx = arr.findIndex(img => img.id === overId);
+      if (fromIdx < 0 || toIdx < 0) return prev;
+      const [moved] = arr.splice(fromIdx, 1);
+      arr.splice(toIdx, 0, moved);
+      return arr;
+    });
+  };
+
+  const updateImageTitle = (imageId, title) => {
+    setImages((prev) => prev.map((img) => img.id === imageId ? { ...img, title } : img));
   };
 
   const deleteSelectedItems = () => {
@@ -664,19 +1041,186 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     selectedItems.forEach((item) => updateCanvasItem(item.id, { zIndex: Math.max(1, item.zIndex - 1) }));
   };
 
-  const moveSelectedByDelta = (selectedIds, dx, dy, sourceItemId, nextSourcePosition) => {
-    const ids = new Set(selectedIds);
-    setCanvasItems((prev) => {
-      const sourceBefore = prev.find((item) => item.id === sourceItemId);
-      if (!sourceBefore) return prev;
-      const computedDx = nextSourcePosition.x - sourceBefore.x;
-      const computedDy = nextSourcePosition.y - sourceBefore.y;
-      return prev.map((item) => {
-        if (!ids.has(item.id)) return item;
-        if (item.id === sourceItemId) return { ...item, x: nextSourcePosition.x, y: nextSourcePosition.y };
-        return { ...item, x: snap(item.x + computedDx), y: snap(item.y + computedDy) };
-      });
-    });
+  const GUIDE_THRESHOLD = 6;
+
+  const startDrag = (e, item) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const alreadySelected = selectedItemIds.includes(item.id);
+    let dragIds;
+    if (e.shiftKey) {
+      if (alreadySelected) { setSelectedItemIds(prev => prev.filter(id => id !== item.id)); return; }
+      dragIds = [...selectedItemIds, item.id];
+      setSelectedItemIds(dragIds);
+    } else if (alreadySelected) {
+      dragIds = selectedItemIds;
+    } else {
+      dragIds = [item.id];
+      setSelectedItemIds(dragIds);
+    }
+    const startPositions = {};
+    canvasItems.forEach(ci => { if (dragIds.includes(ci.id)) startPositions[ci.id] = { x: ci.x, y: ci.y }; });
+    const page = boardPages.find(p => p.id === item.pageId);
+    // Snapshot other items for guide calculation (frozen at drag start)
+    const otherItems = canvasItems.filter(ci => ci.boardId === activeBoard?.id && ci.pageId === item.pageId && !dragIds.includes(ci.id) && !ci.hidden);
+    dragRef.current = { type: "drag", itemIds: dragIds, startPointer: { x: e.clientX, y: e.clientY }, startPositions, page, otherItems, primaryId: dragIds[0], primarySize: { w: item.width, h: item.height }, moved: false };
+
+    const calcGuides = (rawX, rawY, iW, iH, page, others) => {
+      const xCandidates = [0, page.width / 2, page.width];
+      const yCandidates = [0, page.height / 2, page.height];
+      others.forEach(o => { xCandidates.push(o.x, o.x + o.width / 2, o.x + o.width); yCandidates.push(o.y, o.y + o.height / 2, o.y + o.height); });
+      const snapPtsX = [rawX, rawX + iW / 2, rawX + iW];
+      const snapPtsY = [rawY, rawY + iH / 2, rawY + iH];
+      let bestX = null, bestXDist = GUIDE_THRESHOLD, snapOffsetX = 0;
+      for (const g of xCandidates) { for (const sp of snapPtsX) { const d = Math.abs(sp - g); if (d < bestXDist) { bestXDist = d; bestX = g; snapOffsetX = g - sp; } } }
+      let bestY = null, bestYDist = GUIDE_THRESHOLD, snapOffsetY = 0;
+      for (const g of yCandidates) { for (const sp of snapPtsY) { const d = Math.abs(sp - g); if (d < bestYDist) { bestYDist = d; bestY = g; snapOffsetY = g - sp; } } }
+      return { activeX: bestX !== null ? [bestX] : [], activeY: bestY !== null ? [bestY] : [], snapOffsetX, snapOffsetY };
+    };
+
+    const onMove = (me) => {
+      if (!dragRef.current) return;
+      dragRef.current.moved = true;
+      const { itemIds, startPointer, startPositions, page, otherItems, primaryId, primarySize } = dragRef.current;
+      if (!page) return;
+      const dx = (me.clientX - startPointer.x) / zoomRef.current;
+      const dy = (me.clientY - startPointer.y) / zoomRef.current;
+      const g = gridSizeRef.current;
+      const primaryStart = startPositions[primaryId];
+      let snapX = 0, snapY = 0;
+      let guideX = [], guideY = [];
+      if (primaryStart && primarySize && itemIds.length === 1) {
+        const rawX = primaryStart.x + dx;
+        const rawY = primaryStart.y + dy;
+        const guides = calcGuides(rawX, rawY, primarySize.w, primarySize.h, page, otherItems);
+        snapX = guides.snapOffsetX; snapY = guides.snapOffsetY;
+        guideX = guides.activeX; guideY = guides.activeY;
+      }
+      setAlignmentGuides({ pageId: page.id, x: guideX, y: guideY });
+      setCanvasItems(prev => prev.map(ci => {
+        if (!itemIds.includes(ci.id)) return ci;
+        const s = startPositions[ci.id];
+        if (!s) return ci;
+        const MIN_VIS = 40;
+        const nx = Math.max(MIN_VIS - ci.width, Math.min(snap(s.x + dx + snapX, g), page.width - MIN_VIS));
+        const ny = Math.max(MIN_VIS - ci.height, Math.min(snap(s.y + dy + snapY, g), page.height - MIN_VIS));
+        return { ...ci, x: nx, y: ny };
+      }));
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      setAlignmentGuides({ pageId: null, x: [], y: [] });
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const startResize = (e, item, handle) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const aspectRatio = item.type === "image" ? item.width / item.height : null;
+    const minW = item.type === "text" ? 80 : 60;
+    const minH = 40;
+    const page = boardPages.find(p => p.id === item.pageId);
+    dragRef.current = { type: "resize", itemId: item.id, handle, startPointer: { x: e.clientX, y: e.clientY }, startSize: { w: item.width, h: item.height }, startPos: { x: item.x, y: item.y }, page, aspectRatio, minW, minH };
+    const onMove = (me) => {
+      if (!dragRef.current || dragRef.current.type !== "resize") return;
+      const { itemId, handle, startPointer, startSize, startPos, page, aspectRatio, minW, minH } = dragRef.current;
+      if (!page) return;
+      const dx = (me.clientX - startPointer.x) / zoomRef.current;
+      const dy = (me.clientY - startPointer.y) / zoomRef.current;
+      let nx = startPos.x, ny = startPos.y, nw = startSize.w, nh = startSize.h;
+      if (handle.includes("e")) nw = Math.max(minW, startSize.w + dx);
+      if (handle.includes("w")) { nw = Math.max(minW, startSize.w - dx); nx = startPos.x + startSize.w - nw; }
+      if (handle.includes("s")) nh = Math.max(minH, startSize.h + dy);
+      if (handle.includes("n")) { nh = Math.max(minH, startSize.h - dy); ny = startPos.y + startSize.h - nh; }
+      if (aspectRatio) {
+        const isCorner = handle.length === 2;
+        if (isCorner) { if (Math.abs(dx) >= Math.abs(dy)) { nh = nw / aspectRatio; if (handle.includes("n")) ny = startPos.y + startSize.h - nh; } else { nw = nh * aspectRatio; if (handle.includes("w")) nx = startPos.x + startSize.w - nw; } }
+        else if (handle === "e" || handle === "w") { nh = nw / aspectRatio; }
+        else { nw = nh * aspectRatio; if (handle === "n") ny = startPos.y + startSize.h - nh; }
+      }
+      const g = gridSizeRef.current;
+      nw = Math.max(minW, snap(nw, g)); nh = Math.max(minH, snap(nh, g));
+      nx = Math.max(0, Math.min(snap(nx, g), page.width - nw));
+      ny = Math.max(0, Math.min(snap(ny, g), page.height - nh));
+      setCanvasItems(prev => prev.map(ci => ci.id === itemId ? { ...ci, x: nx, y: ny, width: nw, height: nh } : ci));
+    };
+    const onUp = () => { dragRef.current = null; window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const startPageResize = (e, page) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    dragRef.current = { type: "page-resize", pageId: page.id, startPointer: { x: e.clientX, y: e.clientY }, startSize: { w: page.width, h: page.height }, currentSize: { w: page.width, h: page.height } };
+    const onMove = (me) => {
+      if (!dragRef.current || dragRef.current.type !== "page-resize") return;
+      const { startPointer, startSize } = dragRef.current;
+      const dx = (me.clientX - startPointer.x) / zoomRef.current;
+      const dy = (me.clientY - startPointer.y) / zoomRef.current;
+      const nw = Math.max(480, snap(startSize.w + dx, gridSizeRef.current));
+      const nh = Math.max(360, snap(startSize.h + dy, gridSizeRef.current));
+      dragRef.current.currentSize = { w: nw, h: nh };
+      setResizingPage({ pageId: dragRef.current.pageId, width: nw, height: nh });
+    };
+    const onUp = () => {
+      if (dragRef.current?.type === "page-resize") {
+        const { pageId, currentSize } = dragRef.current;
+        updatePage(pageId, { width: currentSize.w, height: currentSize.h, presetKey: "custom" });
+        setResizingPage(null);
+        const container = boardScrollRef.current;
+        if (container) setZoom(parseFloat(Math.max(0.1, Math.min(1, (container.clientWidth - 72) / currentSize.w)).toFixed(2)));
+      }
+      dragRef.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const startSelectionBox = (e, page) => {
+    if (e.button !== 0) return;
+    if (e.target !== e.currentTarget) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const sx = (e.clientX - rect.left) / zoomRef.current;
+    const sy = (e.clientY - rect.top) / zoomRef.current;
+    setSelectedItemIds([]);
+    setEditingTextId(null);
+    selectionBoxRef.current = { startX: sx, startY: sy, pageId: page.id };
+    setSelectionBox({ pageId: page.id, x: sx, y: sy, w: 0, h: 0 });
+    const onMove = (me) => {
+      if (!selectionBoxRef.current) return;
+      const { startX, startY } = selectionBoxRef.current;
+      const cx = (me.clientX - rect.left) / zoomRef.current;
+      const cy = (me.clientY - rect.top) / zoomRef.current;
+      setSelectionBox({ pageId: page.id, x: Math.min(startX, cx), y: Math.min(startY, cy), w: Math.abs(cx - startX), h: Math.abs(cy - startY) });
+    };
+    const onUp = (ue) => {
+      if (selectionBoxRef.current) {
+        const { startX, startY } = selectionBoxRef.current;
+        const cx = (ue.clientX - rect.left) / zoomRef.current;
+        const cy = (ue.clientY - rect.top) / zoomRef.current;
+        const selX = Math.min(startX, cx), selY = Math.min(startY, cy);
+        const selW = Math.abs(cx - startX), selH = Math.abs(cy - startY);
+        if (selW > 5 || selH > 5) {
+          const hits = canvasItems.filter(ci => ci.boardId === activeBoard.id && ci.pageId === page.id && !ci.hidden && ci.x < selX + selW && ci.x + ci.width > selX && ci.y < selY + selH && ci.y + ci.height > selY);
+          setSelectedItemIds(hits.map(ci => ci.id));
+        }
+      }
+      selectionBoxRef.current = null;
+      setSelectionBox(null);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   };
 
   const applyCanvasPreset = (pageId, presetKey) => {
@@ -731,47 +1275,12 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     updateCanvasItem(itemId, { hidden: !item.hidden });
   };
 
-  const fetchPinterestBoard = async () => {
-    const url = pinterestUrl.trim();
-    if (!url || !/pinterest\./i.test(url)) {
-      setStatusMessage("Please enter a valid Pinterest board URL.");
-      return;
-    }
-    setPinterestLoading(true);
-    setStatusMessage("Fetching Pinterest board images…");
-    try {
-      const res = await fetch(`/.netlify/functions/pinterest-scrape?url=${encodeURIComponent(url)}`);
-      const data = await res.json();
-      if (!res.ok || !data.images?.length) {
-        setStatusMessage(data.error || "No images found. Board may be private or blocked.");
-        return;
-      }
-      const newImages = data.images.map((img) => ({
-        id: makeId("img"),
-        sourceLinkId: null,
-        title: img.title || "Pinterest Pin",
-        url: img.url,
-        originalUrl: img.url,
-        width: img.width || 736,
-        height: img.height || 552,
-        source: "pinterest",
-      }));
-      setImages((prev) => [...prev, ...newImages]);
-      setPinterestUrl("");
-      setStatusMessage(`Added ${newImages.length} Pinterest images to the Roll.`);
-    } catch (err) {
-      setStatusMessage("Pinterest fetch failed: " + err.message);
-    } finally {
-      setPinterestLoading(false);
-    }
-  };
-
   const clearLocalMoodBoard = () => {
     const board = makeBoard(1);
     setBoards([board]);
     setActiveBoardId(board.id);
     setLinks([]);
-    setImages(SAMPLE_IMAGES);
+    setImages([]);
     setCanvasItems([]);
     setSelectedItemIds([]);
     localStorage.removeItem(storageKey);
@@ -789,57 +1298,39 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     const image = item.type === "image" ? images.find((img) => img.id === item.imageId) : null;
     const isSelected = selectedItemIds.includes(item.id);
     const locked = item.locked || isViewOnly || !canEdit;
-    const selectedGroupIds = isSelected ? selectedItemIds : [item.id];
+    const HANDLE_DIRS = ["nw","n","ne","w","e","sw","s","se"];
+    const CURSORS = { nw:"nw-resize",n:"n-resize",ne:"ne-resize",w:"w-resize",e:"e-resize",sw:"sw-resize",s:"s-resize",se:"se-resize" };
 
     return (
-      <Rnd
+      <div
         key={item.id}
-        scale={zoom}
-        bounds="parent"
-        size={{ width: item.width, height: item.height }}
-        position={{ x: item.x, y: item.y }}
-        lockAspectRatio={item.type === "image"}
-        dragGrid={[gridSize, gridSize]}
-        resizeGrid={[gridSize, gridSize]}
-        disableDragging={locked}
-        enableResizing={!locked}
-        minWidth={item.type === "text" ? 80 : 60}
-        minHeight={item.type === "text" ? 40 : 40}
         style={{
+          position: "absolute",
+          left: item.x,
+          top: item.y,
+          width: item.width,
+          height: item.height,
           zIndex: item.zIndex,
-          outline: isSelected ? "2px solid #2196F3" : "1px solid transparent",
-          boxShadow: isSelected ? "0 0 0 4px rgba(33, 150, 243, 0.15)" : "none",
+          outline: isSelected ? "2px solid #2196F3" : "none",
+          boxShadow: isSelected ? "0 0 0 3px rgba(33,150,243,0.15)" : "none",
           backgroundColor: item.type === "text" ? item.backgroundColor : "transparent",
           opacity: item.opacity ?? 1,
+          cursor: locked ? "default" : "move",
+          userSelect: "none",
+          boxSizing: "border-box",
         }}
-        onClick={(event) => handleSelectItem(event, item.id)}
-        onDoubleClick={(event) => {
-          event.stopPropagation();
+        onPointerDown={(e) => {
+          if (e.button === 1) return; // let middle click bubble to scroll container
+          e.stopPropagation();
+          if (!locked) startDrag(e, item);
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!dragRef.current?.moved) handleSelectItem(e, item.id);
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
           if (item.type === "text") setEditingTextId(item.id);
-        }}
-        onDragStop={(event, d) => {
-          const page = boardPages.find((p) => p.id === item.pageId);
-          if (!page) return;
-          const next = {
-            x: Math.max(0, Math.min(snap(d.x, gridSize), Math.max(0, page.width - item.width))),
-            y: Math.max(0, Math.min(snap(d.y, gridSize), Math.max(0, page.height - item.height))),
-          };
-          if (selectedItemIds.length > 1 && selectedItemIds.includes(item.id)) {
-            moveSelectedByDelta(selectedGroupIds, 0, 0, item.id, next);
-          } else {
-            updateCanvasItem(item.id, next);
-          }
-        }}
-        onResizeStop={(event, direction, ref, delta, position) => {
-          const page = boardPages.find((p) => p.id === item.pageId);
-          if (!page) return;
-          const width = snap(ref.offsetWidth, gridSize);
-          const height = snap(ref.offsetHeight, gridSize);
-          updateCanvasItem(item.id, {
-            width, height,
-            x: Math.max(0, Math.min(snap(position.x, gridSize), Math.max(0, page.width - width))),
-            y: Math.max(0, Math.min(snap(position.y, gridSize), Math.max(0, page.height - height))),
-          });
         }}
       >
         {item.type === "image" && image && (
@@ -847,126 +1338,115 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
             src={image.url}
             alt={image.title || "Mood board reference"}
             draggable={false}
-            style={{ width: "100%", height: "100%", objectFit: item.objectFit || "cover", display: "block", userSelect: "none" }}
+            style={{ width: "100%", height: "100%", objectFit: item.objectFit || "contain", display: "block", userSelect: "none", pointerEvents: "none" }}
           />
         )}
         {item.type === "text" && (
           <textarea
-          value={item.text}
-          readOnly={editingTextId !== item.id}
-          disabled={locked}
-          onChange={(event) => updateCanvasItem(item.id, { text: event.target.value, name: event.target.value?.slice(0, 24) || "Text" })}
-          onClick={(event) => { event.stopPropagation(); }}
-          onBlur={() => setEditingTextId(null)}
-          tabIndex={editingTextId === item.id ? 0 : -1}
-          style={{
-              width: "100%",
-              height: "100%",
-              resize: "none",
-              border: "none",
-              outline: "none",
-              background: "transparent",
-              color: item.color,
-              fontFamily: item.fontFamily,
-              fontSize: item.fontSize,
-              fontWeight: item.fontWeight,
-              lineHeight: 1.1,
-              padding: "6px",
-              boxSizing: "border-box",
-              overflow: "hidden",
+            value={item.text}
+            readOnly={editingTextId !== item.id}
+            disabled={locked}
+            onChange={(event) => updateCanvasItem(item.id, { text: event.target.value, name: event.target.value?.slice(0, 24) || "Text" })}
+            onClick={(event) => { event.stopPropagation(); }}
+            onBlur={() => setEditingTextId(null)}
+            tabIndex={editingTextId === item.id ? 0 : -1}
+            style={{
+              width: "100%", height: "100%", resize: "none", border: "none", outline: "none",
+              background: "transparent", color: item.color, fontFamily: item.fontFamily,
+              fontSize: item.fontSize, fontWeight: item.fontWeight,
+              lineHeight: item.lineHeight ?? 1.1,
+              letterSpacing: item.letterSpacing ? `${item.letterSpacing}px` : "normal",
+              padding: "6px", boxSizing: "border-box", overflow: "hidden",
               pointerEvents: editingTextId === item.id ? "auto" : "none",
               cursor: editingTextId === item.id ? "text" : "default",
               userSelect: editingTextId === item.id ? "text" : "none",
             }}
           />
         )}
-      </Rnd>
+
+        {isSelected && !locked && HANDLE_DIRS.map(handle => {
+          const half = 4;
+          const s = {};
+          if (handle.includes("n")) s.top = -half; else if (handle.includes("s")) s.bottom = -half; else s.top = `calc(50% - ${half}px)`;
+          if (handle.includes("w")) s.left = -half; else if (handle.includes("e")) s.right = -half; else s.left = `calc(50% - ${half}px)`;
+          return (
+            <div
+              key={handle}
+              onPointerDown={(e) => startResize(e, item, handle)}
+              style={{ position: "absolute", width: 8, height: 8, backgroundColor: "white", border: "1.5px solid #2196F3", borderRadius: "2px", cursor: CURSORS[handle], zIndex: 10, ...s }}
+            />
+          );
+        })}
+      </div>
     );
   };
 
   const renderPage = (page, pageIndex) => {
     const pageItems = canvasItems.filter((item) => item.boardId === activeBoard.id && item.pageId === page.id);
     const isActive = activePage?.id === page.id;
+    const currentW = resizingPage?.pageId === page.id ? resizingPage.width : page.width;
+    const currentH = resizingPage?.pageId === page.id ? resizingPage.height : page.height;
+
     return (
       <div key={page.id} ref={(el) => { pageRefs.current[page.id] = el; }} style={{ marginBottom: "56px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px", color: "#333", position: "relative", zIndex: 20, backgroundColor: "#d9d9d9", padding: "4px 0" }}>
           <button onClick={() => setActivePage(page.id)} style={{ fontWeight: isActive ? "bold" : "normal", padding: "6px 10px", cursor: "pointer" }}>
             {page.name || `Page ${pageIndex + 1}`}
           </button>
-          <input
-            value={page.name || ""}
-            onChange={(event) => updatePage(page.id, { name: event.target.value })}
-            disabled={!canEdit || isViewOnly}
-            style={{ width: "130px", padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px" }}
-          />
+          <input value={page.name || ""} onChange={(event) => updatePage(page.id, { name: event.target.value })} disabled={!canEdit || isViewOnly} style={{ width: "130px", padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px" }} />
           <select value={page.presetKey || "custom"} onChange={(event) => applyCanvasPreset(page.id, event.target.value)} style={{ padding: "6px", fontSize: "12px" }}>
             {CANVAS_PRESETS.map((preset) => <option key={preset.key} value={preset.key}>{preset.label}</option>)}
           </select>
           <label style={{ fontSize: "12px" }}>BG <input type="color" value={page.backgroundColor || "#ffffff"} onChange={(event) => updatePage(page.id, { backgroundColor: event.target.value })} /></label>
           <button onClick={() => duplicatePage(page.id)} disabled={!canEdit || isViewOnly} style={{ fontSize: "11px" }}>Duplicate Page</button>
           <button onClick={() => deletePage(page.id)} disabled={!canEdit || isViewOnly} style={{ fontSize: "11px" }}>Delete Page</button>
-          <span style={{ fontSize: "11px", color: "#777" }}>{page.width} × {page.height}</span>
+          <span style={{ fontSize: "11px", color: "#777" }}>{currentW} × {currentH}</span>
         </div>
 
-        <Rnd
-          scale={zoom}
-          size={{ width: page.width, height: page.height }}
-          position={{ x: 0, y: 0 }}
-          disableDragging
-          enableResizing={page.presetKey === "custom" && canEdit && !isViewOnly}
-          minWidth={480}
-          minHeight={360}
-          resizeGrid={[gridSize, gridSize]}
-          onResize={(event, direction, ref) => {
-            setResizingPage({ pageId: page.id, width: ref.offsetWidth, height: ref.offsetHeight });
-          }}
-          onResizeStop={(event, direction, ref) => {
-            const newWidth = snap(ref.offsetWidth, gridSize);
-            const newHeight = snap(ref.offsetHeight, gridSize);
-            updatePage(page.id, { width: newWidth, height: newHeight, presetKey: "custom" });
-            setResizingPage(null);
-            setTimeout(() => {
-              const container = boardScrollRef.current;
-              if (!container) return;
-              const availableWidth = container.clientWidth - 72;
-              setZoom(parseFloat(Math.max(0.1, Math.min(1, availableWidth / newWidth)).toFixed(2)));
-            }, 30);
-          }}
-          style={{ position: "relative", zIndex: 1 }}
-        >
+        <div style={{ position: "relative", display: "inline-block" }}>
           {resizingPage?.pageId === page.id && (
             <div style={{ position: "absolute", top: -26, left: 0, fontSize: "11px", fontWeight: "bold", color: "#2196F3", backgroundColor: "rgba(255,255,255,0.92)", padding: "2px 7px", borderRadius: "3px", zIndex: 100, pointerEvents: "none", boxShadow: "0 1px 4px rgba(0,0,0,0.15)" }}>
               {resizingPage.width} × {resizingPage.height}
             </div>
           )}
           <div
-            onClick={() => {
-              setActivePage(page.id);
-              setSelectedItemIds([]);
-              setEditingTextId(null);
-            }}
+            ref={el => { pageExportRefs.current[page.id] = el; }}
+            onPointerDown={(e) => startSelectionBox(e, page)}
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => handlePageDrop(event, page)}
             style={{
-              width: resizingPage?.pageId === page.id ? resizingPage.width : page.width,
-              height: resizingPage?.pageId === page.id ? resizingPage.height : page.height,
-              position: "relative",
+              width: currentW, height: currentH, position: "relative",
               backgroundColor: page.backgroundColor || "#ffffff",
               boxShadow: "0 4px 18px rgba(0,0,0,0.22)",
-              backgroundImage: showGrid
-                ? `linear-gradient(to right, #ececec 1px, transparent 1px), linear-gradient(to bottom, #ececec 1px, transparent 1px)`
-                : "none",
-                backgroundSize: `${gridSize}px ${gridSize}px`,
+              backgroundImage: showGrid ? `linear-gradient(to right, #ececec 1px, transparent 1px), linear-gradient(to bottom, #ececec 1px, transparent 1px)` : "none",
+              backgroundSize: `${gridSize}px ${gridSize}px`,
               overflow: "hidden",
             }}
           >
             {[...pageItems].filter((item) => !item.hidden).sort((a, b) => a.zIndex - b.zIndex).map(renderCanvasItem)}
+            {selectionBox?.pageId === page.id && selectionBox.w > 2 && (
+              <div style={{ position: "absolute", left: selectionBox.x, top: selectionBox.y, width: selectionBox.w, height: selectionBox.h, border: "1px dashed #2196F3", backgroundColor: "rgba(33,150,243,0.06)", pointerEvents: "none", zIndex: 9999 }} />
+            )}
+            {alignmentGuides.pageId === page.id && alignmentGuides.x.map((gx, i) => (
+              <div key={`gx${i}`} style={{ position: "absolute", left: gx - 0.5, top: 0, width: 1, height: currentH, backgroundColor: "#FF4081", pointerEvents: "none", zIndex: 9998, opacity: 0.7 }} />
+            ))}
+            {alignmentGuides.pageId === page.id && alignmentGuides.y.map((gy, i) => (
+              <div key={`gy${i}`} style={{ position: "absolute", top: gy - 0.5, left: 0, height: 1, width: currentW, backgroundColor: "#FF4081", pointerEvents: "none", zIndex: 9998, opacity: 0.7 }} />
+            ))}
           </div>
-        </Rnd>
+          {page.presetKey === "custom" && canEdit && !isViewOnly && (
+            <div
+              onPointerDown={(e) => startPageResize(e, page)}
+              title="Drag to resize canvas"
+              style={{ position: "absolute", bottom: -6, right: -6, width: 14, height: 14, backgroundColor: "#2196F3", borderRadius: "3px", cursor: "se-resize", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center" }}
+            >
+              <div style={{ width: 6, height: 6, borderRight: "2px solid white", borderBottom: "2px solid white" }} />
+            </div>
+          )}
+        </div>
       </div>
     );
   };
-
   return (
     <div style={{ height: "calc(100vh - 44px)", display: "flex", overflow: "hidden", backgroundColor: "#f0f0f0", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
       <div style={{ width: LEFT_PANEL_WIDTH, flexShrink: 0, backgroundColor: "#f8f8f8", borderRight: "1px solid #ccc", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -988,6 +1468,13 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
               return (
                 <div key={board.id} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px", backgroundColor: isActive ? "#e3f2fd" : "white", borderBottom: "1px solid #eee" }}>
                   <input value={board.name} onChange={(event) => renameBoard(board.id, event.target.value)} onFocus={() => setActiveBoardId(board.id)} disabled={!canEdit || isViewOnly} style={{ flex: 1, border: "none", background: "transparent", fontWeight: isActive ? "bold" : "normal", fontSize: "12px", outline: "none" }} />
+                  {(board.createdBy || userDisplayName) && (
+                    <span style={{ fontSize: "9px", color: "#aaa", whiteSpace: "nowrap", marginRight: "2px" }}>
+                      {(board.createdBy || userDisplayName).includes("@")
+                        ? (board.createdBy || userDisplayName).split("@")[0]
+                        : (board.createdBy || userDisplayName)}
+                    </span>
+                  )}
                   <button onClick={() => setActiveBoardId(board.id)} style={{ fontSize: "10px", cursor: "pointer" }}>Open</button>
                   <button onClick={() => addPageToBoard(board.id, true)} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer" }}>+ Page</button>
                   <button onClick={() => deleteBoard(board.id)} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer" }}>×</button>
@@ -1005,12 +1492,10 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           <div style={{ display: "flex", borderBottom: "1px solid #ccc", marginBottom: "8px", flexShrink: 0 }}>
             <button onClick={() => setActiveInputTab("links")} style={{ flex: 1, padding: "6px 4px", border: "none", borderBottom: activeInputTab === "links" ? "3px solid #2196F3" : "3px solid transparent", background: "transparent", fontWeight: activeInputTab === "links" ? "bold" : "normal", cursor: "pointer", fontSize: "11px" }}>Links</button>
             <button onClick={() => setActiveInputTab("images")} style={{ flex: 1, padding: "6px 4px", border: "none", borderBottom: activeInputTab === "images" ? "3px solid #2196F3" : "3px solid transparent", background: "transparent", fontWeight: activeInputTab === "images" ? "bold" : "normal", cursor: "pointer", fontSize: "11px" }}>Image URLs</button>
-            <button onClick={() => setActiveInputTab("pinterest")} style={{ flex: 1, padding: "6px 4px", border: "none", borderBottom: activeInputTab === "pinterest" ? "3px solid #E60023" : "3px solid transparent", background: "transparent", fontWeight: activeInputTab === "pinterest" ? "bold" : "normal", cursor: "pointer", fontSize: "11px", color: activeInputTab === "pinterest" ? "#E60023" : "inherit" }}>Pinterest</button>
           </div>
 
           {activeInputTab === "links" && (
             <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-              <input value={newLinkTitle} onChange={(event) => setNewLinkTitle(event.target.value)} placeholder="Optional title" disabled={!canEdit || isViewOnly} style={{ width: "100%", padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px", boxSizing: "border-box", marginBottom: "5px", flexShrink: 0 }} />
               <div style={{ display: "flex", gap: "4px", marginBottom: "6px", flexShrink: 0 }}>
                 <input value={newLinkUrl} onChange={(event) => setNewLinkUrl(event.target.value)} placeholder="Reference URL" disabled={!canEdit || isViewOnly} style={{ flex: 1, padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px" }} />
                 <button onClick={addSourceLink} disabled={!canEdit || isViewOnly} style={{ padding: "6px 9px", cursor: "pointer" }}>Add</button>
@@ -1036,38 +1521,9 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
 
 {activeInputTab === "images" && (
             <div style={{ overflow: "hidden" }}>
-              <input value={manualImageTitle} onChange={(event) => setManualImageTitle(event.target.value)} placeholder="Optional image title" disabled={!canEdit || isViewOnly} style={{ width: "100%", padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px", boxSizing: "border-box", marginBottom: "5px" }} />
               <div style={{ display: "flex", gap: "4px" }}>
                 <input value={manualImageUrl} onChange={(event) => setManualImageUrl(event.target.value)} placeholder="Direct image URL (.jpg, .png…)" disabled={!canEdit || isViewOnly} style={{ flex: 1, padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px" }} />
                 <button onClick={addManualImageUrl} disabled={!canEdit || isViewOnly} style={{ padding: "6px 9px", cursor: "pointer" }}>Add</button>
-              </div>
-            </div>
-          )}
-
-          {activeInputTab === "pinterest" && (
-            <div style={{ overflow: "hidden" }}>
-              <div style={{ fontSize: "11px", color: "#666", marginBottom: "7px", lineHeight: 1.4 }}>
-                Paste a public Pinterest board URL to pull images into your Roll.
-              </div>
-              <div style={{ display: "flex", gap: "4px", marginBottom: "6px" }}>
-                <input
-                  value={pinterestUrl}
-                  onChange={(e) => setPinterestUrl(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") fetchPinterestBoard(); }}
-                  placeholder="https://pinterest.com/user/board/"
-                  disabled={pinterestLoading || !canEdit || isViewOnly}
-                  style={{ flex: 1, padding: "6px", fontSize: "12px", border: "1px solid #E60023", borderRadius: "4px" }}
-                />
-                <button
-                  onClick={fetchPinterestBoard}
-                  disabled={pinterestLoading || !pinterestUrl.trim() || !canEdit || isViewOnly}
-                  style={{ padding: "6px 9px", cursor: "pointer", backgroundColor: "#E60023", color: "white", border: "none", borderRadius: "4px", fontWeight: "bold", fontSize: "12px" }}
-                >
-                  {pinterestLoading ? "…" : "Import"}
-                </button>
-              </div>
-              <div style={{ fontSize: "10px", color: "#aaa", lineHeight: 1.4 }}>
-                Public boards only. Results depend on Pinterest's page structure and may vary.
               </div>
             </div>
           )}
@@ -1082,9 +1538,26 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           <input value={rollSearch} onChange={(event) => setRollSearch(event.target.value)} placeholder="Search roll..." style={{ width: "100%", padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px", boxSizing: "border-box", marginBottom: "8px" }} />
           <div style={{ flex: 1, overflowY: "auto", columnCount: 3, columnGap: "8px" }}>
             {filteredImages.map((image) => (
-              <div key={image.id} draggable onDragStart={() => { draggingRollImageRef.current = image; }} onDragEnd={() => { draggingRollImageRef.current = null; }} onDoubleClick={() => addImageToCanvas(image)} title={image.title || "Reference"} style={{ breakInside: "avoid", marginBottom: "8px", backgroundColor: "white", border: "1px solid #ddd", borderRadius: "4px", overflow: "hidden", cursor: "grab" }}>
-                <img src={image.url} alt={image.title || "Reference"} draggable={false} style={{ width: "100%", height: "auto", display: "block" }} />
-              </div>
+              <RollImage
+                key={image.id}
+                image={image}
+                canEdit={canEdit}
+                isViewOnly={isViewOnly}
+                isDragging={rollDragId === image.id}
+                isDragOver={rollDragOverId === image.id && rollDragId !== image.id}
+                onDragStart={() => { draggingRollImageRef.current = image; setRollDragId(image.id); }}
+                onDragEnd={() => {
+                  if (rollDragId && rollDragOverId) reorderImages(rollDragId, rollDragOverId);
+                  draggingRollImageRef.current = null;
+                  setRollDragId(null);
+                  setRollDragOverId(null);
+                }}
+                onDragOver={() => { if (rollDragId && rollDragId !== image.id) setRollDragOverId(image.id); }}
+                onDoubleClick={() => addImageToCanvas(image)}
+                onLightbox={() => setLightboxImage({ url: image.url, title: image.title })}
+                onDelete={() => deleteImage(image.id)}
+                onRenameTitle={(title) => updateImageTitle(image.id, title)}
+              />
             ))}
           </div>
         </div>
@@ -1094,10 +1567,10 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
       <div style={{ flexShrink: 0, backgroundColor: "white", borderBottom: "1px solid #ccc", boxSizing: "border-box", overflow: "visible", position: "relative", zIndex: 50 }}>
           <div style={{ minHeight: "48px", display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", flexWrap: "wrap" }}>
           <strong style={{ fontSize: "14px", marginRight: "8px" }}>{activeBoard?.name}</strong>
+            <button onClick={addPage} disabled={!canEdit || isViewOnly} style={{ padding: "6px 10px", cursor: "pointer" }}>Add Page</button>
             <button onClick={addTextToCanvas} disabled={!canEdit || isViewOnly} style={{ padding: "6px 10px", cursor: "pointer" }}>Add Text</button>
             <button onClick={duplicateSelectedItems} disabled={!selectedItems.length || !canEdit || isViewOnly} style={{ padding: "6px 10px", cursor: "pointer" }}>Duplicate</button>
             <button onClick={deleteSelectedItems} disabled={!selectedItems.length || !canEdit || isViewOnly} style={{ padding: "6px 10px", cursor: "pointer" }}>Delete</button>
-            <button onClick={clearLocalMoodBoard} disabled={!canEdit || isViewOnly} style={{ padding: "6px 10px", cursor: "pointer" }}>Clear Local</button>
             <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px" }}>
               <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} /> Grid
             </label>
@@ -1115,6 +1588,10 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
               Zoom <input type="range" min="0.1" max="1.5" step="0.05" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} style={{ width: "80px" }} /> {Math.round(zoom * 100)}%
             </label>
             <button onClick={fitToWidth} style={{ padding: "6px 10px", cursor: "pointer", fontSize: "12px", backgroundColor: "#f0f0f0", border: "1px solid #ccc", borderRadius: "3px" }}>Fit</button>
+            <button onClick={exportBoardToPdf} disabled={exportingPdf} style={{ padding: "6px 10px", cursor: "pointer", fontSize: "12px", backgroundColor: exportingPdf ? "#e0e0e0" : "#E91E63", color: exportingPdf ? "#666" : "white", border: "none", borderRadius: "3px", fontWeight: "bold" }}>
+              {exportingPdf ? "Exporting…" : "Export PDF"}
+            </button>
+            <button onClick={() => setShowLayerPanel(p => !p)} style={{ padding: "6px 10px", cursor: "pointer", fontSize: "12px", backgroundColor: showLayerPanel ? "#e3f2fd" : "#f0f0f0", border: "1px solid #ccc", borderRadius: "3px" }}>Layers</button>
             <div style={{ marginLeft: "auto", fontSize: "11px", color: "#777", maxWidth: "360px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{statusMessage}</div>
           </div>
 
@@ -1153,6 +1630,16 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                     </select>
                     <label style={{ fontSize: "12px" }}>Color <input type="color" value={primarySelectedItem.color} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { color: event.target.value })} /></label>
                     <label style={{ fontSize: "12px" }}>BG <input type="color" value={primarySelectedItem.backgroundColor === "transparent" ? "#ffffff" : primarySelectedItem.backgroundColor} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { backgroundColor: event.target.value })} /></label>
+                    <label style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}>
+                      Tracking
+                      <input type="range" min="-5" max="30" step="0.5" value={primarySelectedItem.letterSpacing ?? 0} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { letterSpacing: Number(e.target.value) })} style={{ width: "60px" }} />
+                      <span style={{ fontSize: "10px", width: "24px" }}>{primarySelectedItem.letterSpacing ?? 0}</span>
+                    </label>
+                    <label style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}>
+                      Leading
+                      <input type="range" min="0.7" max="3" step="0.05" value={primarySelectedItem.lineHeight ?? 1.1} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { lineHeight: Number(e.target.value) })} style={{ width: "60px" }} />
+                      <span style={{ fontSize: "10px", width: "24px" }}>{(primarySelectedItem.lineHeight ?? 1.1).toFixed(2)}</span>
+                    </label>
                     <button onClick={() => updateCanvasItem(primarySelectedItem.id, { backgroundColor: "transparent" })} style={{ fontSize: "11px" }}>Clear BG</button>
                   </>
                 )}
@@ -1162,10 +1649,32 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
         </div>
 
         <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-          <div ref={boardScrollRef} style={{ flex: 1, overflow: "auto", position: "relative", backgroundColor: "#d9d9d9", zIndex: 1 }}>
-            <div style={{ padding: "36px", transform: `scale(${zoom})`, transformOrigin: "top left", width: activePage ? Math.max(...boardPages.map((page) => page.width)) + 80 : "auto" }}>
-              {boardPages.map((page, pageIndex) => renderPage(page, pageIndex))}
-            </div>
+        <div
+            ref={boardScrollRef}
+            style={{ flex: 1, overflow: "auto", position: "relative", backgroundColor: "#d9d9d9", zIndex: 1 }}
+            onPointerDown={(e) => {
+              if (e.button !== 1) return;
+              e.preventDefault();
+              const el = boardScrollRef.current;
+              const startX = e.clientX + el.scrollLeft;
+              const startY = e.clientY + el.scrollTop;
+              const onMove = (me) => { el.scrollLeft = startX - me.clientX; el.scrollTop = startY - me.clientY; };
+              const onUp = () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+              window.addEventListener("pointermove", onMove);
+              window.addEventListener("pointerup", onUp);
+            }}
+          >
+            {(() => {
+              const maxW = boardPages.length ? Math.max(...boardPages.map(p => p.width)) : 1600;
+              const scaledW = Math.ceil((maxW + 80) * zoom);
+              return (
+                <div style={{ width: scaledW, minWidth: "100%" }}>
+                  <div style={{ padding: "36px", transform: `scale(${zoom})`, transformOrigin: "top left", width: maxW + 80 }}>
+                    {boardPages.map((page, pageIndex) => renderPage(page, pageIndex))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {showLayerPanel && (
@@ -1179,14 +1688,73 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                     {pageItems.length === 0 && <div style={{ padding: "8px 12px", fontSize: "11px", color: "#999" }}>No layers</div>}
                     {pageItems.map((item) => {
                       const selected = selectedItemIds.includes(item.id);
+                      const isDragOver = layerDrag?.overItemId === item.id && layerDrag?.itemId !== item.id;
                       return (
-                        <div key={item.id} onClick={(event) => handleSelectItem(event, item.id)} style={{ padding: "7px 10px", fontSize: "11px", cursor: "pointer", backgroundColor: selected ? "#bbdefb" : "white", borderTop: "1px solid #eee", display: "flex", justifyContent: "space-between", gap: "8px" }}>
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: item.hidden ? 0.45 : 1 }}>{item.type === "text" ? "T" : "IMG"} · {renderLayerName(item)}</span>
-                          <span style={{ color: "#999", display: "flex", gap: "4px", flexShrink: 0 }}>
-                            <button onClick={(event) => { event.stopPropagation(); toggleLayerVisibility(item.id); }} title={item.hidden ? "Show" : "Hide"} style={{ fontSize: "10px" }}>{item.hidden ? "Show" : "Hide"}</button>
-                            <button onClick={(event) => { event.stopPropagation(); changeLayerOrder(item.id, 1); }} title="Move up" style={{ fontSize: "10px" }}>↑</button>
-                            <button onClick={(event) => { event.stopPropagation(); changeLayerOrder(item.id, -1); }} title="Move down" style={{ fontSize: "10px" }}>↓</button>
-                            {item.locked ? "🔒" : ""}
+                        <div
+                          key={item.id}
+                          draggable
+                          onDragStart={() => setLayerDrag({ itemId: item.id, overItemId: null })}
+                          onDragOver={(e) => { e.preventDefault(); setLayerDrag(prev => prev ? { ...prev, overItemId: item.id } : null); }}
+                          onDragEnd={() => {
+                            if (layerDrag?.itemId && layerDrag?.overItemId && layerDrag.itemId !== layerDrag.overItemId) {
+                              const a = pageItems.find(i => i.id === layerDrag.itemId);
+                              const b = pageItems.find(i => i.id === layerDrag.overItemId);
+                              if (a && b) {
+                                setCanvasItems(prev => prev.map(ci => {
+                                  if (ci.id === a.id) return { ...ci, zIndex: b.zIndex };
+                                  if (ci.id === b.id) return { ...ci, zIndex: a.zIndex };
+                                  return ci;
+                                }));
+                              }
+                            }
+                            setLayerDrag(null);
+                          }}
+                          onClick={(e) => handleSelectItem(e, item.id)}
+                          style={{ padding: "6px 8px", fontSize: "11px", cursor: "grab", backgroundColor: isDragOver ? "#e3f2fd" : selected ? "#bbdefb" : "white", borderTop: isDragOver ? "2px solid #2196F3" : "1px solid #eee", display: "flex", alignItems: "center", gap: "5px", opacity: item.hidden ? 0.5 : 1 }}
+                        >
+                          {/* Drag handle */}
+                          <span style={{ color: "#ccc", cursor: "grab", flexShrink: 0 }}>⠿</span>
+                          {/* Type badge */}
+                          <span style={{ flexShrink: 0, fontSize: "9px", fontWeight: "bold", backgroundColor: item.type === "text" ? "#E3F2FD" : "#F3E5F5", color: item.type === "text" ? "#1565C0" : "#6A1B9A", padding: "1px 4px", borderRadius: "2px" }}>{item.type === "text" ? "T" : "IMG"}</span>
+                          {/* Editable name */}
+                          {renamingLayerId === item.id ? (
+                            <input
+                              autoFocus
+                              value={renamingLayerDraft}
+                              onChange={(e) => setRenamingLayerDraft(e.target.value)}
+                              onBlur={() => {
+                                if (renamingLayerDraft.trim()) updateCanvasItem(item.id, { name: renamingLayerDraft.trim() });
+                                setRenamingLayerId(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") { if (renamingLayerDraft.trim()) updateCanvasItem(item.id, { name: renamingLayerDraft.trim() }); setRenamingLayerId(null); }
+                                if (e.key === "Escape") setRenamingLayerId(null);
+                                e.stopPropagation();
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ flex: 1, fontSize: "11px", border: "none", outline: "1px solid #2196F3", borderRadius: "2px", padding: "1px 3px", minWidth: 0 }}
+                            />
+                          ) : (
+                            <span
+                              title="Double-click to rename"
+                              onDoubleClick={(e) => { e.stopPropagation(); setRenamingLayerId(item.id); setRenamingLayerDraft(renderLayerName(item)); }}
+                              style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "text" }}
+                            >
+                              {renderLayerName(item)}
+                            </span>
+                          )}
+                          {/* Controls */}
+                          <span style={{ display: "flex", gap: "3px", flexShrink: 0 }}>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleLayerVisibility(item.id); }}
+                              title={item.hidden ? "Show" : "Hide"}
+                              style={{ fontSize: "10px", padding: "1px 4px", cursor: "pointer", backgroundColor: item.hidden ? "#ffecb3" : "transparent", border: "1px solid #ddd", borderRadius: "2px" }}
+                            >{item.hidden ? "👁" : "👁"}</button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); updateCanvasItem(item.id, { locked: !item.locked }); }}
+                              title={item.locked ? "Unlock" : "Lock"}
+                              style={{ fontSize: "10px", padding: "1px 4px", cursor: "pointer", backgroundColor: item.locked ? "#ffebee" : "transparent", border: "1px solid #ddd", borderRadius: "2px" }}
+                            >{item.locked ? "🔒" : "🔓"}</button>
                           </span>
                         </div>
                       );
@@ -1199,31 +1767,98 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
         </div>
       </div>
 
-      {presentMode && activeBoard && (
-        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.82)", zIndex: 10000, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "28px" }}>
-          <button onClick={() => setPresentMode(false)} style={{ position: "absolute", top: "18px", right: "22px", padding: "8px 12px", cursor: "pointer" }}>Close</button>
-          <div style={{ color: "white", marginBottom: "12px", fontWeight: "bold" }}>{activeBoard.name} · Page {presentPageIndex + 1} of {boardPages.length}</div>
-          {(() => {
-            const page = boardPages[presentPageIndex] || boardPages[0];
-            const scale = Math.min((window.innerWidth - 160) / page.width, (window.innerHeight - 160) / page.height, 0.7);
-            const pageItems = canvasItems.filter((item) => item.boardId === activeBoard.id && item.pageId === page.id).sort((a, b) => a.zIndex - b.zIndex);
-            return (
-              <div style={{ width: page.width, height: page.height, transform: `scale(${scale})`, transformOrigin: "center", backgroundColor: page.backgroundColor, position: "relative", boxShadow: "0 8px 35px rgba(0,0,0,0.6)", overflow: "hidden" }}>
-                {pageItems.map((item) => {
-                  const image = item.type === "image" ? images.find((img) => img.id === item.imageId) : null;
-                  return (
-                    <div key={item.id} style={{ position: "absolute", left: item.x, top: item.y, width: item.width, height: item.height, zIndex: item.zIndex, opacity: item.opacity ?? 1, backgroundColor: item.type === "text" ? item.backgroundColor : "transparent" }}>
-                      {item.type === "image" && image && <img src={image.url} alt="" style={{ width: "100%", height: "100%", objectFit: item.objectFit || "cover" }} />}
-                      {item.type === "text" && <div style={{ color: item.color, fontFamily: item.fontFamily, fontSize: item.fontSize, fontWeight: item.fontWeight, lineHeight: 1.1, padding: 6, whiteSpace: "pre-wrap" }}>{item.text}</div>}
-                    </div>
-                  );
-                })}
+      {presentMode && activeBoard && (() => {
+        const page = boardPages[presentPageIndex] || boardPages[0];
+        if (!page) return null;
+        const mainScale = Math.min(
+          (window.innerWidth - 80) / page.width,
+          (window.innerHeight - 180) / page.height
+        );
+        const thumbScale = 0.12;
+        const pageItems = (pg) => canvasItems.filter(item => item.boardId === activeBoard.id && item.pageId === pg.id && !item.hidden).sort((a, b) => a.zIndex - b.zIndex);
+
+        const renderPageContent = (pg, scale) => (
+          <div style={{ width: pg.width, height: pg.height, transform: `scale(${scale})`, transformOrigin: "top left", backgroundColor: pg.backgroundColor || "#fff", position: "relative", overflow: "hidden" }}>
+            {pageItems(pg).map(item => {
+              const img = item.type === "image" ? images.find(i => i.id === item.imageId) : null;
+              return (
+                <div key={item.id} style={{ position: "absolute", left: item.x, top: item.y, width: item.width, height: item.height, zIndex: item.zIndex, opacity: item.opacity ?? 1, backgroundColor: item.type === "text" ? item.backgroundColor : "transparent" }}>
+                  {item.type === "image" && img && <img src={img.url} alt="" style={{ width: "100%", height: "100%", objectFit: item.objectFit || "contain" }} />}
+                  {item.type === "text" && <div style={{ color: item.color, fontFamily: item.fontFamily, fontSize: item.fontSize, fontWeight: item.fontWeight, lineHeight: item.lineHeight ?? 1.1, letterSpacing: item.letterSpacing ? `${item.letterSpacing}px` : "normal", padding: 6, whiteSpace: "pre-wrap" }}>{item.text}</div>}
+                </div>
+              );
+            })}
+          </div>
+        );
+
+        return (
+          <div
+            style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.95)", zIndex: 10000, display: "flex", flexDirection: "column" }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setPresentMode(false);
+              if (e.key === "ArrowRight" || e.key === "ArrowDown") setPresentPageIndex(p => Math.min(boardPages.length - 1, p + 1));
+              if (e.key === "ArrowLeft" || e.key === "ArrowUp") setPresentPageIndex(p => Math.max(0, p - 1));
+            }}
+            tabIndex={0}
+            ref={el => el?.focus()}
+          >
+            {/* Top bar */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", flexShrink: 0 }}>
+              <div style={{ color: "white", fontWeight: "bold", fontSize: "16px" }}>{activeBoard.name}</div>
+              <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "13px" }}>Page {presentPageIndex + 1} of {boardPages.length} · ← → to navigate · Esc to close</div>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button onClick={exportBoardToPdf} disabled={exportingPdf} style={{ padding: "6px 14px", backgroundColor: "#E91E63", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "12px" }}>
+                  {exportingPdf ? "Exporting…" : "Export PDF"}
+                </button>
+                <button onClick={() => setPresentMode(false)} style={{ padding: "6px 14px", backgroundColor: "rgba(255,255,255,0.15)", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "13px" }}>✕ Close</button>
               </div>
-            );
-          })()}
-          <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
-            <button onClick={() => setPresentPageIndex((prev) => Math.max(0, prev - 1))} disabled={presentPageIndex === 0} style={{ padding: "8px 14px" }}>Previous</button>
-            <button onClick={() => setPresentPageIndex((prev) => Math.min(boardPages.length - 1, prev + 1))} disabled={presentPageIndex >= boardPages.length - 1} style={{ padding: "8px 14px" }}>Next</button>
+            </div>
+
+            {/* Main page view */}
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", minHeight: 0 }}>
+              {/* Prev arrow */}
+              {presentPageIndex > 0 && (
+                <button onClick={() => setPresentPageIndex(p => p - 1)} style={{ position: "absolute", left: "20px", backgroundColor: "rgba(255,255,255,0.12)", color: "white", border: "none", borderRadius: "50%", width: "48px", height: "48px", fontSize: "22px", cursor: "pointer", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+              )}
+
+              <div style={{ boxShadow: "0 12px 60px rgba(0,0,0,0.8)" }}>
+                {renderPageContent(page, mainScale)}
+              </div>
+
+              {/* Next arrow */}
+              {presentPageIndex < boardPages.length - 1 && (
+                <button onClick={() => setPresentPageIndex(p => p + 1)} style={{ position: "absolute", right: "20px", backgroundColor: "rgba(255,255,255,0.12)", color: "white", border: "none", borderRadius: "50%", width: "48px", height: "48px", fontSize: "22px", cursor: "pointer", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+              )}
+            </div>
+
+            {/* Thumbnail strip */}
+            {boardPages.length > 1 && (
+              <div style={{ flexShrink: 0, display: "flex", gap: "10px", padding: "14px 20px", overflowX: "auto", backgroundColor: "rgba(0,0,0,0.4)", justifyContent: boardPages.length < 8 ? "center" : "flex-start" }}>
+                {boardPages.map((pg, idx) => (
+                  <div
+                    key={pg.id}
+                    onClick={() => setPresentPageIndex(idx)}
+                    style={{ flexShrink: 0, cursor: "pointer", outline: idx === presentPageIndex ? "3px solid #2196F3" : "2px solid transparent", borderRadius: "3px", overflow: "hidden", opacity: idx === presentPageIndex ? 1 : 0.55, transition: "opacity 0.15s, outline 0.15s", position: "relative" }}
+                  >
+                    <div style={{ width: pg.width * thumbScale, height: pg.height * thumbScale, overflow: "hidden" }}>
+                      {renderPageContent(pg, thumbScale)}
+                    </div>
+                    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.55)", color: "white", fontSize: "9px", textAlign: "center", padding: "2px" }}>{pg.name || `Page ${idx + 1}`}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Roll image lightbox */}
+      {lightboxImage && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.92)", zIndex: 20000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setLightboxImage(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ position: "relative", maxWidth: "92vw", maxHeight: "92vh" }}>
+            <img src={lightboxImage.url} alt={lightboxImage.title} style={{ maxWidth: "92vw", maxHeight: "88vh", objectFit: "contain", display: "block", boxShadow: "0 12px 60px rgba(0,0,0,0.8)" }} />
+            {lightboxImage.title && <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.6)", color: "white", padding: "8px 12px", fontSize: "13px", textAlign: "center" }}>{lightboxImage.title}</div>}
+            <button onClick={() => setLightboxImage(null)} style={{ position: "absolute", top: "-14px", right: "-14px", backgroundColor: "#333", color: "white", border: "none", borderRadius: "50%", width: "30px", height: "30px", fontSize: "16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
           </div>
         </div>
       )}
