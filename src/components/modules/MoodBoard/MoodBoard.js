@@ -1119,41 +1119,45 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           </div>
 
           <div style={{ minHeight: "48px", display: "flex", alignItems: "center", gap: "8px", padding: "6px 10px", backgroundColor: "#fafafa", borderTop: "1px solid #eee", boxSizing: "border-box", flexWrap: "wrap", position: "relative", visibility: primarySelectedItem ? "visible" : "hidden" }}>
-              <span style={{ fontSize: "11px", fontWeight: "bold", color: "#555" }}>{selectedItems.length > 1 ? `${selectedItems.length} ITEMS` : primarySelectedItem.type.toUpperCase()}</span>
-              <label style={{ fontSize: "12px" }}><input type="checkbox" checked={!!primarySelectedItem.locked} onChange={(event) => updateSelectedItems({ locked: event.target.checked })} /> Lock</label>
-              <label style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}>Opacity <input type="range" min="0.1" max="1" step="0.05" value={primarySelectedItem.opacity ?? 1} onChange={(event) => updateSelectedItems({ opacity: Number(event.target.value) })} /></label>
-              {primarySelectedItem.type === "image" && selectedItems.length === 1 && (
-                <select value={primarySelectedItem.objectFit || "contain"} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { objectFit: event.target.value })} style={{ padding: "5px", fontSize: "12px" }}>
-                <option value="contain">Fit Whole Image</option>
-                <option value="cover">Crop / Fill</option>
-              </select>
-              )}
-              {primarySelectedItem.type === "text" && selectedItems.length === 1 && (
-                <>
-                  <div style={{ position: "relative" }}>
-                    <button onClick={() => setShowFontDropdown((prev) => !prev)} style={{ minWidth: "190px", padding: "6px 8px", textAlign: "left", fontFamily: primarySelectedItem.fontFamily }}>{primarySelectedItem.fontFamily}</button>
-                    {showFontDropdown && (
-                      <div style={{ position: "absolute", top: "34px", left: 0, width: "270px", maxHeight: "320px", overflowY: "auto", backgroundColor: "white", border: "1px solid #ccc", boxShadow: "0 4px 14px rgba(0,0,0,0.25)", zIndex: 9999 }}>
-                        {FONT_OPTIONS.map((font) => (
-                          <button key={font.name} onClick={() => { updateCanvasItem(primarySelectedItem.id, { fontFamily: font.name }); setShowFontDropdown(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "9px 10px", border: "none", borderBottom: "1px solid #eee", background: primarySelectedItem.fontFamily === font.name ? "#e3f2fd" : "white", cursor: "pointer" }}>
-                            <div style={{ fontFamily: font.name, fontSize: "22px", lineHeight: 1.1 }}>{font.name}</div>
-                            <div style={{ fontSize: "10px", color: "#777", marginTop: "3px" }}>{font.vibe}</div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <input type="number" value={primarySelectedItem.fontSize} min="8" max="180" onChange={(event) => updateCanvasItem(primarySelectedItem.id, { fontSize: Number(event.target.value) || 12 })} style={{ width: "70px", padding: "5px", fontSize: "12px" }} />
-                  <select value={primarySelectedItem.fontWeight} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { fontWeight: event.target.value })} style={{ padding: "5px", fontSize: "12px" }}>
-                    <option value="normal">Regular</option>
-                    <option value="bold">Bold</option>
-                    <option value="900">Heavy</option>
+            {primarySelectedItem && (
+              <>
+                <span style={{ fontSize: "11px", fontWeight: "bold", color: "#555" }}>{selectedItems.length > 1 ? `${selectedItems.length} ITEMS` : primarySelectedItem.type.toUpperCase()}</span>
+                <label style={{ fontSize: "12px" }}><input type="checkbox" checked={!!primarySelectedItem.locked} onChange={(event) => updateSelectedItems({ locked: event.target.checked })} /> Lock</label>
+                <label style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}>Opacity <input type="range" min="0.1" max="1" step="0.05" value={primarySelectedItem.opacity ?? 1} onChange={(event) => updateSelectedItems({ opacity: Number(event.target.value) })} /></label>
+                {primarySelectedItem.type === "image" && selectedItems.length === 1 && (
+                  <select value={primarySelectedItem.objectFit || "contain"} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { objectFit: event.target.value })} style={{ padding: "5px", fontSize: "12px" }}>
+                    <option value="contain">Fit Whole Image</option>
+                    <option value="cover">Crop / Fill</option>
                   </select>
-                  <label style={{ fontSize: "12px" }}>Color <input type="color" value={primarySelectedItem.color} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { color: event.target.value })} /></label>
-                  <label style={{ fontSize: "12px" }}>BG <input type="color" value={primarySelectedItem.backgroundColor === "transparent" ? "#ffffff" : primarySelectedItem.backgroundColor} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { backgroundColor: event.target.value })} /></label>
-                  <button onClick={() => updateCanvasItem(primarySelectedItem.id, { backgroundColor: "transparent" })} style={{ fontSize: "11px" }}>Clear BG</button>
-                </>
-              )}
+                )}
+                {primarySelectedItem.type === "text" && selectedItems.length === 1 && (
+                  <>
+                    <div style={{ position: "relative" }}>
+                      <button onClick={() => setShowFontDropdown((prev) => !prev)} style={{ minWidth: "190px", padding: "6px 8px", textAlign: "left", fontFamily: primarySelectedItem.fontFamily }}>{primarySelectedItem.fontFamily}</button>
+                      {showFontDropdown && (
+                        <div style={{ position: "absolute", top: "34px", left: 0, width: "270px", maxHeight: "320px", overflowY: "auto", backgroundColor: "white", border: "1px solid #ccc", boxShadow: "0 4px 14px rgba(0,0,0,0.25)", zIndex: 9999 }}>
+                          {FONT_OPTIONS.map((font) => (
+                            <button key={font.name} onClick={() => { updateCanvasItem(primarySelectedItem.id, { fontFamily: font.name }); setShowFontDropdown(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "9px 10px", border: "none", borderBottom: "1px solid #eee", background: primarySelectedItem.fontFamily === font.name ? "#e3f2fd" : "white", cursor: "pointer" }}>
+                              <div style={{ fontFamily: font.name, fontSize: "22px", lineHeight: 1.1 }}>{font.name}</div>
+                              <div style={{ fontSize: "10px", color: "#777", marginTop: "3px" }}>{font.vibe}</div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <input type="number" value={primarySelectedItem.fontSize} min="8" max="180" onChange={(event) => updateCanvasItem(primarySelectedItem.id, { fontSize: Number(event.target.value) || 12 })} style={{ width: "70px", padding: "5px", fontSize: "12px" }} />
+                    <select value={primarySelectedItem.fontWeight} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { fontWeight: event.target.value })} style={{ padding: "5px", fontSize: "12px" }}>
+                      <option value="normal">Regular</option>
+                      <option value="bold">Bold</option>
+                      <option value="900">Heavy</option>
+                    </select>
+                    <label style={{ fontSize: "12px" }}>Color <input type="color" value={primarySelectedItem.color} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { color: event.target.value })} /></label>
+                    <label style={{ fontSize: "12px" }}>BG <input type="color" value={primarySelectedItem.backgroundColor === "transparent" ? "#ffffff" : primarySelectedItem.backgroundColor} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { backgroundColor: event.target.value })} /></label>
+                    <button onClick={() => updateCanvasItem(primarySelectedItem.id, { backgroundColor: "transparent" })} style={{ fontSize: "11px" }}>Clear BG</button>
+                  </>
+                )}
+              </>
+            )}
             </div>
         </div>
 
