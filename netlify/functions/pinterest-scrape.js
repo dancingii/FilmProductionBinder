@@ -10,12 +10,13 @@ function fetchUrl(targetUrl, redirectCount = 0) {
       hostname: parsed.hostname,
       path: parsed.pathname + parsed.search,
       headers: {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "identity",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
+        "X-Requested-With": "XMLHttpRequest",
+        "X-Pinterest-AppState": "active",
+        "Referer": "https://www.pinterest.com/",
       },
     };
 
@@ -29,46 +30,22 @@ function fetchUrl(targetUrl, redirectCount = 0) {
       let data = "";
       res.setEncoding("utf8");
       res.on("data", (chunk) => { data += chunk; });
-      res.on("end", () => resolve(data));
+      res.on("end", () => resolve({ status: res.statusCode, body: data }));
       res.on("error", reject);
     });
     req.on("error", reject);
-    req.setTimeout(10000, () => { req.destroy(); reject(new Error("Request timed out")); });
+    req.setTimeout(12000, () => { req.destroy(); reject(new Error("Timeout")); });
   });
 }
 
-function extractImages(html) {
-  const seen = new Set();
-  const images = [];
-
-  // Pinterest serves images from i.pinimg.com — extract all unique ones
-  // Normalize all sizes to 736x for consistent quality
-  const re = /https?:\\?\/\\?\/i\.pinimg\.com\\?\/(?:originals|736x|564x|474x|236x)\\?\/([a-f0-9/\\]+\.(?:jpg|jpeg|png|webp|gif))/gi;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    const path = m[1].replace(/\\/g, "");
-    const url = `https://i.pinimg.com/736x/${path}`;
-    if (!seen.has(url)) {
-      seen.add(url);
-      images.push({ url, width: 736, height: 552 });
-    }
-    if (images.length >= 60) break;
-  }
-
-  // Fallback: look for pinimg URLs in a slightly different format
-  if (images.length === 0) {
-    const re2 = /"url"\s*:\s*"(https?:\\?\/\\?\/i\.pinimg\.com[^"]+)"/gi;
-    while ((m = re2.exec(html)) !== null) {
-      const url = m[1].replace(/\\/g, "");
-      if (!seen.has(url)) {
-        seen.add(url);
-        images.push({ url, width: 736, height: 552 });
-      }
-      if (images.length >= 60) break;
-    }
-  }
-
-  return images;
+function parseBoardPath(boardUrl) {
+  try {
+    const u = new URL(boardUrl);
+    // Expected: /username/boardname/ or /username/boardname
+    const parts = u.pathname.replace(/^\/|\/$/g, "").split("/");
+    if (parts.length < 2) return null;
+    return { username: parts[0], slug: parts[1] };
+  } catch { return null; }
 }
 
 exports.handler = async (event) => {
@@ -92,23 +69,80 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "Not a Pinterest URL" }) };
   }
 
-  try {
-    const html = await fetchUrl(boardUrl);
+  const board = parseBoardPath(boardUrl);
+  if (!board) {
+    return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "Could not parse board URL. Expected format: pinterest.com/username/boardname/" }) };
+  }
 
-    if (!html || html.length < 500) {
-      return {
-        statusCode: 200, headers: cors,
-        body: JSON.stringify({ images: [], error: "Pinterest returned an empty or blocked page. The board may be private." }),
-      };
+  try {
+    // Step 1: Get board info to find the board ID
+    const boardApiUrl = `https://www.pinterest.com/resource/BoardResource/get/?source_url=/${board.username}/${board.slug}/&data={"options":{"username":"${board.username}","slug":"${board.slug}"},"context":{}}&_=1`;
+
+    const boardRes = await fetchUrl(boardApiUrl);
+    let boardId = null;
+
+    try {
+      const boardData = JSON.parse(boardRes.body);
+      boardId = boardData?.resource_response?.data?.id;
+    } catch {}
+
+    // Step 2: Fetch board feed using the internal resource API
+    // Try with board ID if we got it, otherwise use username/slug
+    const feedOptions = boardId
+      ? `{"options":{"board_id":"${boardId}","page_size":50},"context":{}}`
+      : `{"options":{"board_url":"/${board.username}/${board.slug}/","page_size":50},"context":{}}`;
+
+    const feedUrl = `https://www.pinterest.com/resource/BoardFeedResource/get/?source_url=/${board.username}/${board.slug}/&data=${encodeURIComponent(feedOptions)}&_=1`;
+
+    const feedRes = await fetchUrl(feedUrl);
+
+    let pins = [];
+    try {
+      const feedData = JSON.parse(feedRes.body);
+      const items = feedData?.resource_response?.data || [];
+      pins = items
+        .filter((pin) => pin?.images)
+        .map((pin) => {
+          // Pinterest returns multiple sizes — prefer 736x, fall back to others
+          const img =
+            pin.images["736x"] ||
+            pin.images["orig"] ||
+            pin.images["474x"] ||
+            pin.images["236x"] ||
+            Object.values(pin.images)[0];
+          return img ? {
+            url: img.url,
+            width: img.width || 736,
+            height: img.height || 552,
+            title: pin.title || pin.description || "Pinterest Pin",
+          } : null;
+        })
+        .filter(Boolean)
+        .slice(0, 50);
+    } catch (e) {
+      console.log("Feed parse error:", e.message);
+      console.log("Feed response status:", feedRes.status);
+      console.log("Feed body preview:", feedRes.body?.slice(0, 500));
     }
 
-    const images = extractImages(html);
+    if (pins.length === 0) {
+      return {
+        statusCode: 200,
+        headers: cors,
+        body: JSON.stringify({
+          images: [],
+          error: "No images returned. Pinterest may have blocked this request or the board is private. Try again in a moment.",
+          debug: { boardId, feedStatus: feedRes.status },
+        }),
+      };
+    }
 
     return {
       statusCode: 200,
       headers: cors,
-      body: JSON.stringify({ images, count: images.length }),
+      body: JSON.stringify({ images: pins, count: pins.length }),
     };
+
   } catch (err) {
     return {
       statusCode: 500,
