@@ -142,7 +142,11 @@ function CallSheetModule({
             { text: scene.scene.toString(), fontSize: 6, alignment: "center" },
             { text: scene.ie, fontSize: 6, alignment: "center" },
             { text: scene.location, fontSize: 6 },
-            { text: scene.cast, fontSize: 6 },
+            {
+              stack: (scene.cast || "").split(",").map(n => n.trim()).filter(Boolean).map(name => ({
+                text: name, fontSize: 6, noWrap: true,
+              })),
+            },
             { text: scene.dn, fontSize: 6, alignment: "center" },
             { text: pageNum.toString(), fontSize: 6, alignment: "center" },
             { text: pageLength, fontSize: 6, alignment: "center" },
@@ -175,8 +179,8 @@ function CallSheetModule({
       ]);
 
       const castTableBody = daycast.map((cast) => [
-        { text: cast.number.toString(), alignment: "center", fontSize: 7 },
-        { text: cast.cast, fontSize: 7 },
+        { text: cast.number.toString(), alignment: "center", fontSize: 7, bold: true },
+        { text: cast.cast, fontSize: 5 },
         { text: cast.character, fontSize: 7 },
         { text: cast.makeup || "", alignment: "center", fontSize: 7 },
         { text: cast.set || "", alignment: "center", fontSize: 7 },
@@ -190,15 +194,16 @@ function CallSheetModule({
         table.forEach((item) => {
           if (item.type === "header") {
             rows.push([
-              { text: item.department.toUpperCase(), colSpan: 4, bold: true, alignment: "center", fillColor: "#f0f0f0", fontSize: 7 },
-              {}, {}, {},
+              { text: item.department.toUpperCase(), colSpan: 5, bold: true, alignment: "center", fillColor: "#f0f0f0", fontSize: 5 },
+              {}, {}, {}, {},
             ]);
           } else {
             rows.push([
-              { text: item.position, fontSize: 7 },
-              { text: item.displayName, fontSize: 7 },
-              { text: item.phone, fontSize: 7, alignment: "center" },
-              { text: callSheetData.crewCallTimes?.[item.id] || "", fontSize: 7, alignment: "center" },
+              { text: item.position, fontSize: 5, noWrap: true },
+              { text: item.displayName, fontSize: 5, noWrap: true },
+              { text: item.email || "", fontSize: 4, noWrap: true },
+              { text: item.phone, fontSize: 5, alignment: "center", noWrap: true },
+              { text: callSheetData.crewCallTimes?.[item.id] || "", fontSize: 5, alignment: "center", noWrap: true },
             ]);
           }
         });
@@ -324,13 +329,13 @@ function CallSheetModule({
               {
                 table: {
                   headerRows: 1,
-                  widths: [55, 75, 55, 52],
+                  widths: [44, 56, 66, 52, 26],
                   body: leftCrewBody.length > 0
                     ? [
-                        [{ text: "POSITION", fillColor: "#f0f0f0", fontSize: 7 }, { text: "NAME", fillColor: "#f0f0f0", fontSize: 7 }, { text: "PHONE", fillColor: "#f0f0f0", fontSize: 7 }, { text: "IN", fillColor: "#f0f0f0", fontSize: 7 }],
+                        [{ text: "POSITION", fillColor: "#f0f0f0", fontSize: 5 }, { text: "NAME", fillColor: "#f0f0f0", fontSize: 5 }, { text: "EMAIL", fillColor: "#f0f0f0", fontSize: 5 }, { text: "PHONE", fillColor: "#f0f0f0", fontSize: 5 }, { text: "IN", fillColor: "#f0f0f0", fontSize: 5 }],
                         ...leftCrewBody,
                       ]
-                    : [[{ text: "", colSpan: 4 }, {}, {}, {}]],
+                    : [[{ text: "", colSpan: 5 }, {}, {}, {}, {}]],
                 },
                 layout: { hLineWidth: () => 0.5, vLineWidth: () => 0.5, paddingTop: () => 1, paddingBottom: () => 1 },
                 width: 275,
@@ -338,19 +343,38 @@ function CallSheetModule({
               {
                 table: {
                   headerRows: 1,
-                  widths: [55, 75, 55, 52],
+                  widths: [44, 56, 66, 52, 26],
                   body: rightCrewBody.length > 0
                     ? [
-                        [{ text: "POSITION", fillColor: "#f0f0f0", fontSize: 7 }, { text: "NAME", fillColor: "#f0f0f0", fontSize: 7 }, { text: "PHONE", fillColor: "#f0f0f0", fontSize: 7 }, { text: "IN", fillColor: "#f0f0f0", fontSize: 7 }],
+                        [{ text: "POSITION", fillColor: "#f0f0f0", fontSize: 5 }, { text: "NAME", fillColor: "#f0f0f0", fontSize: 5 }, { text: "EMAIL", fillColor: "#f0f0f0", fontSize: 5 }, { text: "PHONE", fillColor: "#f0f0f0", fontSize: 5 }, { text: "IN", fillColor: "#f0f0f0", fontSize: 5 }],
                         ...rightCrewBody,
                       ]
-                    : [[{ text: "", colSpan: 4 }, {}, {}, {}]],
+                    : [[{ text: "", colSpan: 5 }, {}, {}, {}, {}]],
                 },
                 layout: { hLineWidth: () => 0.5, vLineWidth: () => 0.5, paddingTop: () => 1, paddingBottom: () => 1 },
                 width: 275,
               },
             ],
             columnGap: 15,
+          },
+          { text: "", margin: [0, 6, 0, 0] },
+          {
+            columns: [
+              {
+                table: {
+                  widths: [70, 90],
+                  body: [
+                    [{ text: "CREW CALL", bold: true, fontSize: 8, alignment: "center", fillColor: "#f0f0f0" }, { text: callTime, bold: true, fontSize: 8, alignment: "center" }],
+                    [{ text: "LUNCH", bold: true, fontSize: 8, alignment: "center", fillColor: "#90EE90" }, { text: currentDayLunchTime || "TBD", bold: true, fontSize: 8, alignment: "center", fillColor: "#90EE90" }],
+                    [{ text: "WRAP", bold: true, fontSize: 8, alignment: "center", fillColor: "#f0f0f0" }, { text: currentDayWrapTime || "TBD", bold: true, fontSize: 8, alignment: "center" }],
+                    [{ text: "TAIL LIGHTS", bold: true, fontSize: 8, alignment: "center", fillColor: "#ffe0b2" }, { text: tailLightsTime || "TBD", bold: true, fontSize: 8, alignment: "center", fillColor: "#ffe0b2" }],
+                  ],
+                },
+                layout: { hLineWidth: () => 1, vLineWidth: () => 1, paddingTop: () => 3, paddingBottom: () => 3 },
+                width: 165,
+              },
+              { text: "", width: "*" },
+            ],
           },
         ],
       };
@@ -631,6 +655,7 @@ function CallSheetModule({
         position: person.position || person.crewDepartment || person.department,
         department: person.crewDepartment || person.department || "Other",
         phone: person.phone || "",
+        email: person.email || "",
       };
       setAssignedCrew((prev) => [...prev, newCrewMember]);
 
@@ -809,6 +834,55 @@ function CallSheetModule({
     if (syncCallSheetData) syncCallSheetData(newCallSheetData);
   };
 
+  const setLunchTime = (value) => {
+    if (!currentDayId) return;
+    const newData = { ...callSheetData, lunchTimeByDay: { ...callSheetData.lunchTimeByDay, [currentDayId]: value } };
+    setCallSheetData(newData);
+    if (syncCallSheetData) syncCallSheetData(newData);
+  };
+
+  const setWrapTime = (value) => {
+    if (!currentDayId) return;
+    const newData = { ...callSheetData, wrapTimeByDay: { ...callSheetData.wrapTimeByDay, [currentDayId]: value } };
+    setCallSheetData(newData);
+    if (syncCallSheetData) syncCallSheetData(newData);
+  };
+
+  // Auto-calculate wrap as 12.5 hours after call time
+  const calcWrapFromCall = (call) => {
+    if (!call) return "";
+    const m = call.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+    if (!m) return "";
+    let h = parseInt(m[1]), min = parseInt(m[2]);
+    const period = m[3].toUpperCase();
+    if (period === "PM" && h !== 12) h += 12;
+    if (period === "AM" && h === 12) h = 0;
+    let total = h * 60 + min + 750; // 12.5 hours = 750 minutes
+    total = total % (24 * 60);
+    const wh = Math.floor(total / 60) % 12 || 12;
+    const wm = total % 60;
+    const wp = Math.floor(total / 60) >= 12 ? "PM" : "AM";
+    return `${wh}:${String(wm).padStart(2, "0")} ${wp}`;
+  };
+
+  const addOneHour = (timeStr) => {
+    if (!timeStr) return "";
+    const m = timeStr.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+    if (!m) return "";
+    let h = parseInt(m[1]), min = parseInt(m[2]);
+    const period = m[3].toUpperCase();
+    if (period === "PM" && h !== 12) h += 12;
+    if (period === "AM" && h === 12) h = 0;
+    let total = (h * 60 + min + 60) % (24 * 60);
+    const wh = Math.floor(total / 60) % 12 || 12;
+    const wm = total % 60;
+    const wp = Math.floor(total / 60) >= 12 ? "PM" : "AM";
+    return `${wh}:${String(wm).padStart(2, "0")} ${wp}`;
+  };
+
+  const currentDayWrapTime = callSheetData.wrapTimeByDay?.[currentDayId] || calcWrapFromCall(currentDayCallTime);
+  const tailLightsTime = addOneHour(currentDayWrapTime);
+
   const setDayNotes = (value) => {
     if (!currentDayId) return;
     const newCallSheetData = {
@@ -908,6 +982,7 @@ function CallSheetModule({
             position: person.position || person.crewDepartment || person.department,
             department: person.crewDepartment || person.department || "Other",
             phone: person.phone || "",
+            email: person.email || "",
           }));
 
           setCallSheetData((prevData) => {
@@ -1056,6 +1131,12 @@ function CallSheetModule({
       notes: scene.description || "",
     }));
   };
+
+  const currentDayLunchTime = callSheetData.lunchTimeByDay?.[currentDayId]
+    || (() => {
+        const lunchBlock = (selectedDay?.scheduleBlocks || []).find(b => b.isLunch);
+        return lunchBlock?.time || "";
+      })();
 
   const getSceneCast = (sceneNumber) => {
     if (!characters) return "";
@@ -1376,12 +1457,10 @@ function CallSheetModule({
                 style={{ width: "calc(100% - 8px)", height: "40px", border: "1px solid #ccc", borderRadius: "3px", padding: "4px", fontSize: "11px", fontFamily: "Arial, sans-serif", resize: "none" }}
               />
             </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid black", margin: "10px", fontWeight: "bold", fontSize: "16px" }}>
-              <span style={{ padding: "5px 10px", borderRight: "2px solid black" }}>CALL</span>
-              <span style={{ padding: "5px 10px" }}>
-                <input type="text" value={callTime} onChange={(e) => setCallTime(e.target.value)} onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
-                  style={{ border: "none", fontSize: "16px", fontWeight: "bold", width: "80px", textAlign: "center" }} />
-              </span>
+            <div style={{ display: "flex", alignItems: "center", border: "2px solid black", margin: "10px", fontWeight: "bold", fontSize: "14px" }}>
+              <span style={{ padding: "4px 8px", borderRight: "2px solid black", minWidth: "80px", textAlign: "center" }}>CALL</span>
+              <input type="text" value={callTime} onChange={(e) => setCallTime(e.target.value)} onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                style={{ border: "none", fontSize: "14px", fontWeight: "bold", width: "80px", textAlign: "center" }} />
             </div>
             <div style={{ flex: "2" }}></div>
           </div>
@@ -1609,13 +1688,13 @@ function CallSheetModule({
           </div>
 
           {/* Dynamic Crew Tables */}
-          <div style={{ display: "flex", marginTop: "10px", flexWrap: "wrap", gap: "10px" }}>
+          <div style={{ display: "flex", marginTop: "10px", flexWrap: "wrap", gap: "10px", width: "100%", boxSizing: "border-box" }}>
             {(() => {
               const { leftTable, rightTable, leftUsed, rightUsed } = distributeCrewToTables();
               const availableCrew = getAvailableCrew();
 
               const renderCrewTable = (table, side, used, tableSize, setTableSize) => (
-                <div style={{ flex: "1", minWidth: "300px" }}>
+                <div style={{ flex: "0 0 calc(50% - 5px)", width: "calc(50% - 5px)", minWidth: "280px", boxSizing: "border-box" }}>
                   <div style={{ marginBottom: "5px", display: "flex", gap: "5px", alignItems: "center" }}>
                     <button onClick={() => setTableSize((prev) => prev + 1)} style={{ padding: "2px 6px", fontSize: "10px" }}>+ Row</button>
                     <button onClick={() => setTableSize((prev) => Math.max(1, prev - 1))} style={{ padding: "2px 6px", fontSize: "10px" }}>- Row</button>
@@ -1624,10 +1703,11 @@ function CallSheetModule({
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr style={{ backgroundColor: "#f0f0f0" }}>
-                        <th style={{ border: "1px solid black", padding: "4px", width: "25%" }}>POSITION</th>
-                        <th style={{ border: "1px solid black", padding: "4px", width: "29%" }}>NAME</th>
-                        <th style={{ border: "1px solid black", padding: "4px", width: "26%" }}>PHONE</th>
-                        <th style={{ border: "1px solid black", padding: "4px", width: "20%" }}>IN</th>
+                      <th style={{ border: "1px solid black", padding: "2px 4px", width: "22%", fontSize: "8px" }}>POSITION</th>
+                        <th style={{ border: "1px solid black", padding: "2px 4px", width: "20%", fontSize: "8px" }}>NAME</th>
+                        <th style={{ border: "1px solid black", padding: "2px 4px", width: "30%", fontSize: "8px" }}>EMAIL</th>
+                        <th style={{ border: "1px solid black", padding: "2px 4px", width: "18%", fontSize: "8px" }}>PHONE</th>
+                        <th style={{ border: "1px solid black", padding: "2px 4px", width: "10%", fontSize: "8px" }}>IN</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1635,21 +1715,22 @@ function CallSheetModule({
                         if (item.type === "header") {
                           return (
                             <tr key={`${side}-header-${item.department}`} style={{ backgroundColor: "#f0f0f0" }}>
-                              <td colSpan={4} style={{ border: "1px solid black", padding: "4px", fontWeight: "bold", textAlign: "center" }}>{item.department.toUpperCase()}</td>
+                              <td colSpan={5} style={{ border: "1px solid black", padding: "4px", fontWeight: "bold", textAlign: "center", fontSize: "9px" }}>{item.department.toUpperCase()}</td>
                             </tr>
                           );
                         }
                         return (
-                          <tr key={`${side}-crew-${item.id}`}>
-                            <td style={{ border: "1px solid black", padding: "4px" }}>{item.position}</td>
-                            <td style={{ border: "1px solid black", padding: "4px" }}>
-                              {item.displayName}
-                              <button onClick={() => removeCrewMember(item.id)} style={{ marginLeft: "5px", padding: "1px 4px", fontSize: "8px", backgroundColor: "#f44336", color: "white", border: "none", borderRadius: "2px" }}>×</button>
+                          <tr key={`${side}-crew-${item.id}`} style={{ position: "relative" }}>
+                            <td style={{ border: "1px solid black", padding: "2px 4px", fontSize: "8px", whiteSpace: "nowrap" }}>
+                              <button onClick={() => removeCrewMember(item.id)} style={{ marginRight: "3px", padding: "0px 3px", fontSize: "7px", backgroundColor: "#f44336", color: "white", border: "none", borderRadius: "2px", lineHeight: "12px", cursor: "pointer" }}>×</button>
+                              {item.position}
                             </td>
-                            <td style={{ border: "1px solid black", padding: "4px", textAlign: "center" }}>{item.phone}</td>
-                            <td style={{ border: "1px solid black", padding: "4px" }}>
+                            <td style={{ border: "1px solid black", padding: "2px 4px", fontSize: "8px", whiteSpace: "nowrap" }}>{item.displayName}</td>
+                            <td style={{ border: "1px solid black", padding: "2px 4px", fontSize: "7px", whiteSpace: "nowrap" }}>{item.email || ""}</td>
+                            <td style={{ border: "1px solid black", padding: "2px 4px", fontSize: "8px", whiteSpace: "nowrap", textAlign: "center" }}>{item.phone}</td>
+                            <td style={{ border: "1px solid black", padding: "2px 2px" }}>
                               <input type="text" value={callSheetData.crewCallTimes?.[item.id] || ""} onChange={(e) => updateCrewCallTime(item.id, e.target.value)} onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
-                                style={{ width: "50px", border: "none", fontSize: "9px", textAlign: "center" }} />
+                                style={{ width: "40px", border: "none", fontSize: "8px", textAlign: "center" }} />
                             </td>
                           </tr>
                         );
@@ -1678,6 +1759,24 @@ function CallSheetModule({
                 <>
                   {renderCrewTable(leftTable, "left", leftUsed, leftTableSize, setLeftTableSize)}
                   {renderCrewTable(rightTable, "right", rightUsed, rightTableSize, setRightTableSize)}
+                  <div style={{ marginTop: "12px", display: "inline-flex", flexDirection: "column", gap: "0", border: "1px solid black" }}>
+                    {[
+                      { label: "CREW CALL", value: callTime, bg: "white", editable: false },
+                      { label: "LUNCH", value: currentDayLunchTime, bg: "#90EE90", editable: true, setter: setLunchTime },
+                      { label: "WRAP", value: currentDayWrapTime, bg: "white", editable: true, setter: setWrapTime },
+                      { label: "TAIL LIGHTS", value: tailLightsTime || "TBD", bg: "#ffe0b2", editable: false },
+                    ].map(({ label, value, bg, editable, setter }, i, arr) => (
+                      <div key={label} style={{ display: "flex", alignItems: "center", fontWeight: "bold", fontSize: "11px", backgroundColor: bg, borderBottom: i < arr.length - 1 ? "1px solid black" : "none" }}>
+                        <span style={{ padding: "5px 10px", borderRight: "1px solid black", whiteSpace: "nowrap", minWidth: "90px", backgroundColor: bg }}>{label}</span>
+                        {editable ? (
+                          <input type="text" value={value} onChange={(e) => setter(e.target.value)} onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                            style={{ border: "none", fontSize: "11px", fontWeight: "bold", width: "80px", textAlign: "center", background: bg, padding: "5px" }} />
+                        ) : (
+                          <span style={{ padding: "5px 10px", width: "80px", textAlign: "center", display: "inline-block" }}>{value}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </>
               );
             })()}

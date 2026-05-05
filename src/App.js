@@ -95,6 +95,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
   // Database-synced scenes state
   const [scenes, setScenes] = useState([]);
   const [scenesLoaded, setScenesLoaded] = useState(false);
+  const [scriptMoodImages, setScriptMoodImages] = useState([]);
   const [isSavingScenes, setIsSavingScenes] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summarizeProgress, setSummarizeProgress] = useState({
@@ -4036,6 +4037,10 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
             isViewOnly={isViewOnly(userRole)}
             selectedProject={selectedProject}
             user={user}
+            characters={characters}
+            setCharacters={setCharacters}
+            syncCharactersToDatabase={syncCharactersToDatabase}
+            moodboardImages={scriptMoodImages}
           />
         );
         case "Stripboard":
@@ -4493,14 +4498,18 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
           />
         );
         case "MoodBoard":
-  return (
-    <MoodBoard
-      selectedProject={selectedProject}
-      userRole={userRole}
-      canEdit={canEdit(userRole)}
-      isViewOnly={isViewOnly(userRole)}
-    />
-  );
+          return (
+            <MoodBoard
+              selectedProject={selectedProject}
+              userRole={userRole}
+              canEdit={canEdit(userRole)}
+              isViewOnly={isViewOnly(userRole)}
+              user={user}
+              onMoodboardDataChange={({ images }) => {
+                setScriptMoodImages(images || []);
+              }}
+            />
+          );
       case "Budget":
         return (
           <BudgetModule

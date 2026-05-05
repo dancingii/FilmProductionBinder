@@ -253,7 +253,7 @@ function RollImage({ image, canEdit, isViewOnly, onDragStart, onDragEnd, onDragO
   );
 }
 
-function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = false, user = null }) {
+function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = false, user = null, onMoodboardDataChange = null }) {
   const fileInputRef = useRef(null);
   const boardScrollRef = useRef(null);
   const didLoadRef = useRef(false);
@@ -301,7 +301,17 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   const [rollDragOverId, setRollDragOverId] = useState(null);
   const dbSaveTimerRef = useRef(null);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => { gridSizeRef.current = gridSize; }, [gridSize]);  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
   useEffect(() => { gridSizeRef.current = gridSize; }, [gridSize]);
+
+  useEffect(() => {
+    onMoodboardDataChange?.({
+      images,
+      canvasItems,
+      boards,
+      activeBoardId,
+    });
+  }, [images, canvasItems, boards, activeBoardId, onMoodboardDataChange]);
 
   // Stamp createdBy on boards that were loaded before display name was ready
   useEffect(() => {
@@ -761,6 +771,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
       locked: false,
       hidden: false,
       rotation: 0,
+      _baseWidth: width,
       zIndex: (activeBoardItems.reduce((max, i) => Math.max(max, i.zIndex || 1), 0)) + 1,
       name: image.title || "Image",
     };
@@ -795,6 +806,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
       backgroundColor: "transparent",
       letterSpacing: 0,
       lineHeight: 1.1,
+      textAlign: "left",
       opacity: 1,
       locked: false,
       hidden: false,
@@ -880,18 +892,11 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     setExportingPdf(true);
     setStatusMessage("Preparing PDF export...");
     try {
+      // Load jsPDF only — no html2canvas needed
       if (!window.jspdf) {
         await new Promise((resolve, reject) => {
           const s = document.createElement("script");
           s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-          s.onload = resolve; s.onerror = reject;
-          document.head.appendChild(s);
-        });
-      }
-      if (!window.html2canvas) {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement("script");
-          s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
           s.onload = resolve; s.onerror = reject;
           document.head.appendChild(s);
         });
@@ -906,83 +911,199 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
         hotfixes: ["px_scaling"],
       });
 
-      // Pre-fetch all unique image URLs as base64 via proxy
-      setStatusMessage("Fetching images...");
-      const urlCache = {};
+      // Load custom fonts into canvas context via FontFace API
+      setStatusMessage("Loading fonts...");
+      const fontLoadPromises = FONT_OPTIONS.map(async (font) => {
+        try {
+          const googleName = font.name.replace(/ /g, "+");
+          const cssUrl = `https://fonts.googleapis.com/css2?family=${googleName}:wght@400;700;900&display=swap`;
+          // Fetch CSS to get actual font file URL
+          const cssRes = await fetch(cssUrl);
+          const cssText = await cssRes.text();
+          const urlMatch = cssText.match(/url\((https:\/\/fonts\.gstatic\.com[^)]+)\)/);
+          if (!urlMatch) return;
+          const ff = new FontFace(font.name, `url(${urlMatch[1]})`);
+          await ff.load();
+          document.fonts.add(ff);
+        } catch {} // silently skip fonts that fail to load
+      });
+      await Promise.allSettled(fontLoadPromises);
+      await document.fonts.ready;
+
+      // Load all images as HTMLImageElement objects upfront
+      setStatusMessage("Loading images...");
+      const loadedImgMap = {};
       const allImageItems = canvasItems.filter(item =>
         item.boardId === activeBoard.id && item.type === "image" && !item.hidden
       );
-      await Promise.all(allImageItems.map(async item => {
+      await Promise.all(allImageItems.map(item => {
         const imgData = images.find(img => img.id === item.imageId);
-        if (imgData?.url && !urlCache[imgData.url]) {
-          const b64 = await proxyImageToBase64(imgData.url);
-          if (b64) urlCache[imgData.url] = b64;
-        }
+        if (!imgData?.url || loadedImgMap[imgData.url]) return;
+        return new Promise(res => {
+          const el = new Image();
+          el.crossOrigin = "anonymous";
+          el.onload = () => { loadedImgMap[imgData.url] = el; res(); };
+          el.onerror = () => {
+            // Retry without crossOrigin for non-CORS sources
+            const el2 = new Image();
+            el2.onload = () => { loadedImgMap[imgData.url] = el2; res(); };
+            el2.onerror = () => res(); // skip if truly broken
+            el2.src = imgData.url;
+          };
+          el.src = imgData.url;
+        });
       }));
+
+      // Wait for fonts
+      await document.fonts.ready;
 
       for (let i = 0; i < boardPages.length; i++) {
         const page = boardPages[i];
         setStatusMessage(`Rendering page ${i + 1} of ${boardPages.length}...`);
 
-        const container = document.createElement("div");
-        container.style.cssText = `position:fixed;left:-${page.width + 400}px;top:0;width:${page.width}px;height:${page.height}px;background-color:${page.backgroundColor || "#ffffff"};overflow:hidden;box-sizing:border-box;`;
-        document.body.appendChild(container);
+        // Create canvas at full page dimensions
+        const cvs = document.createElement("canvas");
+        cvs.width = page.width;
+        cvs.height = page.height;
+        const ctx = cvs.getContext("2d");
+
+        // Background
+        ctx.fillStyle = page.backgroundColor || "#ffffff";
+        ctx.fillRect(0, 0, page.width, page.height);
 
         const pageItems = canvasItems
           .filter(item => item.boardId === activeBoard.id && item.pageId === page.id && !item.hidden)
           .sort((a, b) => a.zIndex - b.zIndex);
 
-        for (const item of pageItems) {
-          const el = document.createElement("div");
-          el.style.cssText = `position:absolute;left:${item.x}px;top:${item.y}px;width:${item.width}px;height:${item.height}px;z-index:${item.zIndex};opacity:${item.opacity ?? 1};overflow:hidden;box-sizing:border-box;`;
-
-          if (item.type === "image") {
+          for (const item of pageItems) {
+            ctx.save();
+            ctx.globalAlpha = item.opacity ?? 1;
+  
+            if (item.rotation) {
+              const cx = item.x + item.width / 2;
+              const cy = item.y + item.height / 2;
+              ctx.translate(cx, cy);
+              ctx.rotate((item.rotation * Math.PI) / 180);
+              ctx.translate(-cx, -cy);
+            }
+  
+            if (item.type === "image") {
             const imgData = images.find(img => img.id === item.imageId);
-            if (imgData) {
-              const src = urlCache[imgData.url] || imgData.url;
-              const imgEl = document.createElement("img");
-              imgEl.src = src;
-              imgEl.style.cssText = `width:100%;height:100%;object-fit:${item.objectFit || "contain"};display:block;`;
-              el.appendChild(imgEl);
+            const imgEl = imgData ? loadedImgMap[imgData.url] : null;
+            if (imgEl) {
+              const objectFit = item.objectFit || "contain";
+              const iw = imgEl.naturalWidth;
+              const ih = imgEl.naturalHeight;
+              const bw = item.width;
+              const bh = item.height;
+              let sx = 0, sy = 0, sw = iw, sh = ih;
+              let dx = item.x, dy = item.y, dw = bw, dh = bh;
+
+              if (objectFit === "cover") {
+                const scale = Math.max(bw / iw, bh / ih);
+                const scaledW = iw * scale;
+                const scaledH = ih * scale;
+                sx = (iw - bw / scale) / 2;
+                sy = (ih - bh / scale) / 2;
+                sw = bw / scale;
+                sh = bh / scale;
+              } else {
+                // contain
+                const scale = Math.min(bw / iw, bh / ih);
+                dw = iw * scale;
+                dh = ih * scale;
+                dx = item.x + (bw - dw) / 2;
+                dy = item.y + (bh - dh) / 2;
+              }
+
+              ctx.beginPath();
+              ctx.rect(item.x, item.y, item.width, item.height);
+              ctx.clip();
+              ctx.drawImage(imgEl, sx, sy, sw, sh, dx, dy, dw, dh);
             }
+
           } else if (item.type === "text") {
+            // Background
             if (item.backgroundColor && item.backgroundColor !== "transparent") {
-              el.style.backgroundColor = item.backgroundColor;
+              ctx.fillStyle = item.backgroundColor;
+              ctx.fillRect(item.x, item.y, item.width, item.height);
             }
-            const textEl = document.createElement("div");
-            textEl.style.cssText = `color:${item.color};font-family:${item.fontFamily},sans-serif;font-size:${item.fontSize}px;font-weight:${item.fontWeight};line-height:${item.lineHeight ?? 1.1};letter-spacing:${item.letterSpacing ? item.letterSpacing + "px" : "normal"};padding:6px;white-space:pre-wrap;width:100%;height:100%;box-sizing:border-box;overflow:hidden;`;
-            textEl.textContent = item.text;
-            el.appendChild(textEl);
+
+            // Text — wrap manually to match the DOM layout
+            const fontWeight = item.fontWeight || "normal";
+            const fontSize = item.fontSize || 16;
+            const fontFamily = item.fontFamily || "Arial";
+            const lineHeightMult = item.lineHeight ?? 1.1;
+            const lineHeight = fontSize * lineHeightMult;
+            const letterSpacing = item.letterSpacing || 0;
+            const padding = 6;
+            const maxW = item.width - padding * 2;
+
+            const textAlign = item.textAlign || "left";
+            ctx.fillStyle = item.color || "#000000";
+            ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}, sans-serif`;
+            ctx.textBaseline = "alphabetic";
+            ctx.textAlign = textAlign;
+
+            // Letter spacing via per-char drawing
+            const drawTextWithSpacing = (text, x, y) => {
+              if (letterSpacing === 0) {
+                ctx.fillText(text, x, y);
+                return;
+              }
+              let cx = x;
+              for (const ch of text) {
+                ctx.fillText(ch, cx, y);
+                cx += ctx.measureText(ch).width + letterSpacing;
+              }
+            };
+
+            // Word wrap — normalize whitespace to match CSS rendering
+            // CSS collapses multiple spaces into one and ignores leading/trailing
+            const rawLines = item.text.split("\n");
+            const wrappedLines = [];
+            for (const raw of rawLines) {
+              // Collapse multiple spaces, trim — matches CSS white-space: normal behavior
+              const normalized = raw.replace(/\s+/g, " ").trim();
+              if (!normalized) { wrappedLines.push(""); continue; }
+              const words = normalized.split(" ").filter(w => w.length > 0);
+              let current = "";
+              for (const word of words) {
+                const test = current ? current + " " + word : word;
+                const w = ctx.measureText(test).width + (letterSpacing * (test.length - 1));
+                if (w > maxW && current) {
+                  wrappedLines.push(current);
+                  current = word;
+                } else {
+                  current = test;
+                }
+              }
+              if (current) wrappedLines.push(current);
+            }
+
+            const trueLineHeight = fontSize * (item.lineHeight ?? 1.1);
+            const baselineOffset = fontSize * 0.8;
+
+            const textX = textAlign === "center"
+              ? item.x + item.width / 2
+              : textAlign === "right"
+              ? item.x + item.width - padding
+              : item.x + padding;
+
+            let ty = item.y + padding + baselineOffset;
+            for (const line of wrappedLines) {
+              drawTextWithSpacing(line, textX, ty);
+              ty += trueLineHeight;
+              if (ty > item.y + item.height + trueLineHeight) break;
+            }
           }
-          container.appendChild(el);
+
+          ctx.restore();
         }
 
-        // Wait for any remaining non-proxied images
-        const imgEls = Array.from(container.querySelectorAll("img"));
-        await Promise.all(imgEls.map(img =>
-          new Promise(res => {
-            if (img.complete && img.naturalWidth > 0) res();
-            else { img.onload = res; img.onerror = res; }
-          })
-        ));
-        await new Promise(r => setTimeout(r, 80));
-
-        const canvas = await window.html2canvas(container, {
-          useCORS: true,
-          allowTaint: false,
-          scale: 1,
-          width: page.width,
-          height: page.height,
-          backgroundColor: page.backgroundColor || "#ffffff",
-          logging: false,
-          imageTimeout: 0,
-        });
-
-        document.body.removeChild(container);
-
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.94);
+        const dataUrl = cvs.toDataURL("image/png");
         if (i > 0) pdf.addPage([page.width, page.height], page.width > page.height ? "landscape" : "portrait");
-        pdf.addImage(dataUrl, "JPEG", 0, 0, page.width, page.height);
+        pdf.addImage(dataUrl, "PNG", 0, 0, page.width, page.height);
       }
 
       pdf.save(`${activeBoard.name || "MoodBoard"}.pdf`);
@@ -1318,6 +1439,8 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           cursor: locked ? "default" : "move",
           userSelect: "none",
           boxSizing: "border-box",
+          transform: item.rotation ? `rotate(${item.rotation}deg)` : undefined,
+          transformOrigin: "center center",
         }}
         onPointerDown={(e) => {
           if (e.button === 1) return; // let middle click bubble to scroll container
@@ -1342,26 +1465,43 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           />
         )}
         {item.type === "text" && (
-          <textarea
-            value={item.text}
-            readOnly={editingTextId !== item.id}
-            disabled={locked}
-            onChange={(event) => updateCanvasItem(item.id, { text: event.target.value, name: event.target.value?.slice(0, 24) || "Text" })}
-            onClick={(event) => { event.stopPropagation(); }}
-            onBlur={() => setEditingTextId(null)}
-            tabIndex={editingTextId === item.id ? 0 : -1}
-            style={{
-              width: "100%", height: "100%", resize: "none", border: "none", outline: "none",
-              background: "transparent", color: item.color, fontFamily: item.fontFamily,
-              fontSize: item.fontSize, fontWeight: item.fontWeight,
-              lineHeight: item.lineHeight ?? 1.1,
-              letterSpacing: item.letterSpacing ? `${item.letterSpacing}px` : "normal",
-              padding: "6px", boxSizing: "border-box", overflow: "hidden",
-              pointerEvents: editingTextId === item.id ? "auto" : "none",
-              cursor: editingTextId === item.id ? "text" : "default",
-              userSelect: editingTextId === item.id ? "text" : "none",
-            }}
-          />
+          <>
+            {editingTextId === item.id && (
+              <style>{`
+                @keyframes moodboard-caret-blink {
+                  0%, 49% { caret-color: #000000; }
+                  50%, 100% { caret-color: #ffffff; }
+                }
+                .moodboard-text-active {
+                  caret-color: #000000;
+                  animation: moodboard-caret-blink 1s step-end infinite;
+                }
+              `}</style>
+            )}
+            <textarea
+              value={item.text}
+              readOnly={editingTextId !== item.id}
+              disabled={locked}
+              className={editingTextId === item.id ? "moodboard-text-active" : undefined}
+              onChange={(event) => updateCanvasItem(item.id, { text: event.target.value, name: event.target.value?.slice(0, 24) || "Text" })}
+              onClick={(event) => { event.stopPropagation(); }}
+              onBlur={() => setEditingTextId(null)}
+              tabIndex={editingTextId === item.id ? 0 : -1}
+              style={{
+                width: "100%", height: "100%", resize: "none", border: "none", outline: "none",
+                background: "transparent", color: item.color, fontFamily: item.fontFamily,
+                fontSize: item.fontSize, fontWeight: item.fontWeight,
+                lineHeight: item.lineHeight ?? 1.1,
+                letterSpacing: item.letterSpacing ? `${item.letterSpacing}px` : "normal",
+                textAlign: item.textAlign || "left",
+                padding: "6px", boxSizing: "border-box", overflow: "hidden",
+                pointerEvents: editingTextId === item.id ? "auto" : "none",
+                cursor: editingTextId === item.id ? "text" : "default",
+                userSelect: editingTextId === item.id ? "text" : "none",
+                caretColor: editingTextId === item.id ? undefined : "transparent",
+              }}
+            />
+          </>
         )}
 
         {isSelected && !locked && HANDLE_DIRS.map(handle => {
@@ -1500,6 +1640,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                 <input value={newLinkUrl} onChange={(event) => setNewLinkUrl(event.target.value)} placeholder="Reference URL" disabled={!canEdit || isViewOnly} style={{ flex: 1, padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px" }} />
                 <button onClick={addSourceLink} disabled={!canEdit || isViewOnly} style={{ padding: "6px 9px", cursor: "pointer" }}>Add</button>
               </div>
+
               <div style={{ flex: 1, overflowY: "auto", border: "1px inset #ddd", backgroundColor: "white" }}>
                 {links.length === 0 && <div style={{ padding: "10px", fontSize: "12px", color: "#999" }}>No links yet.</div>}
                 {links.map((link) => (
@@ -1516,10 +1657,10 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                   </div>
                 ))}
               </div>
-              </div>
+            </div>
           )}
 
-{activeInputTab === "images" && (
+          {activeInputTab === "images" && (
             <div style={{ overflow: "hidden" }}>
               <div style={{ display: "flex", gap: "4px" }}>
                 <input value={manualImageUrl} onChange={(event) => setManualImageUrl(event.target.value)} placeholder="Direct image URL (.jpg, .png…)" disabled={!canEdit || isViewOnly} style={{ flex: 1, padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px" }} />
@@ -1536,34 +1677,36 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
             <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={addLocalFiles} style={{ display: "none" }} />
           </div>
           <input value={rollSearch} onChange={(event) => setRollSearch(event.target.value)} placeholder="Search roll..." style={{ width: "100%", padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px", boxSizing: "border-box", marginBottom: "8px" }} />
-          <div style={{ flex: 1, overflowY: "auto", columnCount: 3, columnGap: "8px" }}>
-            {filteredImages.map((image) => (
-              <RollImage
-                key={image.id}
-                image={image}
-                canEdit={canEdit}
-                isViewOnly={isViewOnly}
-                isDragging={rollDragId === image.id}
-                isDragOver={rollDragOverId === image.id && rollDragId !== image.id}
-                onDragStart={() => { draggingRollImageRef.current = image; setRollDragId(image.id); }}
-                onDragEnd={() => {
-                  if (rollDragId && rollDragOverId) reorderImages(rollDragId, rollDragOverId);
-                  draggingRollImageRef.current = null;
-                  setRollDragId(null);
-                  setRollDragOverId(null);
-                }}
-                onDragOver={() => { if (rollDragId && rollDragId !== image.id) setRollDragOverId(image.id); }}
-                onDoubleClick={() => addImageToCanvas(image)}
-                onLightbox={() => setLightboxImage({ url: image.url, title: image.title })}
-                onDelete={() => deleteImage(image.id)}
-                onRenameTitle={(title) => updateImageTitle(image.id, title)}
-              />
-            ))}
+          <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+            <div style={{ columns: 3, columnGap: "8px" }}>
+              {filteredImages.map((image) => (
+                <RollImage
+                  key={image.id}
+                  image={image}
+                  canEdit={canEdit}
+                  isViewOnly={isViewOnly}
+                  isDragging={rollDragId === image.id}
+                  isDragOver={rollDragOverId === image.id && rollDragId !== image.id}
+                  onDragStart={() => { draggingRollImageRef.current = image; setRollDragId(image.id); }}
+                  onDragEnd={() => {
+                    if (rollDragId && rollDragOverId) reorderImages(rollDragId, rollDragOverId);
+                    draggingRollImageRef.current = null;
+                    setRollDragId(null);
+                    setRollDragOverId(null);
+                  }}
+                  onDragOver={() => { if (rollDragId && rollDragId !== image.id) setRollDragOverId(image.id); }}
+                  onDoubleClick={() => addImageToCanvas(image)}
+                  onLightbox={() => setLightboxImage({ url: image.url, title: image.title })}
+                  onDelete={() => deleteImage(image.id)}
+                  onRenameTitle={(title) => updateImageTitle(image.id, title)}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+          </div>
       </div>
-
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+  
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
       <div style={{ flexShrink: 0, backgroundColor: "white", borderBottom: "1px solid #ccc", boxSizing: "border-box", overflow: "visible", position: "relative", zIndex: 50 }}>
           <div style={{ minHeight: "48px", display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", flexWrap: "wrap" }}>
           <strong style={{ fontSize: "14px", marginRight: "8px" }}>{activeBoard?.name}</strong>
@@ -1602,10 +1745,60 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                 <label style={{ fontSize: "12px" }}><input type="checkbox" checked={!!primarySelectedItem.locked} onChange={(event) => updateSelectedItems({ locked: event.target.checked })} /> Lock</label>
                 <label style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}>Opacity <input type="range" min="0.1" max="1" step="0.05" value={primarySelectedItem.opacity ?? 1} onChange={(event) => updateSelectedItems({ opacity: Number(event.target.value) })} /></label>
                 {primarySelectedItem.type === "image" && selectedItems.length === 1 && (
-                  <select value={primarySelectedItem.objectFit || "contain"} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { objectFit: event.target.value })} style={{ padding: "5px", fontSize: "12px" }}>
-                    <option value="contain">Fit Whole Image</option>
-                    <option value="cover">Crop / Fill</option>
-                  </select>
+                  <>
+                    <select value={primarySelectedItem.objectFit || "contain"} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { objectFit: event.target.value })} style={{ padding: "5px", fontSize: "12px" }}>
+                      <option value="contain">Fit Whole Image</option>
+                      <option value="cover">Crop / Fill</option>
+                    </select>
+                    <label style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}>
+                      Scale
+                      <input
+                        type="range" min="10" max="300" step="1"
+                        value={Math.round(((primarySelectedItem.width / (primarySelectedItem._baseWidth || primarySelectedItem.width)) * 100) || 100)}
+                        onChange={(e) => {
+                          const pct = Number(e.target.value) / 100;
+                          const base = primarySelectedItem._baseWidth || primarySelectedItem.width;
+                          const ratio = primarySelectedItem.width / primarySelectedItem.height;
+                          const newW = Math.round(base * pct);
+                          const newH = Math.round(newW / ratio);
+                          const cx = primarySelectedItem.x + primarySelectedItem.width / 2;
+                          const cy = primarySelectedItem.y + primarySelectedItem.height / 2;
+                          updateCanvasItem(primarySelectedItem.id, { width: newW, height: newH, x: Math.round(cx - newW / 2), y: Math.round(cy - newH / 2), _baseWidth: base });
+                        }}
+                        style={{ width: "60px" }}
+                      />
+                      <input type="number" min="10" max="300" step="1"
+                        value={Math.round(((primarySelectedItem.width / (primarySelectedItem._baseWidth || primarySelectedItem.width)) * 100) || 100)}
+                        onChange={(e) => {
+                          const pct = Number(e.target.value) / 100;
+                          if (isNaN(pct) || pct <= 0) return;
+                          const base = primarySelectedItem._baseWidth || primarySelectedItem.width;
+                          const ratio = primarySelectedItem.width / primarySelectedItem.height;
+                          const newW = Math.round(base * pct);
+                          const newH = Math.round(newW / ratio);
+                          const cx = primarySelectedItem.x + primarySelectedItem.width / 2;
+                          const cy = primarySelectedItem.y + primarySelectedItem.height / 2;
+                          updateCanvasItem(primarySelectedItem.id, { width: newW, height: newH, x: Math.round(cx - newW / 2), y: Math.round(cy - newH / 2), _baseWidth: base });
+                        }}
+                        style={{ width: "46px", padding: "2px 4px", fontSize: "11px" }}
+                      />%
+                    </label>
+                    <label style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}>
+                      Rotate
+                      <input
+                        type="range" min="-180" max="180" step="1"
+                        value={primarySelectedItem.rotation ?? 0}
+                        onChange={(e) => updateCanvasItem(primarySelectedItem.id, { rotation: Number(e.target.value) })}
+                        style={{ width: "60px" }}
+                      />
+                      <input type="number" min="-180" max="180" step="1"
+                        value={primarySelectedItem.rotation ?? 0}
+                        onChange={(e) => { const v = Number(e.target.value); if (!isNaN(v)) updateCanvasItem(primarySelectedItem.id, { rotation: v }); }}
+                        style={{ width: "46px", padding: "2px 4px", fontSize: "11px" }}
+                      />°
+                      <button onClick={() => updateCanvasItem(primarySelectedItem.id, { rotation: 0 })} style={{ fontSize: "11px", padding: "3px 6px" }} title="Reset rotation to 0°">↺</button>
+                    </label>
+                  </>
                 )}
                 {primarySelectedItem.type === "text" && selectedItems.length === 1 && (
                   <>
@@ -1622,12 +1815,35 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                         </div>
                       )}
                     </div>
-                    <input type="number" value={primarySelectedItem.fontSize} min="8" max="180" onChange={(event) => updateCanvasItem(primarySelectedItem.id, { fontSize: Number(event.target.value) || 12 })} style={{ width: "70px", padding: "5px", fontSize: "12px" }} />
+                    <input
+                      type="number"
+                      value={primarySelectedItem.fontSize}
+                      min="8" max="180"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "" || val === "-") return; // allow clearing while typing
+                        const n = Number(val);
+                        if (n >= 1) updateCanvasItem(primarySelectedItem.id, { fontSize: n });
+                      }}
+                      onBlur={(e) => {
+                        const n = Number(e.target.value);
+                        if (!n || n < 1) updateCanvasItem(primarySelectedItem.id, { fontSize: 12 });
+                      }}
+                      style={{ width: "70px", padding: "5px", fontSize: "12px" }}
+                    />
                     <select value={primarySelectedItem.fontWeight} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { fontWeight: event.target.value })} style={{ padding: "5px", fontSize: "12px" }}>
                       <option value="normal">Regular</option>
                       <option value="bold">Bold</option>
                       <option value="900">Heavy</option>
                     </select>
+                    <div style={{ display: "flex", gap: "2px" }}>
+                      {[{v:"left",label:"L"},{v:"center",label:"C"},{v:"right",label:"R"}].map(({v,label}) => (
+                        <button key={v} onClick={() => updateCanvasItem(primarySelectedItem.id, { textAlign: v })}
+                          title={`Align ${v}`}
+                          style={{ padding: "4px 8px", fontSize: "12px", fontWeight: "bold", backgroundColor: (primarySelectedItem.textAlign || "left") === v ? "#2196F3" : "#f0f0f0", color: (primarySelectedItem.textAlign || "left") === v ? "white" : "#333", border: "1px solid #ccc", borderRadius: "3px", cursor: "pointer" }}
+                        >{label}</button>
+                      ))}
+                    </div>
                     <label style={{ fontSize: "12px" }}>Color <input type="color" value={primarySelectedItem.color} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { color: event.target.value })} /></label>
                     <label style={{ fontSize: "12px" }}>BG <input type="color" value={primarySelectedItem.backgroundColor === "transparent" ? "#ffffff" : primarySelectedItem.backgroundColor} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { backgroundColor: event.target.value })} /></label>
                     <label style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}>
@@ -1782,9 +1998,9 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
             {pageItems(pg).map(item => {
               const img = item.type === "image" ? images.find(i => i.id === item.imageId) : null;
               return (
-                <div key={item.id} style={{ position: "absolute", left: item.x, top: item.y, width: item.width, height: item.height, zIndex: item.zIndex, opacity: item.opacity ?? 1, backgroundColor: item.type === "text" ? item.backgroundColor : "transparent" }}>
+                <div key={item.id} style={{ position: "absolute", left: item.x, top: item.y, width: item.width, height: item.height, zIndex: item.zIndex, opacity: item.opacity ?? 1, backgroundColor: item.type === "text" ? item.backgroundColor : "transparent", transform: item.rotation ? `rotate(${item.rotation}deg)` : undefined, transformOrigin: "center center" }}>
                   {item.type === "image" && img && <img src={img.url} alt="" style={{ width: "100%", height: "100%", objectFit: item.objectFit || "contain" }} />}
-                  {item.type === "text" && <div style={{ color: item.color, fontFamily: item.fontFamily, fontSize: item.fontSize, fontWeight: item.fontWeight, lineHeight: item.lineHeight ?? 1.1, letterSpacing: item.letterSpacing ? `${item.letterSpacing}px` : "normal", padding: 6, whiteSpace: "pre-wrap" }}>{item.text}</div>}
+                  {item.type === "text" && <div style={{ color: item.color, fontFamily: item.fontFamily, fontSize: item.fontSize, fontWeight: item.fontWeight, lineHeight: item.lineHeight ?? 1.1, letterSpacing: item.letterSpacing ? `${item.letterSpacing}px` : "normal", textAlign: item.textAlign || "left", padding: 6, whiteSpace: "pre-wrap" }}>{item.text}</div>}
                 </div>
               );
             })}
