@@ -12,6 +12,7 @@ import { usePresence } from "../../../hooks/usePresence";
 import PresenceIndicator from "../../shared/PresenceIndicator";
 import { supabase } from "../../../supabase";
 import WritingTimeline from "../../../experimental/writingTimeline/WritingTimeline";
+import { rippleTimelineSceneMove } from "../../../experimental/writingTimeline/writingTimelineUtils";
 
 const WGA_COLORS = [
   { name: "White",     hex: "#FFFFFF", textHex: "#000000" },
@@ -1099,14 +1100,7 @@ function Script({
     const movedScene = baseScenes[sceneIndex];
     if (!movedScene) return;
 
-    const movedScenes = baseScenes.map((scene, index) =>
-      index !== sceneIndex
-        ? scene
-        : {
-            ...scene,
-            timelineStartPage: nextStartPage,
-          }
-    );
+    const movedScenes = rippleTimelineSceneMove(baseScenes, sceneIndex, nextStartPage);
 
     const nextScenes = shouldPersist ? renumberScenesByTimeline(movedScenes) : movedScenes;
 

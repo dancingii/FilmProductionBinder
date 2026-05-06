@@ -3,6 +3,7 @@ import {
   DEFAULT_TARGET_PAGES,
   getSceneTimelineData,
   getTotalWrittenPages,
+  rippleTimelineSceneMove,
 } from "./writingTimelineUtils";
 
 function WritingTimeline({
@@ -16,14 +17,21 @@ function WritingTimeline({
   onSceneOpen,
 }) {
     const timelineBarRef = useRef(null);
+    const timelineScrollRef = useRef(null);
     const [draggingSceneKey, setDraggingSceneKey] = useState(null);
     const [dragPreview, setDragPreview] = useState(null);
     const [snapIndicatorPage, setSnapIndicatorPage] = useState(null);
     const [zoomWindowRange, setZoomWindowRange] = useState(null);
+    const [timelineZoom, setTimelineZoom] = useState(1);
     const dragOffsetRef = useRef(0);
     const ZOOM_FACTOR = 10;
     const ZOOM_LENS_WIDTH_PERCENT = 40;
     const DRAG_START_THRESHOLD_PX = 4;
+    const MIN_TIMELINE_ZOOM = 1;
+    const MAX_TIMELINE_ZOOM = 6;
+    const TIMELINE_ZOOM_STEP = 0.5;
+    const TIMELINE_BAR_HEIGHT = 60;
+    const SCROLLBAR_GUTTER_PX = 14;
     const lensDelayRef = useRef(null);
 
   const timelineData = useMemo(() => {
@@ -33,6 +41,18 @@ function WritingTimeline({
   const totalWrittenPages = useMemo(() => {
     return getTotalWrittenPages(scenes);
   }, [scenes]);
+
+  const renderTimelineData = useMemo(() => {
+    if (!dragPreview) return timelineData;
+
+    const previewScenes = rippleTimelineSceneMove(
+      scenes,
+      dragPreview.sceneIndex,
+      dragPreview.startPage
+    );
+
+    return getSceneTimelineData(previewScenes, targetPages);
+  }, [dragPreview, scenes, targetPages, timelineData]);
 
   const remainingPages = Math.max(0, targetPages - totalWrittenPages);
   const writtenPercent = Math.min(100, (totalWrittenPages / targetPages) * 100);
@@ -68,7 +88,43 @@ function WritingTimeline({
 
   const getSceneKey = (scene, index) => scene?.id || `${scene?.sceneNumber}-${index}`;
 
-  const getPageFromPointer = (clientX, pageLength = 0, zoomRange = null) => {
+  const updateTimelineZoom = (direction) => {
+    const scrollEl = timelineScrollRef.current;
+    const currentScrollWidth = scrollEl?.scrollWidth || 0;
+    const currentClientWidth = scrollEl?.clientWidth || 0;
+    const currentCenterPercent =
+      currentScrollWidth > 0
+        ? (scrollEl.scrollLeft + currentClientWidth / 2) / currentScrollWidth
+        : 0.5;
+
+    const nextZoom = Math.min(
+      MAX_TIMELINE_ZOOM,
+      Math.max(
+        MIN_TIMELINE_ZOOM,
+        timelineZoom + direction * TIMELINE_ZOOM_STEP
+      )
+    );
+
+    if (nextZoom === timelineZoom) return;
+
+    setTimelineZoom(nextZoom);
+
+    window.requestAnimationFrame(() => {
+      const nextScrollEl = timelineScrollRef.current;
+      if (!nextScrollEl) return;
+
+      const nextScrollLeft =
+        currentCenterPercent * nextScrollEl.scrollWidth -
+        nextScrollEl.clientWidth / 2;
+
+      nextScrollEl.scrollLeft = Math.min(
+        Math.max(0, nextScrollLeft),
+        Math.max(0, nextScrollEl.scrollWidth - nextScrollEl.clientWidth)
+      );
+    });
+  };
+
+  const getPageFromPointer = (clientX, zoomRange = null) => {
     const rect = timelineBarRef.current?.getBoundingClientRect();
     if (!rect) return 0;
 
@@ -82,36 +138,60 @@ function WritingTimeline({
 
     const rawPage = visibleStart + pointerPercent * visibleRange;
 
-    const clampedPage = Math.min(
-      Math.max(0, rawPage),
-      Math.max(0, targetPages - pageLength)
+    return Math.max(0, rawPage);
+  };
+
+  const getDragStartPageFromPointer = (clientX, item) => {
+    const pointerPage = getPageFromPointer(clientX);
+    const roundedPointerPage = Math.round(pointerPage * 8) / 8;
+    const candidateStartPage = roundedPointerPage - dragOffsetRef.current;
+    const clampedCandidateStart = Math.min(
+      Math.max(0, candidateStartPage),
+      Math.max(0, targetPages - item.pageLength)
     );
-
-    let snappedPage = Math.round(clampedPage * 8) / 8;
-
-    let snapFound = false;
+    const candidateEndPage = clampedCandidateStart + item.pageLength;
+    const sceneKey = getSceneKey(item.scene, item.index);
+    let bestSnap = null;
 
     for (const other of timelineData) {
-        const otherKey = getSceneKey(other.scene, other.index);
-        const isSelf = dragPreview?.sceneKey === otherKey;
+      const otherKey = getSceneKey(other.scene, other.index);
+      if (sceneKey === otherKey) continue;
 
-      if (isSelf) continue;
+      const leftToRightDistance = Math.abs(clampedCandidateStart - other.endPage);
+      if (
+        leftToRightDistance < SNAP_THRESHOLD &&
+        (!bestSnap || leftToRightDistance < bestSnap.distance)
+      ) {
+        bestSnap = {
+          distance: leftToRightDistance,
+          startPage: other.endPage,
+          indicatorPage: other.endPage,
+        };
+      }
 
-      const end = other.endPage;
-
-      if (Math.abs(snappedPage - end) < SNAP_THRESHOLD) {
-        snappedPage = end;
-        setSnapIndicatorPage(end);
-        snapFound = true;
-        break;
+      const rightToLeftDistance = Math.abs(candidateEndPage - other.startPage);
+      if (
+        rightToLeftDistance < SNAP_THRESHOLD &&
+        (!bestSnap || rightToLeftDistance < bestSnap.distance)
+      ) {
+        bestSnap = {
+          distance: rightToLeftDistance,
+          startPage: other.startPage - item.pageLength,
+          indicatorPage: other.startPage,
+        };
       }
     }
 
-    if (!snapFound) {
-      setSnapIndicatorPage(null);
+    if (bestSnap) {
+      setSnapIndicatorPage(bestSnap.indicatorPage);
+      return Math.min(
+        Math.max(0, bestSnap.startPage),
+        Math.max(0, targetPages - item.pageLength)
+      );
     }
 
-    return snappedPage;
+    setSnapIndicatorPage(null);
+    return clampedCandidateStart;
   };
   const startDrag = (e, item) => {
     e.preventDefault();
@@ -156,6 +236,7 @@ function WritingTimeline({
           setDraggingSceneKey(sceneKey);
           setDragPreview({
             sceneKey,
+            sceneIndex: item.index,
             startPage: item.startPage,
           });
           document.body.style.cursor = "grabbing";
@@ -177,17 +258,12 @@ function WritingTimeline({
           });
         }
   
-        const rawPage = getPageFromPointer(moveEvent.clientX, item.pageLength);
-        const nextStartPage = rawPage - dragOffsetRef.current;
-  
-        const clampedStart = Math.min(
-          Math.max(0, nextStartPage),
-          Math.max(0, targetPages - item.pageLength)
-        );
+        const nextStartPage = getDragStartPageFromPointer(moveEvent.clientX, item);
   
         setDragPreview({
           sceneKey,
-          startPage: clampedStart,
+          sceneIndex: item.index,
+          startPage: nextStartPage,
         });
     };
 
@@ -198,7 +274,7 @@ function WritingTimeline({
       }
 
       if (hasStartedDragging) {
-        const nextStartPage = getPageFromPointer(upEvent.clientX, item.pageLength);
+        const nextStartPage = getDragStartPageFromPointer(upEvent.clientX, item);
         onSceneMove?.(item.index, nextStartPage, true);
       }
 
@@ -261,6 +337,40 @@ function WritingTimeline({
           >
             Edit Target
           </button>
+          <button
+            type="button"
+            onClick={() => updateTimelineZoom(-1)}
+            disabled={timelineZoom <= MIN_TIMELINE_ZOOM}
+            style={{
+              padding: "2px 7px",
+              border: "1px solid #ccc",
+              borderRadius: "3px",
+              backgroundColor: timelineZoom <= MIN_TIMELINE_ZOOM ? "#eee" : "#f7f7f7",
+              color: timelineZoom <= MIN_TIMELINE_ZOOM ? "#999" : "#333",
+              cursor: timelineZoom <= MIN_TIMELINE_ZOOM ? "default" : "pointer",
+              fontSize: "10px",
+              fontWeight: "bold",
+            }}
+          >
+            Zoom Out
+          </button>
+          <button
+            type="button"
+            onClick={() => updateTimelineZoom(1)}
+            disabled={timelineZoom >= MAX_TIMELINE_ZOOM}
+            style={{
+              padding: "2px 7px",
+              border: "1px solid #ccc",
+              borderRadius: "3px",
+              backgroundColor: timelineZoom >= MAX_TIMELINE_ZOOM ? "#eee" : "#f7f7f7",
+              color: timelineZoom >= MAX_TIMELINE_ZOOM ? "#999" : "#333",
+              cursor: timelineZoom >= MAX_TIMELINE_ZOOM ? "default" : "pointer",
+              fontSize: "10px",
+              fontWeight: "bold",
+            }}
+          >
+            Zoom In
+          </button>
         </div>
 
         <div style={{ fontVariantNumeric: "tabular-nums", color: "#666" }}>
@@ -270,11 +380,24 @@ function WritingTimeline({
       </div>
 
       <div
+        ref={timelineScrollRef}
+        style={{
+          width: "100%",
+          height: `${TIMELINE_BAR_HEIGHT + SCROLLBAR_GUTTER_PX}px`,
+          overflowX: "auto",
+          overflowY: "hidden",
+          paddingBottom: `${SCROLLBAR_GUTTER_PX}px`,
+          boxSizing: "border-box",
+          scrollbarGutter: "stable",
+        }}
+      >
+      <div
         ref={timelineBarRef}
         style={{
           position: "relative",
-          height: "60px",
-          width: "100%",
+          height: `${TIMELINE_BAR_HEIGHT}px`,
+          width: `${timelineZoom * 100}%`,
+          minWidth: "100%",
           overflow: "visible",
         }}
       >
@@ -329,10 +452,10 @@ function WritingTimeline({
               />
             )}
 
-            {timelineData.map((lensItem) => {
+            {renderTimelineData.map((lensItem) => {
               const { scene, index, pageLength, startPage } = lensItem;
               const sceneKey = getSceneKey(scene, index);
-              const previewStartPage = dragPreview?.sceneKey === sceneKey ? dragPreview.startPage : startPage;
+              const previewStartPage = startPage;
               const visibleRange = Math.max(1, zoomWindowRange.end - zoomWindowRange.start);
               const lensLeftPercent = ((previewStartPage - zoomWindowRange.start) / visibleRange) * 100;
               const lensWidthPercent = (pageLength / visibleRange) * 100;
@@ -436,15 +559,14 @@ function WritingTimeline({
           );
         })}
 
-        {timelineData.map((item) => {
+        {renderTimelineData.map((item) => {
           const { scene, index, pageLength, startPage, label } = item;
           const sceneKey = getSceneKey(scene, index);
           const isCurrent =
             String(scene.sceneNumber) === String(currentSceneNumber);
           const isDragging = draggingSceneKey === sceneKey;
 
-          const previewStartPage =
-            dragPreview?.sceneKey === sceneKey ? dragPreview.startPage : startPage;
+          const previewStartPage = startPage;
 
             const leftPercent = Math.min(100, (previewStartPage / targetPages) * 100);
             const rawWidthPercent = (pageLength / targetPages) * 100;
@@ -507,6 +629,7 @@ function WritingTimeline({
             </button>
           );
         })}
+      </div>
       </div>
     </div>
   );

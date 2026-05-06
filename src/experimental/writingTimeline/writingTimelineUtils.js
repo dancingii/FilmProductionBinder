@@ -81,3 +81,84 @@ export function getSceneTimelineData(scenes = [], targetPages = DEFAULT_TARGET_P
     };
   });
 }
+
+export function rippleTimelineSceneMove(
+  scenes = [],
+  movedSceneIndex,
+  nextStartPage
+) {
+  if (!Array.isArray(scenes) || scenes.length === 0) return scenes;
+
+  const movedScene = scenes[movedSceneIndex];
+  if (!movedScene) return scenes;
+
+  const movedSceneId = movedScene.id || movedScene.sceneId || movedScene.scene_id || null;
+  const movedSceneKey = movedSceneId ? String(movedSceneId) : null;
+  let fallbackCumulativePages = 0;
+
+  const timelineItems = scenes.map((scene, index) => {
+    const pageLength = getSceneEstimatedPages(scene);
+    const startPage =
+      index === movedSceneIndex
+        ? Math.max(0, Number(nextStartPage) || 0)
+        : getSceneTimelineStartPage(scene, fallbackCumulativePages);
+    const sceneId = scene.id || scene.sceneId || scene.scene_id || null;
+    const isMovedScene = movedSceneKey
+      ? sceneId && String(sceneId) === movedSceneKey
+      : index === movedSceneIndex;
+
+    fallbackCumulativePages += pageLength;
+
+    return {
+      scene,
+      index,
+      pageLength,
+      startPage,
+      isMovedScene,
+    };
+  });
+
+  const sortedItems = [...timelineItems].sort((a, b) => {
+    if (a.startPage !== b.startPage) return a.startPage - b.startPage;
+    return a.index - b.index;
+  });
+
+  const adjustedStartPages = new Map();
+  const movedItemIndex = sortedItems.findIndex((item) => item.isMovedScene);
+
+  if (movedItemIndex === -1) return scenes;
+
+  sortedItems.slice(0, movedItemIndex).forEach((item) => {
+    adjustedStartPages.set(item.index, item.startPage);
+  });
+
+  let previousEndPage =
+    sortedItems[movedItemIndex].startPage + sortedItems[movedItemIndex].pageLength;
+
+  adjustedStartPages.set(
+    sortedItems[movedItemIndex].index,
+    sortedItems[movedItemIndex].startPage
+  );
+
+  sortedItems.slice(movedItemIndex + 1).forEach((item) => {
+    const adjustedStartPage =
+      item.startPage < previousEndPage ? previousEndPage : item.startPage;
+    adjustedStartPages.set(item.index, adjustedStartPage);
+    previousEndPage = adjustedStartPage + item.pageLength;
+  });
+
+  return scenes.map((scene, index) => {
+    const adjustedStartPage = adjustedStartPages.get(index);
+    if (!Number.isFinite(adjustedStartPage)) return scene;
+
+    const currentStartPage = Number(scene.timelineStartPage);
+    if (Number.isFinite(currentStartPage) && currentStartPage === adjustedStartPage) {
+      return scene;
+    }
+
+    return {
+      ...scene,
+      timelineStartPage: adjustedStartPage,
+    };
+  });
+}
