@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from "react";
 import {
   DEFAULT_TARGET_PAGES,
   getSceneTimelineData,
+  getSourceClosedTimelineScenes,
   getTotalWrittenPages,
   rippleTimelineSceneMove,
 } from "./writingTimelineUtils";
@@ -32,6 +33,7 @@ function WritingTimeline({
     const TIMELINE_ZOOM_STEP = 0.5;
     const TIMELINE_BAR_HEIGHT = 60;
     const SCROLLBAR_GUTTER_PX = 14;
+    const SCENE_LABEL_MIN_WIDTH_PX = 22;
     const lensDelayRef = useRef(null);
 
   const timelineData = useMemo(() => {
@@ -54,23 +56,53 @@ function WritingTimeline({
     return getSceneTimelineData(previewScenes, targetPages);
   }, [dragPreview, scenes, targetPages, timelineData]);
 
+  const snapTimelineData = useMemo(() => {
+    if (!dragPreview) return timelineData;
+
+    const sourceClosedScenes = getSourceClosedTimelineScenes(
+      scenes,
+      dragPreview.sceneIndex
+    );
+
+    return getSceneTimelineData(sourceClosedScenes, targetPages);
+  }, [dragPreview, scenes, targetPages, timelineData]);
+
   const remainingPages = Math.max(0, targetPages - totalWrittenPages);
   const writtenPercent = Math.min(100, (totalWrittenPages / targetPages) * 100);
 
   const pageTicks = useMemo(() => {
     const safeTargetPages = Math.max(1, Math.round(Number(targetPages) || DEFAULT_TARGET_PAGES));
-    const ticks = [1];
+    const showFiveLabels = timelineZoom >= 2;
+    const showAllLabels = timelineZoom >= 4;
 
-    for (let page = 10; page <= safeTargetPages; page += 10) {
-      ticks.push(page);
-    }
+    return Array.from({ length: safeTargetPages }, (_, index) => {
+      const page = index + 1;
+      const isFirst = page === 1;
+      const isLast = page === safeTargetPages;
+      const isTen = page % 10 === 0;
+      const isFive = page % 5 === 0;
+      const showLabel =
+        isFirst ||
+        isLast ||
+        isTen ||
+        showAllLabels ||
+        (showFiveLabels && isFive);
 
-    if (!ticks.includes(safeTargetPages)) {
-      ticks.push(safeTargetPages);
-    }
-
-    return ticks;
-  }, [targetPages]);
+      return {
+        page,
+        isFirst,
+        isLast,
+        isTen,
+        isFive,
+        showLabel,
+        tickHeight: isTen ? 8 : isFive ? 6 : 4,
+        tickWidth: isTen ? 2 : 1,
+        fontSize: isTen ? 10 : isFive ? 9 : 8,
+        color: isTen ? "#555" : isFive ? "#777" : "#aaa",
+        fontWeight: isTen ? "bold" : isFive ? "600" : "normal",
+      };
+    });
+  }, [targetPages, timelineZoom]);
 
   const scrollToScene = (index) => {
     setCurrentIndex?.(index);
@@ -153,7 +185,9 @@ function WritingTimeline({
     const sceneKey = getSceneKey(item.scene, item.index);
     let bestSnap = null;
 
-    for (const other of timelineData) {
+    const activeSnapTimelineData = dragPreview ? snapTimelineData : timelineData;
+
+    for (const other of activeSnapTimelineData) {
       const otherKey = getSceneKey(other.scene, other.index);
       if (sceneKey === otherKey) continue;
 
@@ -244,7 +278,7 @@ function WritingTimeline({
 
         const rect = timelineBarRef.current?.getBoundingClientRect();
   
-        if (rect) {
+        if (rect && timelineZoom === MIN_TIMELINE_ZOOM) {
           const x = Math.min(Math.max(moveEvent.clientX - rect.left, 0), rect.width);
           const pointerPercent = rect.width > 0 ? x / rect.width : 0;
           const pointerPage = pointerPercent * targetPages;
@@ -256,6 +290,8 @@ function WritingTimeline({
             end: zoomStart + zoomSize,
             pointerPercent,
           });
+        } else {
+          setZoomWindowRange(null);
         }
   
         const nextStartPage = getDragStartPageFromPointer(moveEvent.clientX, item);
@@ -475,7 +511,9 @@ function WritingTimeline({
                     height: "36px",
                     backgroundColor: isCurrent ? "#316AC5" : "#9d9d9d",
                     opacity: isDragging ? 0.85 : 0.95,
-                    borderRight: "1px solid #fff",
+                    borderLeft: "1px solid rgba(255,255,255,0.95)",
+                    borderRight: "1px solid rgba(0,0,0,0.45)",
+                    boxShadow: "inset 1px 0 rgba(0,0,0,0.22), inset -1px 0 rgba(255,255,255,0.75)",
                     zIndex: 5,
                   }}
                 >
@@ -498,7 +536,8 @@ function WritingTimeline({
               );
             })}
 
-            {pageTicks.map((page) => {
+            {pageTicks.map((tick) => {
+              const { page } = tick;
               if (page < zoomWindowRange.start || page > zoomWindowRange.end) return null;
 
               const visibleRange = Math.max(1, zoomWindowRange.end - zoomWindowRange.start);
@@ -512,23 +551,32 @@ function WritingTimeline({
                     left: `${tickLeftPercent}%`,
                     bottom: 0,
                     transform: "translateX(-50%)",
-                    fontSize: "8px",
-                    color: "#333",
+                    fontSize: `${tick.fontSize}px`,
+                    color: tick.color,
+                    fontWeight: tick.fontWeight,
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  <div style={{ width: "1px", height: "6px", backgroundColor: "#ff0000", margin: "0 auto 1px" }} />
-                  {page}
+                  <div
+                    style={{
+                      width: `${tick.tickWidth}px`,
+                      height: `${tick.tickHeight}px`,
+                      backgroundColor: tick.isTen ? "#666" : tick.isFive ? "#888" : "#bbb",
+                      margin: "0 auto 1px",
+                    }}
+                  />
+                  {tick.showLabel ? page : null}
                 </div>
               );
             })}
           </div>
         )}
 
-{pageTicks.map((page) => {
+{pageTicks.map((tick) => {
+          const { page } = tick;
           const leftPercent = targetPages <= 1 ? 0 : ((page - 1) / (targetPages - 1)) * 100;
           const isFirst = page === 1;
-          const isLast = page === Math.round(Number(targetPages) || DEFAULT_TARGET_PAGES);
+          const isLast = tick.isLast;
 
           return (
             <div
@@ -540,21 +588,22 @@ function WritingTimeline({
                 transform: isFirst ? "translateX(0)" : isLast ? "translateX(-100%)" : "translateX(-50%)",
                 textAlign: "center",
                 minWidth: "18px",
-                fontSize: "10px",
-                color: "#888",
+                fontSize: `${tick.fontSize}px`,
+                color: tick.color,
+                fontWeight: tick.fontWeight,
                 fontVariantNumeric: "tabular-nums",
                 zIndex: 1,
               }}
             >
               <div
                 style={{
-                  width: "1px",
-                  height: "6px",
-                  backgroundColor: "#999",
+                  width: `${tick.tickWidth}px`,
+                  height: `${tick.tickHeight}px`,
+                  backgroundColor: tick.isTen ? "#666" : tick.isFive ? "#888" : "#bbb",
                   margin: isFirst ? "0 auto 2px 0" : isLast ? "0 0 2px auto" : "0 auto 2px",
                 }}
               />
-              <span>{page}</span>
+              <span>{tick.showLabel ? page : ""}</span>
             </div>
           );
         })}
@@ -571,6 +620,9 @@ function WritingTimeline({
             const leftPercent = Math.min(100, (previewStartPage / targetPages) * 100);
             const rawWidthPercent = (pageLength / targetPages) * 100;
           const widthPercent = Math.max(0.15, rawWidthPercent);
+          const timelineWidth = timelineBarRef.current?.clientWidth || 0;
+          const blockPixelWidth = (rawWidthPercent / 100) * timelineWidth;
+          const canShowSceneNumber = blockPixelWidth >= SCENE_LABEL_MIN_WIDTH_PX;
 
           return (
             <button
@@ -601,7 +653,7 @@ function WritingTimeline({
                 zIndex: isDragging ? 5 : 2,
               }}
             >
-              {(rawWidthPercent > 3 || isDragging) && (
+              {(canShowSceneNumber || isDragging) && (
                 <span
                   style={{
                     position: "absolute",

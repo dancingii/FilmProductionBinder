@@ -82,6 +82,80 @@ export function getSceneTimelineData(scenes = [], targetPages = DEFAULT_TARGET_P
   });
 }
 
+function getSourceCloseIndexes(timelineItems = [], movedSceneIndex) {
+  const sortedItems = [...timelineItems].sort((a, b) => {
+    if (a.startPage !== b.startPage) return a.startPage - b.startPage;
+    return a.index - b.index;
+  });
+  const movedSortedIndex = sortedItems.findIndex(
+    (item) => item.index === movedSceneIndex
+  );
+  const movedItem = sortedItems[movedSortedIndex];
+  const sourceCloseIndexes = new Set();
+  const EPSILON = 0.001;
+
+  if (!movedItem) return sourceCloseIndexes;
+
+  let clusterEndPage = movedItem.endPage;
+
+  for (const item of sortedItems.slice(movedSortedIndex + 1)) {
+    if (item.startPage > clusterEndPage + EPSILON) break;
+
+    sourceCloseIndexes.add(item.index);
+    clusterEndPage = Math.max(clusterEndPage, item.endPage);
+  }
+
+  return sourceCloseIndexes;
+}
+
+export function getSourceClosedTimelineScenes(scenes = [], movedSceneIndex) {
+  if (!Array.isArray(scenes) || scenes.length === 0) return scenes;
+
+  const movedScene = scenes[movedSceneIndex];
+  if (!movedScene) return scenes;
+
+  let fallbackCumulativePages = 0;
+
+  const timelineItems = scenes.map((scene, index) => {
+    const pageLength = getSceneEstimatedPages(scene);
+    const startPage = getSceneTimelineStartPage(scene, fallbackCumulativePages);
+
+    fallbackCumulativePages += pageLength;
+
+    return {
+      index,
+      pageLength,
+      startPage,
+      endPage: startPage + pageLength,
+    };
+  });
+
+  const movedItem = timelineItems[movedSceneIndex];
+  if (!movedItem) return scenes;
+
+  const sourceLength = movedItem.pageLength;
+  const sourceCloseIndexes = getSourceCloseIndexes(timelineItems, movedSceneIndex);
+
+  return scenes.map((scene, index) => {
+    if (index === movedSceneIndex) return scene;
+
+    const item = timelineItems[index];
+    if (!item || !sourceCloseIndexes.has(index)) return scene;
+
+    const adjustedStartPage = Math.max(0, item.startPage - sourceLength);
+    const currentStartPage = Number(scene.timelineStartPage);
+
+    if (Number.isFinite(currentStartPage) && currentStartPage === adjustedStartPage) {
+      return scene;
+    }
+
+    return {
+      ...scene,
+      timelineStartPage: adjustedStartPage,
+    };
+  });
+}
+
 export function rippleTimelineSceneMove(
   scenes = [],
   movedSceneIndex,
@@ -92,20 +166,12 @@ export function rippleTimelineSceneMove(
   const movedScene = scenes[movedSceneIndex];
   if (!movedScene) return scenes;
 
-  const movedSceneId = movedScene.id || movedScene.sceneId || movedScene.scene_id || null;
-  const movedSceneKey = movedSceneId ? String(movedSceneId) : null;
   let fallbackCumulativePages = 0;
 
   const timelineItems = scenes.map((scene, index) => {
     const pageLength = getSceneEstimatedPages(scene);
-    const startPage =
-      index === movedSceneIndex
-        ? Math.max(0, Number(nextStartPage) || 0)
-        : getSceneTimelineStartPage(scene, fallbackCumulativePages);
-    const sceneId = scene.id || scene.sceneId || scene.scene_id || null;
-    const isMovedScene = movedSceneKey
-      ? sceneId && String(sceneId) === movedSceneKey
-      : index === movedSceneIndex;
+    const startPage = getSceneTimelineStartPage(scene, fallbackCumulativePages);
+    const isMovedScene = index === movedSceneIndex;
 
     fallbackCumulativePages += pageLength;
 
@@ -114,35 +180,67 @@ export function rippleTimelineSceneMove(
       index,
       pageLength,
       startPage,
+      endPage: startPage + pageLength,
       isMovedScene,
     };
   });
 
-  const sortedItems = [...timelineItems].sort((a, b) => {
-    if (a.startPage !== b.startPage) return a.startPage - b.startPage;
+  const movedItem = timelineItems.find((item) => item.isMovedScene);
+  if (!movedItem) return scenes;
+
+  const movedStartPage = Math.max(0, Number(nextStartPage) || 0);
+  const sourceLength = movedItem.pageLength;
+  const sourceCloseIndexes = getSourceCloseIndexes(timelineItems, movedSceneIndex);
+
+  const sourceClosedItems = timelineItems
+    .filter((item) => !item.isMovedScene)
+    .map((item) => {
+      const shouldCloseSourceGap = sourceCloseIndexes.has(item.index);
+      return {
+        ...item,
+        desiredStartPage: Math.max(
+          0,
+          shouldCloseSourceGap ? item.startPage - sourceLength : item.startPage
+        ),
+      };
+    })
+    .sort((a, b) => {
+      if (a.desiredStartPage !== b.desiredStartPage) {
+        return a.desiredStartPage - b.desiredStartPage;
+      }
+      return a.index - b.index;
+    });
+
+  const finalItems = [
+    ...sourceClosedItems,
+    {
+      ...movedItem,
+      desiredStartPage: movedStartPage,
+    },
+  ].sort((a, b) => {
+    if (a.desiredStartPage !== b.desiredStartPage) {
+      return a.desiredStartPage - b.desiredStartPage;
+    }
+    if (a.isMovedScene !== b.isMovedScene) return a.isMovedScene ? -1 : 1;
     return a.index - b.index;
   });
 
   const adjustedStartPages = new Map();
-  const movedItemIndex = sortedItems.findIndex((item) => item.isMovedScene);
+  const movedItemIndex = finalItems.findIndex((item) => item.isMovedScene);
 
   if (movedItemIndex === -1) return scenes;
 
-  sortedItems.slice(0, movedItemIndex).forEach((item) => {
-    adjustedStartPages.set(item.index, item.startPage);
+  finalItems.slice(0, movedItemIndex).forEach((item) => {
+    adjustedStartPages.set(item.index, item.desiredStartPage);
   });
 
-  let previousEndPage =
-    sortedItems[movedItemIndex].startPage + sortedItems[movedItemIndex].pageLength;
+  const previousItem = finalItems[movedItemIndex - 1];
+  let previousEndPage = previousItem
+    ? previousItem.desiredStartPage + previousItem.pageLength
+    : 0;
 
-  adjustedStartPages.set(
-    sortedItems[movedItemIndex].index,
-    sortedItems[movedItemIndex].startPage
-  );
-
-  sortedItems.slice(movedItemIndex + 1).forEach((item) => {
-    const adjustedStartPage =
-      item.startPage < previousEndPage ? previousEndPage : item.startPage;
+  finalItems.slice(movedItemIndex).forEach((item) => {
+    const adjustedStartPage = Math.max(item.desiredStartPage, previousEndPage);
     adjustedStartPages.set(item.index, adjustedStartPage);
     previousEndPage = adjustedStartPage + item.pageLength;
   });
