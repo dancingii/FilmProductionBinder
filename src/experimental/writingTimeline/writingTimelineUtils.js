@@ -45,7 +45,13 @@ export function formatPageLength(pageLength) {
 }
 
 export function getSceneTimelineStartPage(scene, fallbackStartPage = 0) {
-  const explicitStart = Number(scene?.timelineStartPage);
+  const rawStart = scene?.timelineStartPage;
+
+  if (rawStart === null || rawStart === undefined || rawStart === "") {
+    return Math.max(0, fallbackStartPage);
+  }
+
+  const explicitStart = Number(rawStart);
 
   if (Number.isFinite(explicitStart)) {
     return Math.max(0, explicitStart);
