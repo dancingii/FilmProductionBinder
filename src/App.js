@@ -3980,6 +3980,84 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
   const handleScriptScenesReordered = (nextScenes) => {
     if (!Array.isArray(nextScenes) || nextScenes.length === 0) return;
 
+    const canonicalScenesById = new Map();
+    const canonicalScenesByNumber = new Map();
+
+    nextScenes.forEach((scene) => {
+      const sceneId = scene.id || scene.sceneId || scene.scene_id || null;
+      if (sceneId) canonicalScenesById.set(String(sceneId), scene);
+      if (scene.sceneNumber !== undefined && scene.sceneNumber !== null) {
+        canonicalScenesByNumber.set(String(scene.sceneNumber), scene);
+      }
+    });
+
+    const findCanonicalScene = (sceneRef, block = null) => {
+      if (!sceneRef || typeof sceneRef !== "object") return null;
+
+      const sceneId =
+        block?.sceneId ||
+        sceneRef.id ||
+        sceneRef.sceneId ||
+        sceneRef.scene_id ||
+        null;
+
+      if (sceneId && canonicalScenesById.has(String(sceneId))) {
+        return canonicalScenesById.get(String(sceneId));
+      }
+
+      const sceneNumber = sceneRef.sceneNumber ?? sceneRef.scene_number;
+      if (
+        sceneNumber !== undefined &&
+        sceneNumber !== null &&
+        canonicalScenesByNumber.has(String(sceneNumber))
+      ) {
+        return canonicalScenesByNumber.get(String(sceneNumber));
+      }
+
+      return null;
+    };
+
+    const refreshSceneSnapshot = (existingScene, canonicalScene) => ({
+      ...existingScene,
+      id: canonicalScene.id || existingScene.id || null,
+      sceneId: canonicalScene.id || canonicalScene.sceneId || existingScene.sceneId || null,
+      sceneNumber: canonicalScene.sceneNumber,
+      heading: canonicalScene.heading,
+      metadata: canonicalScene.metadata || {},
+      pageNumber: canonicalScene.pageNumber,
+      pageLength: canonicalScene.pageLength,
+      timelineStartPage: canonicalScene.timelineStartPage,
+      estimatedDuration: canonicalScene.estimatedDuration,
+      manualTimeOfDay: canonicalScene.manualTimeOfDay,
+      description: canonicalScene.description,
+      notes: canonicalScene.notes,
+      status: existingScene.status,
+      scheduledDate: existingScene.scheduledDate,
+      scheduledTime: existingScene.scheduledTime,
+    });
+
+    const didSceneSnapshotChange = (previousScene, nextScene) => {
+      if (!previousScene || !nextScene) return false;
+
+      return (
+        String(previousScene.id || "") !== String(nextScene.id || "") ||
+        String(previousScene.sceneId || "") !== String(nextScene.sceneId || "") ||
+        String(previousScene.sceneNumber || "") !== String(nextScene.sceneNumber || "") ||
+        previousScene.heading !== nextScene.heading ||
+        JSON.stringify(previousScene.metadata || {}) !== JSON.stringify(nextScene.metadata || {}) ||
+        previousScene.pageNumber !== nextScene.pageNumber ||
+        previousScene.pageLength !== nextScene.pageLength ||
+        previousScene.timelineStartPage !== nextScene.timelineStartPage ||
+        previousScene.estimatedDuration !== nextScene.estimatedDuration ||
+        previousScene.manualTimeOfDay !== nextScene.manualTimeOfDay ||
+        previousScene.description !== nextScene.description ||
+        previousScene.notes !== nextScene.notes ||
+        previousScene.status !== nextScene.status ||
+        previousScene.scheduledDate !== nextScene.scheduledDate ||
+        previousScene.scheduledTime !== nextScene.scheduledTime
+      );
+    };
+
     setStripboardScenes((prevStripboardScenes) => {
       if (!Array.isArray(prevStripboardScenes)) return prevStripboardScenes;
 
@@ -4030,6 +4108,59 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
         };
       });
     });
+
+    let reconciledShootingDaysToPersist = null;
+
+    setShootingDays((prevShootingDays) => {
+      if (!Array.isArray(prevShootingDays) || prevShootingDays.length === 0) {
+        return prevShootingDays;
+      }
+
+      let didChange = false;
+
+      const reconciledShootingDays = prevShootingDays.map((day) => ({
+        ...day,
+        scheduleBlocks: (day.scheduleBlocks || []).map((block) => {
+          if (!block?.scene || typeof block.scene !== "object") return block;
+
+          const canonicalScene = findCanonicalScene(block.scene, block);
+          if (!canonicalScene) return block;
+
+          const scene = refreshSceneSnapshot(block.scene, canonicalScene);
+          const sceneId = scene.id || scene.sceneId || block.sceneId || null;
+          const sceneNumber = scene.sceneNumber;
+
+          if (
+            !didSceneSnapshotChange(block.scene, scene) &&
+            String(block.sceneId || "") === String(sceneId || "") &&
+            String(block.sceneNumber || "") === String(sceneNumber || "")
+          ) {
+            return block;
+          }
+
+          didChange = true;
+
+          return {
+            ...block,
+            scene,
+            sceneId,
+            sceneNumber,
+          };
+        }),
+      }));
+
+      if (!didChange) return prevShootingDays;
+
+      reconciledShootingDaysToPersist = reconciledShootingDays;
+      return reconciledShootingDays;
+    });
+
+    if (
+      Array.isArray(reconciledShootingDaysToPersist) &&
+      reconciledShootingDaysToPersist.length > 0
+    ) {
+      syncAllShootingDaysToDatabase(reconciledShootingDaysToPersist);
+    }
   };
 
   const updateCrewCallTime = (crewId, newCallTime) => {
