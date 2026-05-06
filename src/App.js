@@ -4041,6 +4041,8 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
             setCharacters={setCharacters}
             syncCharactersToDatabase={syncCharactersToDatabase}
             moodboardImages={scriptMoodImages}
+            setStripboardScenes={setStripboardScenes}
+            syncStripboardScenesToDatabase={syncStripboardScenesToDatabase}
           />
         );
         case "Stripboard":

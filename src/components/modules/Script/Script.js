@@ -6,6 +6,7 @@ import {
   formatElementText,
   calculateBlockLines,
   LINES_PER_PAGE,
+  parseSceneHeading,
 } from "../../../utils.js";
 import { usePresence } from "../../../hooks/usePresence";
 import PresenceIndicator from "../../shared/PresenceIndicator";
@@ -85,7 +86,7 @@ function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor,
           try { pageStats = calculateScenePageStats(index, scenes, LINES_PER_PAGE); } catch {}
           const statColor = isCurrent ? "rgba(255,255,255,0.72)" : "#bbb";
           return (
-            <PresenceIndicator key={index} itemId={scene.sceneNumber} otherUsers={otherUsers} position="top">
+            <PresenceIndicator key={scene.id || scene.sceneNumber || index} itemId={scene.id || scene.sceneNumber} otherUsers={otherUsers} position="top">
               <div
                 onClick={() => scrollToScene(index)}
                 onDoubleClick={() => { setEditingScene(index); setNewSceneNumber(scene.sceneNumber); }}
@@ -199,7 +200,7 @@ const ContinuousScript = React.memo(function ContinuousScript({
   setActiveBlock, taggedItems, tagCategories,
   showTagDropdown, setShowTagDropdown, tagWord, untagWordInstance,
   isWordInstanceTagged, getSceneStatusColor, committedRounds,
-  viewingRevision, setCurrentIndex,
+  viewingRevision, setCurrentIndex, onSceneHeadingChange,
 }) {
   const blockRefs = useRef({});
   const getKey = (si, bi) => `${si}-${bi}`;
@@ -555,14 +556,18 @@ const ContinuousScript = React.memo(function ContinuousScript({
         const statusColor = getSceneStatusColor(scene.sceneNumber);
         if (pageBreakKeys.has(`scene-${si}`)) pageLabel++;
         return (
-          <React.Fragment key={`scene-${scene.sceneNumber}`}>
+          <React.Fragment key={`scene-${scene.id || scene.sceneNumber}`}>
             {pageBreakKeys.has(`scene-${si}`) && <div style={PB_STYLE}>Page {pageLabel}</div>}
             <div ref={el => { sceneRefs.current[si] = el; }} data-scene-index={si} style={{ marginTop: si === 0 ? 0 : "32pt", paddingTop: si === 0 ? 0 : "8pt", borderTop: si === 0 ? "none" : "1px solid #e8e8e8" }}>
             {isEditMode ? (
                 <h2
                   contentEditable
                   suppressContentEditableWarning
-                  onBlur={(e) => updateSceneHeading(si, e.target.textContent.replace(`${scene.sceneNumber}:`, "").trim())}
+                  onBlur={(e) => {
+                    const nextHeading = e.target.textContent.replace(`${scene.sceneNumber}:`, "").trim();
+                    updateSceneHeading(si, nextHeading);
+                    onSceneHeadingChange?.(si, nextHeading);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -631,6 +636,8 @@ function Script({
   setCharacters = null,
   syncCharactersToDatabase = null,
   moodboardImages = [],
+  setStripboardScenes = null,
+  syncStripboardScenesToDatabase = null,
 }) {
   const ENABLE_WRITING_TIMELINE = true;
 
@@ -677,7 +684,10 @@ function Script({
   const [scriptMoodboardImages, setScriptMoodboardImages] = useState([]);
   const [showMoodOverlaySettings, setShowMoodOverlaySettings] = useState(false);
   const [moodOverlayCycleIndex, setMoodOverlayCycleIndex] = useState(0);
-  const [scriptWorkflowMode, setScriptWorkflowMode] = useState("writing");
+  const [scriptWorkflowMode, setScriptWorkflowMode] = useState(() => {
+    const stored = localStorage.getItem("scriptWorkflowMode");
+    return stored === "production" ? "production" : "writing";
+  });
 
   const autoSaveTimerRef = useRef(null);
   const lastAutoSavePayloadRef = useRef("");
@@ -691,6 +701,11 @@ function Script({
   const isProductionMode = scriptWorkflowMode === "production";
   const isScriptEditable = isWritingMode || isEditMode;
 
+  const getProjectStorageKey = useCallback((key) => {
+    const projectId = selectedProject?.id || selectedProject?.name || "default-project";
+    return `${key}:${projectId}`;
+  }, [selectedProject?.id, selectedProject?.name]);
+
   const getTimelinePositionsStorageKey = useCallback(() => {
     const projectId = selectedProject?.id || selectedProject?.name || "default-project";
     return `scriptTimelinePositions:${projectId}`;
@@ -699,6 +714,7 @@ function Script({
   const persistTimelinePositions = useCallback((sceneList = []) => {
     try {
       const payload = sceneList.map((scene, index) => ({
+        sceneId: scene.id || null,
         sceneNumber: scene.sceneNumber,
         heading: scene.heading,
         timelineStartPage: Number.isFinite(Number(scene.timelineStartPage)) ? Number(scene.timelineStartPage) : 0,
@@ -724,7 +740,37 @@ function Script({
   useEffect(() => { loadRevisions(); }, [loadRevisions]);
 
   useEffect(() => {
-    const key = `scriptTimelineVisible:${scriptWorkflowMode}`;
+    const handleTimelinePopupKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setSelectedTimelineScene(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleTimelinePopupKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleTimelinePopupKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+
+    const storedMode = localStorage.getItem(getProjectStorageKey("scriptWorkflowMode"));
+    if (storedMode === "production" || storedMode === "writing") {
+      setScriptWorkflowMode(storedMode);
+    }
+  }, [selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+    localStorage.setItem(getProjectStorageKey("scriptWorkflowMode"), scriptWorkflowMode);
+  }, [scriptWorkflowMode, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+
+    const key = getProjectStorageKey(`scriptTimelineVisible:${scriptWorkflowMode}`);
     const stored = localStorage.getItem(key);
 
     if (stored === null) {
@@ -733,11 +779,12 @@ function Script({
     }
 
     setShowWritingTimeline(stored === "true");
-  }, [scriptWorkflowMode]);
+  }, [scriptWorkflowMode, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
 
   useEffect(() => {
-    localStorage.setItem(`scriptTimelineVisible:${scriptWorkflowMode}`, showWritingTimeline ? "true" : "false");
-  }, [scriptWorkflowMode, showWritingTimeline]);
+    if (!selectedProject) return;
+    localStorage.setItem(getProjectStorageKey(`scriptTimelineVisible:${scriptWorkflowMode}`), showWritingTimeline ? "true" : "false");
+  }, [scriptWorkflowMode, showWritingTimeline, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
 
   useEffect(() => {
     if (!isWritingMode) return;
@@ -787,7 +834,7 @@ function Script({
 
     const findSavedPosition = (scene) => {
       return savedPositions.find(saved =>
-        String(saved.sceneNumber) === String(scene.sceneNumber)
+        saved.sceneId && scene.id && String(saved.sceneId) === String(scene.id)
       ) || savedPositions.find(saved =>
         String(saved.heading || "").trim().toUpperCase() === String(scene.heading || "").trim().toUpperCase()
       );
@@ -849,12 +896,26 @@ function Script({
   }, [editingScenes, isWritingMode, saveScenesDatabase, setScenes]);
 
   useEffect(() => {
-    localStorage.setItem("scriptMoodOverlayEnabled", showMoodOverlay ? "true" : "false");
-  }, [showMoodOverlay]);
+    if (!selectedProject) return;
+
+    const storedOverlay = localStorage.getItem(getProjectStorageKey("scriptMoodOverlayEnabled"));
+    setShowMoodOverlay(storedOverlay === "true");
+
+    try {
+      const storedSettings = JSON.parse(localStorage.getItem(getProjectStorageKey("scriptMoodOverlaySettings")));
+      if (storedSettings) setMoodOverlaySettings(storedSettings);
+    } catch {}
+  }, [selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
 
   useEffect(() => {
-    localStorage.setItem("scriptMoodOverlaySettings", JSON.stringify(moodOverlaySettings));
-  }, [moodOverlaySettings]);
+    if (!selectedProject) return;
+    localStorage.setItem(getProjectStorageKey("scriptMoodOverlayEnabled"), showMoodOverlay ? "true" : "false");
+  }, [showMoodOverlay, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+    localStorage.setItem(getProjectStorageKey("scriptMoodOverlaySettings"), JSON.stringify(moodOverlaySettings));
+  }, [moodOverlaySettings, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
 
   useEffect(() => {
     const incomingImages = Array.isArray(moodboardImages) ? moodboardImages.filter(img => img?.url) : [];
@@ -1037,10 +1098,8 @@ function Script({
     const movedScene = baseScenes[sceneIndex];
     if (!movedScene) return;
 
-    const movedSceneOriginalNumber = movedScene.sceneNumber;
-
-    const movedScenes = baseScenes.map((scene) =>
-      scene.sceneNumber !== movedSceneOriginalNumber
+    const movedScenes = baseScenes.map((scene, index) =>
+      index !== sceneIndex
         ? scene
         : {
             ...scene,
@@ -1048,42 +1107,26 @@ function Script({
           }
     );
 
-    if (isWritingMode) {
-      const nextScenes = shouldPersist ? renumberScenesByTimeline(movedScenes) : movedScenes;
+    const nextScenes = shouldPersist ? renumberScenesByTimeline(movedScenes) : movedScenes;
 
-      setEditingScenes(nextScenes);
-      setScenes(nextScenes);
+    setScenes(nextScenes);
 
-      if (shouldPersist) {
-        persistTimelinePositions(nextScenes);
-
-        try {
-          await saveScenesDatabase(nextScenes);
-        } catch (err) {
-          console.error("Error saving timeline scene move:", err);
-          alert("Could not save timeline move: " + err.message);
-        }
-      }
-
-      return;
+    if (isScriptEditable) {
+      setEditingScenes(nextScenes.map(scene => ({
+        ...scene,
+        content: Array.isArray(scene.content) ? scene.content.map(block => ({ ...block })) : [],
+      })));
     }
 
-    if (isEditMode) {
-      setEditingScenes(movedScenes);
-      return;
-    }
+    if (!shouldPersist) return;
 
-    setScenes(movedScenes);
+    persistTimelinePositions(nextScenes);
 
-    if (shouldPersist) {
-      persistTimelinePositions(movedScenes);
-
-      try {
-        await saveScenesDatabase(movedScenes);
-      } catch (err) {
-        console.error("Error saving timeline scene move:", err);
-        alert("Could not save timeline move: " + err.message);
-      }
+    try {
+      await saveScenesDatabase(nextScenes);
+    } catch (err) {
+      console.error("Error saving timeline scene move:", err);
+      alert("Could not save timeline move: " + err.message);
     }
   };
 
@@ -1248,6 +1291,75 @@ function Script({
     setEditingScenes(prev => prev.map((s, i) =>
       i !== si ? s : { ...s, content: s.content.map((b, j) => j !== bi ? b : { ...b, type: newType, text: newType === "Character" ? b.text.toUpperCase() : b.text }) }
     ));
+  };
+
+  const handleSceneHeadingChange = async (sceneIndex, rawHeading) => {
+    const nextHeading = String(rawHeading || "").trim().toUpperCase();
+    if (!nextHeading) return;
+
+    const baseScenes = isScriptEditable ? editingScenes : scenes;
+    const targetScene = baseScenes[sceneIndex];
+    if (!targetScene) return;
+
+    const nextMetadata = parseSceneHeading(nextHeading);
+    const sceneNumber = targetScene.sceneNumber;
+
+    const patchScene = (scene) =>
+      String(scene.sceneNumber) !== String(sceneNumber)
+        ? scene
+        : {
+            ...scene,
+            heading: nextHeading,
+            metadata: {
+              ...(scene.metadata || {}),
+              ...nextMetadata,
+            },
+          };
+
+    setEditingScenes(prev =>
+      prev.map(patchScene).map(scene => ({
+        ...scene,
+        content: Array.isArray(scene.content) ? scene.content.map(block => ({ ...block })) : [],
+      }))
+    );
+
+    setScenes(prev => prev.map(patchScene));
+
+    if (setStripboardScenes) {
+      setStripboardScenes(prev => {
+        if (!Array.isArray(prev) || prev.length === 0) return prev;
+
+        const index = prev.findIndex(scene => String(scene.sceneNumber) === String(sceneNumber));
+        if (index === -1) return prev;
+
+        const next = [...prev];
+        next[index] = patchScene(next[index]);
+
+        return next;
+      });
+    }
+
+    try {
+      const parsed = {
+        intExt: nextMetadata?.intExt || "",
+        location: nextMetadata?.location || "",
+        timeOfDay: nextMetadata?.timeOfDay || "",
+        modifier: nextMetadata?.modifier || "",
+      };
+
+      await supabase.rpc("update_scene_heading", {
+        p_project_id: selectedProject.id,
+        p_scene_number: String(sceneNumber),
+        p_heading: nextHeading,
+        p_int_ext: parsed.intExt,
+        p_location: parsed.location,
+        p_time_of_day: parsed.timeOfDay,
+        p_modifier: parsed.modifier,
+      });
+    } catch (err) {
+      console.error("Atomic scene heading save failed:", err);
+      alert("Could not save scene heading: " + err.message);
+    }
   };
 
   const cleanCharacterName = (rawName) => {
@@ -1537,10 +1649,32 @@ function Script({
             <input
               type="number"
               min="1"
-              value={targetPageCount}
-              onChange={(e) => setTargetPageCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+              value={targetPageCount === "" ? "" : targetPageCount}
+              onChange={(e) => {
+                const rawValue = e.target.value;
+
+                if (rawValue === "") {
+                  setTargetPageCount("");
+                  return;
+                }
+
+                const parsedValue = parseInt(rawValue, 10);
+                if (!Number.isNaN(parsedValue)) {
+                  setTargetPageCount(parsedValue);
+                }
+              }}
+              onBlur={() => {
+                if (targetPageCount === "" || Number(targetPageCount) < 1) {
+                  setTargetPageCount(1);
+                }
+              }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") setShowTargetPageDialog(false);
+                if (e.key === "Enter") {
+                  if (targetPageCount === "" || Number(targetPageCount) < 1) {
+                    setTargetPageCount(1);
+                  }
+                  setShowTargetPageDialog(false);
+                }
                 if (e.key === "Escape") setShowTargetPageDialog(false);
               }}
               autoFocus
@@ -1916,7 +2050,7 @@ function Script({
         `}</style>
         <div ref={containerRef} style={{ flex: 1, overflowY: "auto", overflowX: "auto", padding: "1.5in", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", boxSizing: "border-box", fontFamily: "Courier New, monospace", position: "relative" }}>
         <div style={{ position: "relative", zIndex: 1, color: "#000" }}>
-            <ContinuousScript
+        <ContinuousScript
               scenes={scenes} sceneRefs={sceneRefs} isEditMode={isScriptEditable}
               editingScenes={editingScenes} setEditingScenes={setEditingScenes}
               setActiveBlock={setActiveBlock}
@@ -1927,6 +2061,7 @@ function Script({
               getSceneStatusColor={getSceneStatusColor}
               committedRounds={committedRounds} viewingRevision={viewingRevision}
               setCurrentIndex={setCurrentIndex}
+              onSceneHeadingChange={handleSceneHeadingChange}
             />
           </div>
           {showTagDropdown && !isEditMode && (

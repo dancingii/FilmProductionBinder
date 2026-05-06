@@ -4,6 +4,30 @@
 
 import { supabase } from "../supabase";
 
+const getSceneRefNumber = (sceneRef) => {
+  if (sceneRef && typeof sceneRef === "object") {
+    return sceneRef.sceneNumber ?? sceneRef.scene_number ?? sceneRef.number ?? null;
+  }
+  return sceneRef ?? null;
+};
+
+const getSceneRefId = (sceneRef) => {
+  if (sceneRef && typeof sceneRef === "object") {
+    return sceneRef.id ?? sceneRef.sceneId ?? sceneRef.scene_id ?? null;
+  }
+  return null;
+};
+
+const getSceneRefNumbers = (sceneRefs = []) =>
+  (Array.isArray(sceneRefs) ? sceneRefs : [])
+    .map(getSceneRefNumber)
+    .filter((value) => value !== null && value !== undefined && value !== "");
+
+const getSceneRefIds = (sceneRefs = []) =>
+  (Array.isArray(sceneRefs) ? sceneRefs : [])
+    .map(getSceneRefId)
+    .filter((value) => value !== null && value !== undefined && value !== "");
+
 // ============================================================================
 // DATABASE LOAD FUNCTIONS
 // ============================================================================
@@ -23,12 +47,14 @@ export const loadScenesFromDatabase = async (
     if (error) throw error;
 
     const formattedScenes = (data || []).map((scene) => ({
+      id: scene.id,
       sceneNumber: scene.scene_number,
       heading: scene.heading,
       content: scene.content || [],
       metadata: scene.metadata || {},
       pageNumber: scene.page_number,
       pageLength: scene.page_length,
+      timelineStartPage: scene.timeline_start_page ?? null,
       estimatedDuration: scene.estimated_duration || "30 min",
       status: scene.status || "Not Scheduled",
       manualTimeOfDay: scene.manual_time_of_day || null,
@@ -72,11 +98,12 @@ export const loadStripboardScenesAfterScenes = async (
 
     if (data && data.length > 0) {
       const mergedStripboardScenes = loadedScenes.map((scene) => {
-        const stripboardScene = data.find(
-          (s) => s.scene_number == scene.sceneNumber
-        );
+        const stripboardScene =
+          data.find((s) => s.scene_id && scene.id && String(s.scene_id) === String(scene.id)) ||
+          data.find((s) => s.scene_number == scene.sceneNumber);
         return {
           ...scene,
+          sceneId: scene.id || stripboardScene?.scene_id || null,
           status: stripboardScene?.status || scene.status,
           scheduledDate: stripboardScene?.scheduled_date || null,
           scheduledTime: stripboardScene?.scheduled_time || null,
@@ -198,6 +225,7 @@ export const loadTaggedItemsFromDatabase = async (
         chronologicalNumber: item.chronological_number,
         position: item.position,
         scenes: item.scenes || [],
+        sceneIds: item.scene_ids || [],
         instances: item.instances || [],
         assignedCharacters: item.assigned_characters || [],
         manuallyCreated: item.manually_created || false,
@@ -320,6 +348,7 @@ export const loadCharactersFromDatabase = async (
       formattedCharacters[character.name] = {
         name: character.name,
         scenes: character.scenes || [],
+        sceneIds: character.scene_ids || [],
         chronologicalNumber: character.chronological_number || 1,
       };
     });
@@ -387,6 +416,7 @@ export const loadScriptLocationsFromDatabase = async (
       fullName: location.full_name || "",
       intExt: location.int_ext || "",
       scenes: location.scenes || [],
+      sceneIds: location.scene_ids || [],
       actualLocationId: location.actual_location_id || null,
       category: location.category || "",
       removedScenes: location.removed_scenes || [],
@@ -738,6 +768,7 @@ export const saveScenesDatabase = async (
     );
 
     const scenesData = updatedScenes.map((scene) => ({
+      id: scene.id || null,
       project_id: selectedProject.id,
       scene_number: scene.sceneNumber,
       heading: scene.heading,
@@ -745,6 +776,7 @@ export const saveScenesDatabase = async (
       metadata: scene.metadata || {},
       page_number: scene.pageNumber,
       page_length: scene.pageLength,
+      timeline_start_page: scene.timelineStartPage ?? null,
       estimated_duration: scene.estimatedDuration || "30 min",
       status: scene.status || "Not Scheduled",
       manual_time_of_day: scene.manualTimeOfDay || null,
@@ -782,6 +814,7 @@ export const syncStripboardScenesToDatabase = async (
 
     const stripboardScenesData = updatedStripboardScenes.map((scene) => ({
       project_id: selectedProject.id,
+      scene_id: scene.id || scene.sceneId || null,
       scene_number: scene.sceneNumber,
       status: scene.status || "Not Scheduled",
       scheduled_date: scene.scheduledDate || null,
@@ -1133,7 +1166,8 @@ export const syncScriptLocationsToDatabase = async (
         sub_location: loc.subLocation,
         full_name: loc.fullName,
         int_ext: loc.intExt,
-        scenes: loc.scenes || [],
+        scenes: getSceneRefNumbers(loc.scenes || []),
+        scene_ids: loc.sceneIds || getSceneRefIds(loc.scenes || []),
         actual_location_id: loc.actualLocationId || null,
         category: loc.category || "unassigned",
         removed_scenes: loc.removedScenes || [],
@@ -1790,7 +1824,8 @@ export const syncCharactersToDatabase = async (
       ([name, character]) => ({
         project_id: selectedProject.id,
         name: name,
-        scenes: character.scenes || [],
+        scenes: getSceneRefNumbers(character.scenes || []),
+        scene_ids: character.sceneIds || getSceneRefIds(character.scenes || []),
         chronological_number: character.chronologicalNumber || 1,
       })
     );
@@ -2553,7 +2588,8 @@ export const syncTaggedItemsToDatabase = async (
       color: item.color,
       chronological_number: item.chronologicalNumber,
       position: item.position,
-      scenes: item.scenes || [],
+      scenes: getSceneRefNumbers(item.scenes || []),
+      scene_ids: item.sceneIds || getSceneRefIds(item.scenes || []),
       instances: item.instances || [],
       assigned_characters: item.assignedCharacters || [],
       manually_created: item.manuallyCreated || false,
@@ -2580,7 +2616,8 @@ export const syncTaggedItemsToDatabase = async (
       color: item.color,
       chronological_number: item.chronologicalNumber,
       position: item.position,
-      scenes: item.scenes || [],
+      scenes: getSceneRefNumbers(item.scenes || []),
+      scene_ids: item.sceneIds || getSceneRefIds(item.scenes || []),
       instances: item.instances || [],
       assigned_characters: item.assignedCharacters || [],
       manually_created: item.manuallyCreated || false,
