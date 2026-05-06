@@ -638,6 +638,7 @@ function Script({
   moodboardImages = [],
   setStripboardScenes = null,
   syncStripboardScenesToDatabase = null,
+  onScenesReordered = null,
 }) {
   const ENABLE_WRITING_TIMELINE = true;
 
@@ -1124,6 +1125,7 @@ function Script({
 
     try {
       await saveScenesDatabase(nextScenes);
+      if (onScenesReordered) onScenesReordered(nextScenes);
     } catch (err) {
       console.error("Error saving timeline scene move:", err);
       alert("Could not save timeline move: " + err.message);

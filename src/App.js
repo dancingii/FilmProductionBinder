@@ -34,6 +34,12 @@ import AuthWrapper from "./components/auth/AuthWrapper";
 import { supabase } from "./supabase";
 import * as database from "./services/database";
 import {
+  getSceneId,
+  normalizeScheduleBlock,
+  normalizeSceneRef,
+  sameScene,
+} from "./utils/sceneIdentity";
+import {
   uploadImage,
   deleteImage,
   extractPathFromUrl,
@@ -1116,7 +1122,10 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
 
     try {
       // CRITICAL: Use provided data or fall back to state
-      const dataToSync = daysToSync || shootingDays;
+      const dataToSync = (daysToSync || shootingDays).map((day) => ({
+        ...day,
+        scheduleBlocks: (day.scheduleBlocks || []).map(normalizeScheduleBlock),
+      }));
       console.log(
         `🔧 Syncing ${dataToSync.length} shooting days (${
           daysToSync ? "FRESH DATA" : "from state"
@@ -2264,10 +2273,18 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
   // parseSceneHeading and extractLocations functions moved to utils.js
 
   const scheduleScene = (sceneIndex, date, time = null) => {
+    if (sceneIndex === -1 || !stripboardScenes[sceneIndex]) {
+      console.warn("Scene not found for scheduling");
+      return;
+    }
+
     const updatedStripboard = [...stripboardScenes];
-    const scene = updatedStripboard[sceneIndex];
-    updatedStripboard[sceneIndex].scheduledDate = date;
-    updatedStripboard[sceneIndex].scheduledTime = time;
+    const scene = normalizeSceneRef(updatedStripboard[sceneIndex]);
+    updatedStripboard[sceneIndex] = {
+      ...scene,
+      scheduledDate: date,
+      scheduledTime: time,
+    };
 
     // Only change status to "Scheduled" if it's currently "Not Scheduled"
     // Preserve "Pickups" and "Reshoot" statuses
@@ -2315,7 +2332,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
     // Remove scene from ALL dates first (prevents duplicates)
     Object.keys(newScheduled).forEach((existingDate) => {
       newScheduled[existingDate] = newScheduled[existingDate].filter(
-        (s) => s.sceneNumber !== scene.sceneNumber
+        (s) => !sameScene(s, scene)
       );
       if (newScheduled[existingDate].length === 0) {
         delete newScheduled[existingDate];
@@ -2342,7 +2359,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
     }
 
     const updatedStripboard = [...stripboardScenes];
-    const scene = updatedStripboard[sceneIndex];
+    const scene = normalizeSceneRef(updatedStripboard[sceneIndex]);
     const preservedStatus = scene.status; // Capture current status
 
     updatedStripboard[sceneIndex].scheduledDate = null;
@@ -2368,8 +2385,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
     const newScheduled = { ...scheduledScenes };
     Object.keys(newScheduled).forEach((date) => {
       newScheduled[date] = newScheduled[date].filter(
-        (scene) =>
-          scene.sceneNumber !== updatedStripboard[sceneIndex].sceneNumber
+        (scheduledScene) => !sameScene(scheduledScene, scene)
       );
       if (newScheduled[date].length === 0) {
         delete newScheduled[date];
@@ -3167,6 +3183,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
 
       // Step 2: Only use scenes that have EXPLICIT scheduledDate
       const scheduledScenesMap = {};
+      const scheduledSceneIdsMap = {};
 
       stripboardScenes.forEach((scene) => {
         // Only include scenes with explicit scheduled dates that exist in shooting days
@@ -3177,7 +3194,14 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
           if (!scheduledScenesMap[scene.scheduledDate]) {
             scheduledScenesMap[scene.scheduledDate] = [];
           }
+          if (!scheduledSceneIdsMap[scene.scheduledDate]) {
+            scheduledSceneIdsMap[scene.scheduledDate] = [];
+          }
           scheduledScenesMap[scene.scheduledDate].push(scene.sceneNumber);
+          const sceneId = getSceneId(scene);
+          if (sceneId) {
+            scheduledSceneIdsMap[scene.scheduledDate].push(sceneId);
+          }
           console.log(
             `REPAIRING: Scene ${scene.sceneNumber} scheduled for ${scene.scheduledDate}`
           );
@@ -3205,6 +3229,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
             project_id: selectedProject.id,
             shoot_date: date,
             scenes: scenes || [],
+            scene_ids: scheduledSceneIdsMap[date] || [],
           })
         );
 
@@ -3952,6 +3977,61 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
     console.log("✅ Scene renumbering complete with proper shifting");
   };
 
+  const handleScriptScenesReordered = (nextScenes) => {
+    if (!Array.isArray(nextScenes) || nextScenes.length === 0) return;
+
+    setStripboardScenes((prevStripboardScenes) => {
+      if (!Array.isArray(prevStripboardScenes)) return prevStripboardScenes;
+
+      return nextScenes.map((canonicalScene) => {
+        const canonicalId =
+          canonicalScene.id ||
+          canonicalScene.sceneId ||
+          canonicalScene.scene_id ||
+          null;
+
+        const existingStripboardScene =
+          (canonicalId
+            ? prevStripboardScenes.find((scene) => {
+                const sceneId =
+                  scene.id || scene.sceneId || scene.scene_id || null;
+                return sceneId && String(sceneId) === String(canonicalId);
+              })
+            : null) ||
+          prevStripboardScenes.find(
+            (scene) =>
+              String(scene.sceneNumber) === String(canonicalScene.sceneNumber)
+          );
+
+        return {
+          id: canonicalScene.id || existingStripboardScene?.id || null,
+          sceneId:
+            canonicalScene.id ||
+            canonicalScene.sceneId ||
+            existingStripboardScene?.sceneId ||
+            existingStripboardScene?.scene_id ||
+            null,
+          sceneNumber: canonicalScene.sceneNumber,
+          heading: canonicalScene.heading,
+          metadata: canonicalScene.metadata || {},
+          pageNumber: canonicalScene.pageNumber,
+          pageLength: canonicalScene.pageLength,
+          timelineStartPage: canonicalScene.timelineStartPage,
+          estimatedDuration: canonicalScene.estimatedDuration,
+          manualTimeOfDay: canonicalScene.manualTimeOfDay,
+          description: canonicalScene.description,
+          notes: canonicalScene.notes,
+          status:
+            existingStripboardScene?.status ||
+            canonicalScene.status ||
+            "Not Scheduled",
+          scheduledDate: existingStripboardScene?.scheduledDate || null,
+          scheduledTime: existingStripboardScene?.scheduledTime || null,
+        };
+      });
+    });
+  };
+
   const updateCrewCallTime = (crewId, newCallTime) => {
     const newCallSheetData = {
       ...callSheetData,
@@ -4043,6 +4123,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
             moodboardImages={scriptMoodImages}
             setStripboardScenes={setStripboardScenes}
             syncStripboardScenesToDatabase={syncStripboardScenesToDatabase}
+            onScenesReordered={handleScriptScenesReordered}
           />
         );
         case "Stripboard":

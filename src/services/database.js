@@ -3,19 +3,19 @@
 // Handles all Supabase database operations for load/sync
 
 import { supabase } from "../supabase";
+import {
+  getSceneId,
+  getSceneNumber,
+  normalizeScheduleBlock,
+  normalizeSceneRef,
+} from "../utils/sceneIdentity";
 
 const getSceneRefNumber = (sceneRef) => {
-  if (sceneRef && typeof sceneRef === "object") {
-    return sceneRef.sceneNumber ?? sceneRef.scene_number ?? sceneRef.number ?? null;
-  }
-  return sceneRef ?? null;
+  return getSceneNumber(sceneRef);
 };
 
 const getSceneRefId = (sceneRef) => {
-  if (sceneRef && typeof sceneRef === "object") {
-    return sceneRef.id ?? sceneRef.sceneId ?? sceneRef.scene_id ?? null;
-  }
-  return null;
+  return getSceneId(sceneRef);
 };
 
 const getSceneRefNumbers = (sceneRefs = []) =>
@@ -687,7 +687,16 @@ export const loadScheduledScenesFromDatabase = async (
 
     const formattedScheduled = {};
     (data || []).forEach((mapping) => {
-      formattedScheduled[mapping.shoot_date] = mapping.scenes || [];
+      const sceneIds = mapping.scene_ids || [];
+      formattedScheduled[mapping.shoot_date] = (mapping.scenes || []).map(
+        (scene, index) => {
+          if (!scene || typeof scene !== "object") return scene;
+          return normalizeSceneRef({
+            ...scene,
+            ...(sceneIds[index] ? { sceneId: sceneIds[index] } : {}),
+          });
+        }
+      );
     });
 
     setScheduledScenes(formattedScheduled);
@@ -1120,6 +1129,7 @@ export const syncScheduledScenesToDatabase = async (
         project_id: selectedProject.id,
         shoot_date: date,
         scenes: scenes || [],
+        scene_ids: getSceneRefIds(scenes || []),
       })
     );
 
@@ -1975,7 +1985,7 @@ export const syncShootingDaysToDatabase = async (
       day_id: day.id, // ✅ FIXED: Same UUID for day_id (text field)
       date: day.date,
       day_number: day.dayNumber,
-      schedule_blocks: day.scheduleBlocks || [],
+      schedule_blocks: (day.scheduleBlocks || []).map(normalizeScheduleBlock),
       is_locked: day.isLocked || false,
       is_shot: day.isShot || false,
       is_collapsed: day.isCollapsed || false,
@@ -2230,12 +2240,15 @@ export const updateShootingDayScheduleBlocks = async (
 ) => {
   try {
     console.log(`🔄 Updating schedule blocks for day ${dayId}`);
+    const normalizedScheduleBlocks = (scheduleBlocks || []).map(
+      normalizeScheduleBlock
+    );
 
     const { error } = await supabase.rpc(
       "update_shooting_day_schedule_blocks",
       {
         p_day_id: dayId,
-        p_schedule_blocks: scheduleBlocks,
+        p_schedule_blocks: normalizedScheduleBlocks,
       }
     );
 
@@ -2265,9 +2278,13 @@ export const updateTwoShootingDaySchedules = async (
 
     const { error } = await supabase.rpc("update_two_shooting_day_schedules", {
       p_source_day_id: sourceDayId,
-      p_source_schedule_blocks: sourceScheduleBlocks,
+      p_source_schedule_blocks: (sourceScheduleBlocks || []).map(
+        normalizeScheduleBlock
+      ),
       p_target_day_id: targetDayId,
-      p_target_schedule_blocks: targetScheduleBlocks,
+      p_target_schedule_blocks: (targetScheduleBlocks || []).map(
+        normalizeScheduleBlock
+      ),
     });
 
     if (error) throw error;

@@ -1,5 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import * as database from "../../../services/database";
+import {
+  normalizeScheduleBlock,
+  normalizeSceneRef,
+  sameScene,
+} from "../../../utils/sceneIdentity";
 
 function DayBlock({
   day,
@@ -678,7 +683,7 @@ function StripboardScheduleModule({
   const handleSceneDoubleClick = (scene) => {
     if (scene && scene.sceneNumber && scenes) {
       const scriptScene = scenes.find(
-        (s) => s.sceneNumber === scene.sceneNumber
+        (s) => sameScene(s, scene)
       );
       if (scriptScene) {
         setSelectedSceneForScript(scriptScene);
@@ -838,7 +843,7 @@ function StripboardScheduleModule({
 
         if (newScheduledScenes[oldDay.date]) {
           newScheduledScenes[oldDay.date] = newScheduledScenes[oldDay.date].filter(
-            (scene) => !dayScenes.some((dayScene) => dayScene.sceneNumber === scene.sceneNumber)
+            (scene) => !dayScenes.some((dayScene) => sameScene(dayScene, scene))
           );
           if (newScheduledScenes[oldDay.date].length === 0) delete newScheduledScenes[oldDay.date];
         }
@@ -846,14 +851,14 @@ function StripboardScheduleModule({
         if (dayScenes.length > 0) {
           if (!newScheduledScenes[newDate]) newScheduledScenes[newDate] = [];
           dayScenes.forEach((scene) => {
-            const sceneIndex = stripboardScenes.findIndex((s) => s.sceneNumber === scene.sceneNumber);
+            const sceneIndex = stripboardScenes.findIndex((s) => sameScene(s, scene));
             if (sceneIndex !== -1) {
               const updatedStripboard = [...stripboardScenes];
               updatedStripboard[sceneIndex].scheduledDate = newDate;
               setStripboardScenes(updatedStripboard);
             }
-            if (!newScheduledScenes[newDate].some((s) => s.sceneNumber === scene.sceneNumber)) {
-              newScheduledScenes[newDate].push(scene);
+            if (!newScheduledScenes[newDate].some((s) => sameScene(s, scene))) {
+              newScheduledScenes[newDate].push(normalizeSceneRef(scene));
             }
           });
         }
@@ -897,7 +902,7 @@ function StripboardScheduleModule({
 
   const getSceneBlockColor = (scene, isOddRow) => {
     if (!scene) return "transparent";
-    const currentScene = stripboardScenes.find((s) => s.sceneNumber === scene.sceneNumber);
+    const currentScene = stripboardScenes.find((s) => sameScene(s, scene));
     const status = currentScene?.status || scene.status || "Not Scheduled";
     switch (status) {
       case "Reshoot":
@@ -1011,17 +1016,28 @@ function StripboardScheduleModule({
         const displacedScene = targetBlock.scene;
         const emptyBlockIndex = targetBlocks.findIndex((block) => block.type === "scene" && block.scene === null);
         if (emptyBlockIndex !== -1) {
-          targetBlocks[emptyBlockIndex].scene = displacedScene;
+          targetBlocks[emptyBlockIndex].scene = normalizeSceneRef(displacedScene);
+          targetBlocks[emptyBlockIndex] = normalizeScheduleBlock(targetBlocks[emptyBlockIndex]);
         } else {
-          if (onUnscheduleScene) onUnscheduleScene(stripboardScenes.indexOf(displacedScene));
+          if (onUnscheduleScene) {
+            onUnscheduleScene(stripboardScenes.findIndex((s) => sameScene(s, displacedScene)));
+          }
         }
       }
 
-      const latestScene = stripboardScenes.find((s) => s.sceneNumber === draggedItem.scene.sceneNumber) || draggedItem.scene;
+      const latestScene = normalizeSceneRef(
+        stripboardScenes.find((s) => sameScene(s, draggedItem.scene)) ||
+          draggedItem.scene
+      );
       targetBlock.scene = latestScene;
+      Object.assign(targetBlock, normalizeScheduleBlock(targetBlock));
       setShootingDays(updatedDays);
 
-      onScheduleScene(stripboardScenes.indexOf(latestScene), updatedDays[targetDayIndex].date, targetBlock.time);
+      onScheduleScene(
+        stripboardScenes.findIndex((s) => sameScene(s, latestScene)),
+        updatedDays[targetDayIndex].date,
+        targetBlock.time
+      );
 
       syncLocks.current.shootingDays = true;
       database
@@ -1057,16 +1073,25 @@ function StripboardScheduleModule({
         const displacedScene = targetBlock.scene;
         const displacedCustomItem = targetBlock.customItem;
         delete sourceBlock.customItem;
-        if (targetBlock.scene) targetBlock.scene = null;
+        if (targetBlock.scene) {
+          targetBlock.scene = null;
+          Object.assign(targetBlock, normalizeScheduleBlock(targetBlock));
+        }
         if (targetBlock.customItem) delete targetBlock.customItem;
         targetBlock.customItem = customItemToMove;
         if (displacedScene || displacedCustomItem) {
           let emptyBlockIndex = targetBlocks.findIndex((block) => block.type === "scene" && !block.scene && !block.customItem);
           if (emptyBlockIndex !== -1) {
-            if (displacedScene) targetBlocks[emptyBlockIndex].scene = displacedScene;
+            if (displacedScene) {
+              targetBlocks[emptyBlockIndex].scene = normalizeSceneRef(displacedScene);
+              targetBlocks[emptyBlockIndex] = normalizeScheduleBlock(targetBlocks[emptyBlockIndex]);
+            }
             if (displacedCustomItem) targetBlocks[emptyBlockIndex].customItem = displacedCustomItem;
           } else {
-            if (displacedScene) sourceBlock.scene = displacedScene;
+            if (displacedScene) {
+              sourceBlock.scene = normalizeSceneRef(displacedScene);
+              Object.assign(sourceBlock, normalizeScheduleBlock(sourceBlock));
+            }
             if (displacedCustomItem) sourceBlock.customItem = displacedCustomItem;
           }
         }
@@ -1077,19 +1102,29 @@ function StripboardScheduleModule({
         const sceneToMove = sourceBlock.scene;
         const displacedScene = targetBlock.scene;
         sourceBlock.scene = null;
-        targetBlock.scene = sceneToMove;
+        Object.assign(sourceBlock, normalizeScheduleBlock(sourceBlock));
+        targetBlock.scene = normalizeSceneRef(sceneToMove);
+        Object.assign(targetBlock, normalizeScheduleBlock(targetBlock));
 
         if (displacedScene) {
           let emptyBlockIndex = targetBlocks.findIndex((block) => block.type === "scene" && block.scene === null);
           if (emptyBlockIndex !== -1) {
-            targetBlocks[emptyBlockIndex].scene = displacedScene;
+            targetBlocks[emptyBlockIndex].scene = normalizeSceneRef(displacedScene);
+            targetBlocks[emptyBlockIndex] = normalizeScheduleBlock(targetBlocks[emptyBlockIndex]);
           } else {
             if (sourceDayIndex !== targetDayIndex) {
               emptyBlockIndex = sourceBlocks.findIndex((block) => block.type === "scene" && block.scene === null);
-              if (emptyBlockIndex !== -1) sourceBlocks[emptyBlockIndex].scene = displacedScene;
-              else sourceBlock.scene = displacedScene;
+              if (emptyBlockIndex !== -1) {
+                sourceBlocks[emptyBlockIndex].scene = normalizeSceneRef(displacedScene);
+                sourceBlocks[emptyBlockIndex] = normalizeScheduleBlock(sourceBlocks[emptyBlockIndex]);
+              }
+              else {
+                sourceBlock.scene = normalizeSceneRef(displacedScene);
+                Object.assign(sourceBlock, normalizeScheduleBlock(sourceBlock));
+              }
             } else {
-              sourceBlock.scene = displacedScene;
+              sourceBlock.scene = normalizeSceneRef(displacedScene);
+              Object.assign(sourceBlock, normalizeScheduleBlock(sourceBlock));
             }
           }
         }
@@ -1098,19 +1133,19 @@ function StripboardScheduleModule({
           const sourceDate = updatedDays[sourceDayIndex].date;
           const targetDate = updatedDays[targetDayIndex].date;
           const updatedStripboard = [...stripboardScenes];
-          const movedSceneIndex = updatedStripboard.findIndex((s) => s.sceneNumber === sceneToMove.sceneNumber);
+          const movedSceneIndex = updatedStripboard.findIndex((s) => sameScene(s, sceneToMove));
           if (movedSceneIndex !== -1) {
             updatedStripboard[movedSceneIndex].scheduledDate = targetDate;
             setStripboardScenes(updatedStripboard);
           }
           const newScheduledScenes = { ...scheduledScenes };
           if (newScheduledScenes[sourceDate]) {
-            newScheduledScenes[sourceDate] = newScheduledScenes[sourceDate].filter((scene) => scene.sceneNumber !== sceneToMove.sceneNumber);
+            newScheduledScenes[sourceDate] = newScheduledScenes[sourceDate].filter((scene) => !sameScene(scene, sceneToMove));
             if (newScheduledScenes[sourceDate].length === 0) delete newScheduledScenes[sourceDate];
           }
           if (!newScheduledScenes[targetDate]) newScheduledScenes[targetDate] = [];
-          if (!newScheduledScenes[targetDate].some((scene) => scene.sceneNumber === sceneToMove.sceneNumber)) {
-            newScheduledScenes[targetDate].push(sceneToMove);
+          if (!newScheduledScenes[targetDate].some((scene) => sameScene(scene, sceneToMove))) {
+            newScheduledScenes[targetDate].push(normalizeSceneRef(sceneToMove));
           }
           setScheduledScenes(newScheduledScenes);
           if (onSyncScheduledScenes) onSyncScheduledScenes(newScheduledScenes);
@@ -1151,11 +1186,12 @@ function StripboardScheduleModule({
 
     const scene = blocks[blockIndex].scene;
     blocks[blockIndex].scene = null;
+    Object.assign(blocks[blockIndex], normalizeScheduleBlock(blocks[blockIndex]));
     setShootingDays(updatedDays);
 
     const updatedStripboard = [...stripboardScenes];
     const stripboardIndex = updatedStripboard.findIndex(
-      (s) => s.sceneNumber.toString() === scene.sceneNumber.toString()
+      (s) => sameScene(s, scene)
     );
 
     if (stripboardIndex !== -1) {
@@ -1171,7 +1207,7 @@ function StripboardScheduleModule({
 
     const updatedMainScenes = [...scenes];
     const mainSceneIndex = updatedMainScenes.findIndex(
-      (s) => s.sceneNumber.toString() === scene.sceneNumber.toString()
+      (s) => sameScene(s, scene)
     );
     if (mainSceneIndex !== -1) {
       const originalStatus = updatedMainScenes[mainSceneIndex].status;
@@ -1192,7 +1228,7 @@ function StripboardScheduleModule({
     const dayDate = updatedDays[dayIndex].date;
     const newScheduledScenes = { ...scheduledScenes };
     if (newScheduledScenes[dayDate]) {
-      newScheduledScenes[dayDate] = newScheduledScenes[dayDate].filter((s) => s.sceneNumber !== scene.sceneNumber);
+      newScheduledScenes[dayDate] = newScheduledScenes[dayDate].filter((s) => !sameScene(s, scene));
       if (newScheduledScenes[dayDate].length === 0) delete newScheduledScenes[dayDate];
       setScheduledScenes(newScheduledScenes);
       if (onSyncScheduledScenes) onSyncScheduledScenes(newScheduledScenes);
@@ -1212,7 +1248,7 @@ function StripboardScheduleModule({
     if (blockIndex !== -1) {
       const blockToRemove = blocks[blockIndex];
       if (blockToRemove.scene && onUnscheduleScene) {
-        const sceneIndex = stripboardScenes.findIndex((s) => s.sceneNumber === blockToRemove.scene.sceneNumber);
+        const sceneIndex = stripboardScenes.findIndex((s) => sameScene(s, blockToRemove.scene));
         if (sceneIndex !== -1) onUnscheduleScene(sceneIndex);
       }
       blocks.splice(blockIndex, 1);
@@ -1311,7 +1347,7 @@ function StripboardScheduleModule({
 
     allScenesUpdated.forEach((scene) => {
       const sceneIndex = allStripboardUpdated.findIndex(
-        (s) => s.sceneNumber.toString() === scene.sceneNumber.toString()
+        (s) => sameScene(s, scene)
       );
       if (sceneIndex !== -1) {
         allStripboardUpdated[sceneIndex] = { ...allStripboardUpdated[sceneIndex], status: "Shot", scheduledDate: null, scheduledTime: null };
@@ -1320,7 +1356,7 @@ function StripboardScheduleModule({
 
     const updatedMainScenes = [...scenes];
     allScenesUpdated.forEach((scene) => {
-      const mainSceneIndex = updatedMainScenes.findIndex((s) => s.sceneNumber === scene.sceneNumber);
+      const mainSceneIndex = updatedMainScenes.findIndex((s) => sameScene(s, scene));
       if (mainSceneIndex !== -1) {
         updatedMainScenes[mainSceneIndex] = { ...updatedMainScenes[mainSceneIndex], status: "Shot" };
       }
@@ -1378,7 +1414,7 @@ function StripboardScheduleModule({
       const updatedStripboard = [...stripboardScenes];
       dayScenes.forEach((scene) => {
         const sceneIndex = updatedStripboard.findIndex(
-          (s) => s.sceneNumber.toString() === scene.sceneNumber.toString()
+          (s) => sameScene(s, scene)
         );
         if (sceneIndex !== -1) {
           updatedStripboard[sceneIndex] = { ...updatedStripboard[sceneIndex], status: "Scheduled", scheduledDate: day.date };
@@ -1400,7 +1436,7 @@ function StripboardScheduleModule({
       const updatedMainScenes = [...scenes];
       dayScenes.forEach((scene) => {
         const mainSceneIndex = updatedMainScenes.findIndex(
-          (s) => s.sceneNumber.toString() === scene.sceneNumber.toString()
+          (s) => sameScene(s, scene)
         );
         if (mainSceneIndex !== -1) {
           updatedMainScenes[mainSceneIndex] = { ...updatedMainScenes[mainSceneIndex], status: "Scheduled" };
@@ -1433,7 +1469,7 @@ function StripboardScheduleModule({
 
     const updatedStripboard = [...stripboardScenes];
     const stripboardIndex = updatedStripboard.findIndex(
-      (s) => s.sceneNumber.toString() === sceneNumber.toString()
+      (s) => sameScene(s, sceneNumber)
     );
     if (stripboardIndex !== -1) {
       updatedStripboard[stripboardIndex] = { ...updatedStripboard[stripboardIndex], status: "Not Scheduled", scheduledDate: null, scheduledTime: null };
@@ -1444,7 +1480,7 @@ function StripboardScheduleModule({
     }
 
     const updatedMainScenes = [...scenes];
-    const mainSceneIndex = updatedMainScenes.findIndex((s) => s.sceneNumber.toString() === sceneNumber.toString());
+    const mainSceneIndex = updatedMainScenes.findIndex((s) => sameScene(s, sceneNumber));
     if (mainSceneIndex !== -1) {
       updatedMainScenes[mainSceneIndex] = { ...updatedMainScenes[mainSceneIndex], status: "Not Scheduled" };
       setScenes(updatedMainScenes);
@@ -1454,8 +1490,8 @@ function StripboardScheduleModule({
     const updatedDays = shootingDays.map((day) => ({
       ...day,
       scheduleBlocks: day.scheduleBlocks.map((block) => {
-        if (block.scene && block.scene.sceneNumber.toString() === sceneNumber.toString()) {
-          return { ...block, scene: null };
+        if (block.scene && sameScene(block.scene, sceneNumber)) {
+          return normalizeScheduleBlock({ ...block, scene: null });
         }
         return block;
       }),
@@ -1465,7 +1501,7 @@ function StripboardScheduleModule({
 
     const newScheduledScenes = { ...scheduledScenes };
     Object.keys(newScheduledScenes).forEach((date) => {
-      newScheduledScenes[date] = newScheduledScenes[date].filter((s) => s.sceneNumber.toString() !== sceneNumber.toString());
+      newScheduledScenes[date] = newScheduledScenes[date].filter((s) => !sameScene(s, sceneNumber));
       if (newScheduledScenes[date].length === 0) delete newScheduledScenes[date];
     });
     setScheduledScenes(newScheduledScenes);
