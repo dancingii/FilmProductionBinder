@@ -2,6 +2,7 @@ import React from "react";
 import { usePresence } from "../../../hooks/usePresence";
 import PresenceIndicator from "../../shared/PresenceIndicator";
 import EditableInput from "../../shared/EditableInput";
+import { getSceneId, getSceneNumber, sameScene } from "../../../utils/sceneIdentity";
 import jsPDF from "jspdf";
 
 function ShotListModule({
@@ -72,32 +73,98 @@ function ShotListModule({
     []
   );
 
-  const initializeSceneShots = React.useCallback(
-    (sceneNumber) => {
-      // Just return existing shots or create initial structure WITHOUT calling setState
-      if (!shotListData[sceneNumber]) {
-        const newShots = [];
-        for (let i = 0; i < 5; i++) {
-          newShots.push({
-            id: `${sceneNumber}${String.fromCharCode(97 + i)}`,
-            colorCode: "",
-            shotType: "",
-            customShotType: "",
-            lens: "",
-            setup: "",
-            angle: "",
-            movement: "",
-            equipment: "",
-            customEquipment: "",
-            description: "",
-            additionalNotes: "",
-          });
-        }
-        return newShots;
+  const createDefaultShots = React.useCallback(
+    (sceneNumber) =>
+      Array.from({ length: 5 }, (_, index) => ({
+        id: `${sceneNumber}${String.fromCharCode(97 + index)}`,
+        colorCode: "",
+        shotType: "",
+        customShotType: "",
+        lens: "",
+        setup: "",
+        angle: "",
+        movement: "",
+        equipment: "",
+        customEquipment: "",
+        description: "",
+        additionalNotes: "",
+      })),
+    []
+  );
+
+  const getShotsForScene = React.useCallback(
+    (scene) => {
+      const sceneId = getSceneId(scene);
+      const sceneNumber = getSceneNumber(scene);
+
+      if (sceneId && shotListData?._bySceneId?.[sceneId]) {
+        return shotListData._bySceneId[sceneId];
       }
-      return shotListData[sceneNumber];
+
+      if (sceneNumber !== null && shotListData?.[sceneNumber]) {
+        return shotListData[sceneNumber];
+      }
+
+      return createDefaultShots(sceneNumber);
     },
-    [shotListData]
+    [shotListData, createDefaultShots]
+  );
+
+  const withSceneShots = React.useCallback((data, scene, shots) => {
+    const sceneId = getSceneId(scene);
+    const sceneNumber = getSceneNumber(scene);
+    const updatedData = {
+      ...data,
+      ...(sceneNumber !== null ? { [sceneNumber]: shots } : {}),
+    };
+
+    if (sceneId) {
+      updatedData._bySceneId = {
+        ...(data?._bySceneId || {}),
+        [sceneId]: shots,
+      };
+    }
+
+    return updatedData;
+  }, []);
+
+  const getSceneNote = React.useCallback(
+    (scene) => {
+      const sceneId = getSceneId(scene);
+      const sceneNumber = getSceneNumber(scene);
+
+      if (sceneId && sceneNotes?._bySceneId?.[sceneId] !== undefined) {
+        return sceneNotes._bySceneId[sceneId];
+      }
+
+      return sceneNumber !== null ? sceneNotes?.[sceneNumber] : undefined;
+    },
+    [sceneNotes]
+  );
+
+  const withSceneNote = React.useCallback((notes, scene, value) => {
+    const sceneId = getSceneId(scene);
+    const sceneNumber = getSceneNumber(scene);
+    const updatedNotes = {
+      ...notes,
+      ...(sceneNumber !== null ? { [sceneNumber]: value } : {}),
+    };
+
+    if (sceneId) {
+      updatedNotes._bySceneId = {
+        ...(notes?._bySceneId || {}),
+        [sceneId]: value,
+      };
+    }
+
+    return updatedNotes;
+  }, []);
+
+  const initializeSceneShots = React.useCallback(
+    (scene) => {
+      return getShotsForScene(scene);
+    },
+    [getShotsForScene]
   );
 
   // Initialize shots for all scenes ONCE on mount - DO NOT SYNC TO DATABASE
@@ -110,26 +177,18 @@ function ShotListModule({
       const updatedData = { ...shotListData };
 
       stripboardScenes.forEach((scene) => {
-        if (!updatedData[scene.sceneNumber]) {
+        const sceneId = getSceneId(scene);
+        const sceneNumber = getSceneNumber(scene);
+        const hasSceneShots =
+          (sceneId && updatedData?._bySceneId?.[sceneId]) ||
+          (sceneNumber !== null && updatedData?.[sceneNumber]);
+
+        if (!hasSceneShots) {
           needsInitialization = true;
-          const newShots = [];
-          for (let i = 0; i < 5; i++) {
-            newShots.push({
-              id: `${scene.sceneNumber}${String.fromCharCode(97 + i)}`,
-              colorCode: "",
-              shotType: "",
-              customShotType: "",
-              lens: "",
-              setup: "",
-              angle: "",
-              movement: "",
-              equipment: "",
-              customEquipment: "",
-              description: "",
-              additionalNotes: "",
-            });
-          }
-          updatedData[scene.sceneNumber] = newShots;
+          Object.assign(
+            updatedData,
+            withSceneShots(updatedData, scene, createDefaultShots(sceneNumber))
+          );
         }
       });
 
@@ -175,8 +234,9 @@ function ShotListModule({
   }, []);
 
   const addShotRow = React.useCallback(
-    (sceneNumber) => {
-      const currentShots = shotListData[sceneNumber] || [];
+    (scene) => {
+      const sceneNumber = getSceneNumber(scene);
+      const currentShots = getShotsForScene(scene);
       const newShotId = generateShotId(sceneNumber, currentShots.length);
       const newShot = {
         id: newShotId,
@@ -193,22 +253,23 @@ function ShotListModule({
         additionalNotes: "",
       };
 
-      const updatedData = {
-        ...shotListData,
-        [sceneNumber]: [...currentShots, newShot],
-      };
+      const updatedData = withSceneShots(shotListData, scene, [
+        ...currentShots,
+        newShot,
+      ]);
       setShotListData(updatedData);
 
       if (onSyncShotListData) {
         onSyncShotListData(updatedData, sceneNotes);
       }
     },
-    [shotListData, setShotListData, generateShotId]
+    [shotListData, sceneNotes, setShotListData, generateShotId, getShotsForScene, withSceneShots, onSyncShotListData]
   );
 
   const removeShotRow = React.useCallback(
-    (sceneNumber, shotIndex) => {
-      const currentShots = shotListData[sceneNumber] || [];
+    (scene, shotIndex) => {
+      const sceneNumber = getSceneNumber(scene);
+      const currentShots = getShotsForScene(scene);
       if (currentShots.length <= 1) return;
 
       const updatedShots = currentShots.filter(
@@ -219,17 +280,14 @@ function ShotListModule({
         id: generateShotId(sceneNumber, index),
       }));
 
-      const updatedData = {
-        ...shotListData,
-        [sceneNumber]: renumberedShots,
-      };
+      const updatedData = withSceneShots(shotListData, scene, renumberedShots);
       setShotListData(updatedData);
 
       if (onSyncShotListData) {
         onSyncShotListData(updatedData, sceneNotes);
       }
     },
-    [shotListData, setShotListData, generateShotId]
+    [shotListData, sceneNotes, setShotListData, generateShotId, getShotsForScene, withSceneShots, onSyncShotListData]
   );
 
   // Drag and drop functionality
@@ -242,8 +300,12 @@ function ShotListModule({
 
   // Remove the PDF export function from here - we'll move it below
 
-  const handleDragStart = React.useCallback((e, sceneNumber, shotIndex) => {
-    setDraggedShot({ sceneNumber, shotIndex });
+  const handleDragStart = React.useCallback((e, scene, shotIndex) => {
+    setDraggedShot({
+      sceneId: getSceneId(scene),
+      sceneNumber: getSceneNumber(scene),
+      shotIndex,
+    });
     e.dataTransfer.effectAllowed = "move";
     e.currentTarget.style.opacity = "0.5";
   }, []);
@@ -255,11 +317,11 @@ function ShotListModule({
   }, []);
 
   const handleDragOver = React.useCallback(
-    (e, sceneNumber, shotIndex) => {
+    (e, scene, shotIndex) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
 
-      if (draggedShot && draggedShot.sceneNumber === sceneNumber) {
+      if (draggedShot && sameScene(draggedShot, scene)) {
         setDragOverIndex(shotIndex);
       }
     },
@@ -274,15 +336,16 @@ function ShotListModule({
   }, []);
 
   const handleDrop = React.useCallback(
-    (e, sceneNumber, targetIndex) => {
+    (e, scene, targetIndex) => {
       e.preventDefault();
 
-      if (!draggedShot || draggedShot.sceneNumber !== sceneNumber) return;
+      if (!draggedShot || !sameScene(draggedShot, scene)) return;
 
+      const sceneNumber = getSceneNumber(scene);
       const sourceIndex = draggedShot.shotIndex;
       if (sourceIndex === targetIndex) return;
 
-      const currentShots = shotListData[sceneNumber] || [];
+      const currentShots = getShotsForScene(scene);
       const updatedShots = [...currentShots];
 
       // Remove the dragged shot from its original position
@@ -297,10 +360,7 @@ function ShotListModule({
         id: generateShotId(sceneNumber, index),
       }));
 
-      const updatedData = {
-        ...shotListData,
-        [sceneNumber]: renumberedShots,
-      };
+      const updatedData = withSceneShots(shotListData, scene, renumberedShots);
       setShotListData(updatedData);
 
       if (onSyncShotListData) {
@@ -310,23 +370,20 @@ function ShotListModule({
       setDraggedShot(null);
       setDragOverIndex(null);
     },
-    [draggedShot, shotListData, setShotListData, generateShotId]
+    [draggedShot, shotListData, sceneNotes, setShotListData, generateShotId, getShotsForScene, withSceneShots, onSyncShotListData]
   );
 
   const syncTimeoutRef = React.useRef(null);
 
   const updateShotField = React.useCallback(
-    (sceneNumber, shotIndex, field, value) => {
-      const currentShots = shotListData[sceneNumber] || [];
+    (scene, shotIndex, field, value) => {
+      const currentShots = getShotsForScene(scene);
       const updatedShots = [...currentShots];
       updatedShots[shotIndex] = {
         ...updatedShots[shotIndex],
         [field]: value,
       };
-      const updatedData = {
-        ...shotListData,
-        [sceneNumber]: updatedShots,
-      };
+      const updatedData = withSceneShots(shotListData, scene, updatedShots);
       setShotListData(updatedData);
 
       if (onSyncShotListData) {
@@ -336,15 +393,12 @@ function ShotListModule({
         }, 500);
       }
     },
-    [shotListData, sceneNotes, setShotListData, onSyncShotListData]
+    [shotListData, sceneNotes, setShotListData, onSyncShotListData, getShotsForScene, withSceneShots]
   );
 
   const updateSceneNotes = React.useCallback(
-    (sceneNumber, value) => {
-      const updatedNotes = {
-        ...sceneNotes,
-        [sceneNumber]: value,
-      };
+    (scene, value) => {
+      const updatedNotes = withSceneNote(sceneNotes, scene, value);
       setSceneNotes(updatedNotes);
 
       if (onSyncShotListData) {
@@ -354,11 +408,11 @@ function ShotListModule({
         }, 500);
       }
     },
-    [sceneNotes, shotListData, setSceneNotes, onSyncShotListData]
+    [sceneNotes, shotListData, setSceneNotes, onSyncShotListData, withSceneNote]
   );
 
   const renderShotTypeField = React.useCallback(
-    (sceneNumber, shotIndex, shot) => {
+    (scene, shotIndex, shot) => {
       const isCustom = shot.shotType === "Custom";
 
       return (
@@ -367,7 +421,7 @@ function ShotListModule({
             value={shot.shotType || ""}
             onChange={(e) =>
               updateShotField(
-                sceneNumber,
+                scene,
                 shotIndex,
                 "shotType",
                 e.target.value
@@ -405,7 +459,7 @@ function ShotListModule({
               value={shot.customShotType || ""}
               onChange={(e) =>
                 updateShotField(
-                  sceneNumber,
+                  scene,
                   shotIndex,
                   "customShotType",
                   e.target.value
@@ -428,7 +482,7 @@ function ShotListModule({
   );
 
   const renderEquipmentField = React.useCallback(
-    (sceneNumber, shotIndex, shot) => {
+    (scene, shotIndex, shot) => {
       const isCustom = shot.equipment === "Custom";
 
       return (
@@ -437,7 +491,7 @@ function ShotListModule({
             value={shot.equipment || ""}
             onChange={(e) =>
               updateShotField(
-                sceneNumber,
+                scene,
                 shotIndex,
                 "equipment",
                 e.target.value
@@ -464,7 +518,7 @@ function ShotListModule({
               value={shot.customEquipment || ""}
               onChange={(e) =>
                 updateShotField(
-                  sceneNumber,
+                  scene,
                   shotIndex,
                   "customEquipment",
                   e.target.value
@@ -516,12 +570,12 @@ function ShotListModule({
       shootingDay.scheduleBlocks &&
       shootingDay.scheduleBlocks.length > 0
     ) {
-      const sceneNumbersForDate = shootingDay.scheduleBlocks
+      const sceneRefsForDate = shootingDay.scheduleBlocks
         .filter((block) => block.scene && !block.isLunch && !block.customItem)
-        .map((block) => block.scene.sceneNumber);
+        .map((block) => block.scene);
 
       return stripboardScenes.filter((scene) =>
-        sceneNumbersForDate.includes(scene.sceneNumber)
+        sceneRefsForDate.some((sceneRef) => sameScene(sceneRef, scene))
       );
     }
 
@@ -530,7 +584,7 @@ function ShotListModule({
     const scheduledSceneNumbers = scenesForDate;
 
     return stripboardScenes.filter((scene) =>
-      scheduledSceneNumbers.includes(scene.sceneNumber)
+      scheduledSceneNumbers.some((sceneRef) => sameScene(sceneRef, scene))
     );
   }, [selectedDate, stripboardScenes, scheduledScenes, shootingDays]);
 
@@ -646,9 +700,7 @@ function ShotListModule({
       yPosition += 25;
 
       // Shot rows
-      const shots =
-        shotListData[scene.sceneNumber] ||
-        initializeSceneShots(scene.sceneNumber);
+      const shots = getShotsForScene(scene);
       const castNumbers = getSceneCastNumbers(scene.sceneNumber);
 
       shots.forEach((shot) => {
@@ -826,7 +878,7 @@ function ShotListModule({
       });
 
       // Scene notes
-      const sceneNote = sceneNotes[scene.sceneNumber];
+      const sceneNote = getSceneNote(scene);
       if (sceneNote && sceneNote.trim()) {
         yPosition += 5;
         doc.setFillColor(240, 240, 240);
@@ -857,7 +909,8 @@ function ShotListModule({
     shotListData,
     sceneNotes,
     getSceneCastNumbers,
-    initializeSceneShots,
+    getShotsForScene,
+    getSceneNote,
     colorOptions,
   ]);
 
@@ -943,9 +996,7 @@ function ShotListModule({
       </div>
 
       {filteredScenes.map((scene) => {
-        const shots =
-          shotListData[scene.sceneNumber] ||
-          initializeSceneShots(scene.sceneNumber);
+        const shots = getShotsForScene(scene);
         const sceneCastNumbers = getSceneCastNumbers(scene.sceneNumber);
 
         return (
@@ -1000,7 +1051,7 @@ function ShotListModule({
                   View Scene
                 </button>
                 <button
-                  onClick={() => addShotRow(scene.sceneNumber)}
+                  onClick={() => addShotRow(scene)}
                   style={{
                     backgroundColor: "#2E7D32",
                     color: "white",
@@ -1058,26 +1109,26 @@ function ShotListModule({
                 <div
                   draggable="true"
                   onDragStart={(e) =>
-                    handleDragStart(e, scene.sceneNumber, shotIndex)
+                    handleDragStart(e, scene, shotIndex)
                   }
                   onDragEnd={handleDragEnd}
                   onDragOver={(e) =>
-                    handleDragOver(e, scene.sceneNumber, shotIndex)
+                    handleDragOver(e, scene, shotIndex)
                   }
                   onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, scene.sceneNumber, shotIndex)}
+                  onDrop={(e) => handleDrop(e, scene, shotIndex)}
                   style={{
                     display: "flex",
                     gap: "1px",
                     backgroundColor: (() => {
-                      if (dragOverIndex === shotIndex && draggedShot?.sceneNumber === scene.sceneNumber) return "#e3f2fd";
+                      if (dragOverIndex === shotIndex && sameScene(draggedShot, scene)) return "#e3f2fd";
                       const colorMatch = colorOptions.find((c) => c.value === shot.colorCode)?.color;
                       if (shot.colorCode && colorMatch && colorMatch !== "transparent") return colorMatch;
                       return shotIndex % 2 === 0 ? "#E3F2FD" : "#FFE0E0";
                     })(),
                     border:
                       dragOverIndex === shotIndex &&
-                      draggedShot?.sceneNumber === scene.sceneNumber
+                      sameScene(draggedShot, scene)
                         ? "2px solid #2196F3"
                         : "1px solid #ddd",
                     fontSize: "10px",
@@ -1176,7 +1227,7 @@ function ShotListModule({
                           `;
                             colorDiv.addEventListener("click", () => {
                               updateShotField(
-                                scene.sceneNumber,
+                                scene,
                                 shotIndex,
                                 "colorCode",
                                 option.value
@@ -1218,7 +1269,7 @@ function ShotListModule({
                       {shots.length > 1 && (
                         <button
                           onClick={() =>
-                            removeShotRow(scene.sceneNumber, shotIndex)
+                            removeShotRow(scene, shotIndex)
                           }
                           style={{
                             marginRight: "4px",
@@ -1245,7 +1296,7 @@ function ShotListModule({
                   </div>
 
                   <div style={{ width: "80px", minHeight: "16px" }}>
-                    {renderShotTypeField(scene.sceneNumber, shotIndex, shot)}
+                    {renderShotTypeField(scene, shotIndex, shot)}
                   </div>
 
                   <div style={{ width: "60px", minHeight: "16px" }}>
@@ -1255,7 +1306,7 @@ function ShotListModule({
                       value={shot.lens}
                       onSave={(value) =>
                         updateShotField(
-                          scene.sceneNumber,
+                          scene,
                           shotIndex,
                           "lens",
                           value
@@ -1274,7 +1325,7 @@ function ShotListModule({
                       value={shot.setup}
                       onSave={(value) =>
                         updateShotField(
-                          scene.sceneNumber,
+                          scene,
                           shotIndex,
                           "setup",
                           value
@@ -1293,7 +1344,7 @@ function ShotListModule({
                       value={shot.angle}
                       onSave={(value) =>
                         updateShotField(
-                          scene.sceneNumber,
+                          scene,
                           shotIndex,
                           "angle",
                           value
@@ -1312,7 +1363,7 @@ function ShotListModule({
                       value={shot.movement}
                       onSave={(value) =>
                         updateShotField(
-                          scene.sceneNumber,
+                          scene,
                           shotIndex,
                           "movement",
                           value
@@ -1325,7 +1376,7 @@ function ShotListModule({
                   </div>
 
                   <div style={{ width: "100px", minHeight: "16px" }}>
-                    {renderEquipmentField(scene.sceneNumber, shotIndex, shot)}
+                    {renderEquipmentField(scene, shotIndex, shot)}
                   </div>
 
                   <div style={{ width: "325px", minHeight: "auto" }}>
@@ -1335,7 +1386,7 @@ function ShotListModule({
                       value={shot.description}
                       onSave={(value) =>
                         updateShotField(
-                          scene.sceneNumber,
+                          scene,
                           shotIndex,
                           "description",
                           value
@@ -1354,7 +1405,7 @@ function ShotListModule({
                       value={shot.additionalNotes}
                       onSave={(value) =>
                         updateShotField(
-                          scene.sceneNumber,
+                          scene,
                           shotIndex,
                           "additionalNotes",
                           value
@@ -1392,8 +1443,8 @@ function ShotListModule({
               </div>
               <div style={{ flex: 1 }}>
                 <EditableInput
-                  value={sceneNotes[scene.sceneNumber]}
-                  onSave={(value) => updateSceneNotes(scene.sceneNumber, value)}
+                  value={getSceneNote(scene)}
+                  onSave={(value) => updateSceneNotes(scene, value)}
                   placeholder="Add notes for this scene..."
                   style={{
                     border: "1px solid #ccc",
