@@ -48,7 +48,7 @@ const TYPE_SHORTCUTS = {
 };
 
 // ─── Scene List ───────────────────────────────────────────────────────────────
-function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor, selectedProject, user, onSceneNumberChange, setCurrentIndex, showMoodOverlay }) {
+function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor, selectedProject, user, onSceneNumberChange, setCurrentIndex, showMoodOverlay, canCreateScene = false, onCreateFirstScene = null, canDeleteScene = false, onDeleteScene = null }) {
   const { otherUsers } = usePresence(selectedProject?.id, user, "script", currentSceneNumber);
   const [editingScene, setEditingScene] = useState(null);
   const [newSceneNumber, setNewSceneNumber] = useState("");
@@ -75,7 +75,21 @@ function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor,
     setNewSceneNumber("");
   };
 
-  if (scenes.length === 0) return null;
+  if (scenes.length === 0) {
+    return (
+      <div style={{ marginLeft: "20px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <div style={{ flex: 1, width: "500px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden", padding: "18px", boxSizing: "border-box", color: "#555", lineHeight: 1.45 }}>
+          <div style={{ fontWeight: "bold", fontSize: "14px", color: "#222", marginBottom: "8px" }}>No scenes yet</div>
+          <div style={{ marginBottom: "14px" }}>Create a starter scene to begin writing.</div>
+          {canCreateScene && (
+            <button type="button" onClick={onCreateFirstScene} style={{ padding: "8px 14px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "12px" }}>
+              New Script
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ marginLeft: "20px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -102,6 +116,11 @@ function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor,
                     <span style={{ width: "4px", textAlign: "center", fontSize: "10px", color: statColor }}>·</span>
                     <span style={{ width: "36px", textAlign: "right", fontSize: "10px", color: statColor, fontVariantNumeric: "tabular-nums" }}>{pageStats.pageLength}</span>
                   </span>
+                )}
+                {canDeleteScene && (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); onDeleteScene?.(index); }} title="Delete scene" style={{ width: "20px", height: "20px", flexShrink: 0, border: "1px solid rgba(198,40,40,0.65)", borderRadius: "3px", backgroundColor: isCurrent ? "rgba(255,255,255,0.15)" : "white", color: isCurrent ? "white" : "#c62828", cursor: "pointer", fontSize: "12px", fontWeight: "bold", lineHeight: "16px", padding: 0 }}>
+                    x
+                  </button>
                 )}
               </div>
             </PresenceIndicator>
@@ -195,19 +214,347 @@ function RevisionRoundModal({ pendingRecord, committedRounds, onCommit, onClose 
   );
 }
 
+// ─── Beat Sheet Helpers ──────────────────────────────────────────────────────
+const BEAT_TITLE_WORD_LIMIT = 10;
+
+const normalizeBeatText = (text = "") => String(text || "").trim().replace(/\s+/g, " ");
+
+const createBeatId = (sourceText, order, type = "beat") => {
+  const input = `${type}|${order}|${sourceText || ""}`;
+  let hash = 0;
+
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) - hash + input.charCodeAt(i)) | 0;
+  }
+
+  return `${type}-${order}-${Math.abs(hash).toString(36)}`;
+};
+
+const stripBeatMarker = (line = "") => {
+  return normalizeBeatText(line)
+    .replace(/^\s*(?:[-*]|\u2022)\s+/, "")
+    .replace(/^\d+[\.)]\s+/, "")
+    .replace(/^beat\s+\d+\s*[:.)-]\s*/i, "")
+    .trim();
+};
+
+const extractOriginalBeatNumber = (line = "") => {
+  const text = normalizeBeatText(line);
+  const directMatch = text.match(/^(\d+)[\.)]\s+\S+/);
+  if (directMatch) return Number(directMatch[1]);
+
+  const beatMatch = text.match(/^beat\s+(\d+)\s*[:.)-]\s*\S+/i);
+  if (beatMatch) return Number(beatMatch[1]);
+
+  return null;
+};
+
+const isBeatSectionHeader = (block = "") => {
+  const text = normalizeBeatText(block);
+  if (!text || text.length > 90) return false;
+  if (/\bACT\s+(ONE|TWO|THREE|FOUR|FIVE|I|II|III|IV|V|\d+)\b/i.test(text)) return true;
+  if (/\b(PROLOGUE|EPILOGUE|TEASER|TAG|SECTION|PART)\b/i.test(text) && text.length <= 80) return true;
+
+  const letters = text.replace(/[^A-Za-z]/g, "");
+  if (letters.length < 8) return false;
+  if (text.split(/\s+/).length < 2) return false;
+
+  return text === text.toUpperCase();
+};
+
+const isActHeading = (block = "") => {
+  const text = normalizeBeatText(block);
+  if (!text || text.length > 90) return false;
+  if (!/^ACT\s+(ONE|TWO|THREE|FOUR|FIVE|I|II|III|IV|V|\d+)\b/i.test(text)) return false;
+
+  const letters = text.replace(/[^A-Za-z]/g, "");
+  if (letters.length < 4) return false;
+
+  return text === text.toUpperCase() || /^ACT\s+/i.test(text);
+};
+
+const isNumberedBeatTitle = (line = "") => {
+  const text = normalizeBeatText(line);
+  return /^\d+[\.)]\s+\S+/.test(text) || /^beat\s+\d+\s*[:.)-]\s*\S+/i.test(text);
+};
+
+const isBulletBeatTitle = (line = "") => /^(?:[-*]|\u2022)\s+\S+/.test(normalizeBeatText(line));
+
+const isLikelyBeatTitle = (line = "") => {
+  const text = normalizeBeatText(line);
+  if (!text || text.length > 80) return false;
+  if (isNumberedBeatTitle(text) || isBulletBeatTitle(text)) return true;
+  if (/[.!?]$/.test(text)) return false;
+
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length > BEAT_TITLE_WORD_LIMIT) return false;
+
+  const titleCaseWords = words.filter(word => /^[A-Z0-9]/.test(word));
+  return titleCaseWords.length >= Math.max(1, Math.ceil(words.length * 0.6));
+};
+
+const createAutoBeatTitle = (text = "", order = 1) => {
+  const words = normalizeBeatText(text).split(/\s+/).filter(Boolean).slice(0, 6);
+  return words.length ? words.join(" ") : `Beat ${order}`;
+};
+
+const normalizeOutlineItems = (items = []) => {
+  return (Array.isArray(items) ? items : []).map((item, index) => {
+    const type = item?.type === "act" ? "act" : "beat";
+    const order = Number.isFinite(Number(item?.order)) ? Number(item.order) : index + 1;
+
+    if (type === "act") {
+      return {
+        id: item.id || createBeatId(item.sourceText || item.title || "", order, "act"),
+        type: "act",
+        title: String(item.title || "ACT").trim(),
+        order,
+        sourceText: item.sourceText || item.title || "",
+      };
+    }
+
+    return {
+      id: item.id || createBeatId(item.sourceText || item.title || "", order, "beat"),
+      type: "beat",
+      title: String(item.title || `Beat ${order}`).trim(),
+      description: String(item.description || "").trim(),
+      order,
+      verified: Boolean(item.verified),
+      convertedSceneId: item.convertedSceneId || null,
+      originalBeatNumber: Number.isFinite(Number(item.originalBeatNumber)) ? Number(item.originalBeatNumber) : null,
+      sourceText: item.sourceText || "",
+    };
+  });
+};
+
+const parseBeatSheetText = (rawText = "") => {
+  const warnings = [];
+  const blocks = String(rawText || "")
+    .replace(/\r\n/g, "\n")
+    .split(/\n\s*\n+/)
+    .map(block => block.trim())
+    .filter(Boolean);
+
+  const items = [];
+  let i = 0;
+
+  while (i < blocks.length) {
+    const block = blocks[i];
+    const lines = block.split("\n").map(normalizeBeatText).filter(Boolean);
+    const firstLine = lines[0] || "";
+
+    if (isActHeading(firstLine)) {
+      const order = items.length + 1;
+      items.push({
+        id: createBeatId(firstLine, order, "act"),
+        type: "act",
+        title: firstLine,
+        order,
+        sourceText: firstLine,
+      });
+
+      if (lines.length > 1) {
+        blocks.splice(i + 1, 0, lines.slice(1).join("\n"));
+      }
+
+      i += 1;
+      continue;
+    }
+
+    let title = "";
+    let description = "";
+    let sourceText = block;
+    let originalBeatNumber = null;
+
+    if (isNumberedBeatTitle(firstLine) || isBulletBeatTitle(firstLine)) {
+      originalBeatNumber = extractOriginalBeatNumber(firstLine);
+      title = stripBeatMarker(firstLine);
+      description = lines.slice(1).join("\n\n").trim();
+
+      if (!description && blocks[i + 1]) {
+        const nextFirstLine = blocks[i + 1].split("\n").map(normalizeBeatText).filter(Boolean)[0] || "";
+        const nextIsHeader = isBeatSectionHeader(blocks[i + 1]);
+        const nextIsBeat = isNumberedBeatTitle(nextFirstLine) || isBulletBeatTitle(nextFirstLine);
+
+        if (!nextIsHeader && !nextIsBeat) {
+          description = blocks[i + 1].trim();
+          sourceText = `${block}\n\n${blocks[i + 1].trim()}`;
+          i += 1;
+        }
+      }
+    } else if (lines.length === 1 && isLikelyBeatTitle(firstLine) && blocks[i + 1] && !isBeatSectionHeader(blocks[i + 1])) {
+      title = stripBeatMarker(firstLine);
+      description = blocks[i + 1].trim();
+      sourceText = `${block}\n\n${blocks[i + 1].trim()}`;
+      i += 1;
+    } else if (lines.length > 1 && isLikelyBeatTitle(firstLine)) {
+      title = stripBeatMarker(firstLine);
+      description = lines.slice(1).join("\n\n").trim();
+    } else if (lines.length > 1 && !/[.!?]$/.test(firstLine) && firstLine.split(/\s+/).filter(Boolean).length <= BEAT_TITLE_WORD_LIMIT) {
+      title = stripBeatMarker(firstLine);
+      description = lines.slice(1).join("\n\n").trim();
+    } else {
+      title = createAutoBeatTitle(block, items.length + 1);
+      description = block;
+      warnings.push(`Auto-generated title for beat ${items.length + 1}.`);
+    }
+
+    const order = items.length + 1;
+    items.push({
+      id: createBeatId(sourceText, order, "beat"),
+      type: "beat",
+      order,
+      title: title || `Beat ${order}`,
+      description,
+      verified: false,
+      convertedSceneId: null,
+      originalBeatNumber,
+      sourceText,
+    });
+
+    i += 1;
+  }
+
+  const beats = items.filter(item => item.type === "beat");
+  const acts = items.filter(item => item.type === "act");
+
+  if (items.length === 0 && rawText.trim()) {
+    warnings.push("No outline items were detected.");
+  }
+
+  return {
+    items,
+    beats,
+    acts,
+    warnings,
+  };
+};
+
+function BeatsList({ beats, onDeleteItem = null, onReorderItem = null, onOpenItem = null, onConvertItem = null, collapsedActIds = {}, onToggleAct = null }) {
+  const orderedItems = normalizeOutlineItems(beats).sort((a, b) => {
+    if (a.order !== b.order) return a.order - b.order;
+    return String(a.title || "").localeCompare(String(b.title || ""));
+  });
+  const beatCount = orderedItems.filter(item => item.type === "beat").length;
+  const actCount = orderedItems.filter(item => item.type === "act").length;
+  const [dragState, setDragState] = useState({ draggedId: null, overId: null, position: "before" });
+  let beatDisplayNumber = 0;
+
+  const getDropPosition = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+  };
+
+  const getDropBorderStyle = (itemId, position) => {
+    if (dragState.overId !== itemId || dragState.position !== position) return undefined;
+    return "2px solid #316AC5";
+  };
+
+  const handleDragStart = (event, itemId) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", itemId);
+    setDragState({ draggedId: itemId, overId: null, position: "before" });
+  };
+
+  const handleDragOver = (event, itemId) => {
+    event.preventDefault();
+    const position = getDropPosition(event);
+    setDragState(prev => (
+      prev.overId === itemId && prev.position === position
+        ? prev
+        : { ...prev, overId: itemId, position }
+    ));
+  };
+
+  const handleDrop = (event, targetId) => {
+    event.preventDefault();
+    const draggedId = dragState.draggedId || event.dataTransfer.getData("text/plain");
+    const position = getDropPosition(event);
+    setDragState({ draggedId: null, overId: null, position: "before" });
+    onReorderItem?.(draggedId, targetId, position);
+  };
+
+  const clearDragState = () => {
+    setDragState({ draggedId: null, overId: null, position: "before" });
+  };
+
+  return (
+    <div style={{ marginLeft: "20px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <div style={{ width: "500px", border: "2px inset #ccc", backgroundColor: "white", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden", flex: 1 }}>
+        <div style={{ padding: "8px", borderBottom: "1px solid #e5e5e5", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+          <strong>Outline</strong>
+          <span style={{ fontSize: "11px", color: "#777" }}>{beatCount} beats{actCount ? `, ${actCount} acts` : ""}</span>
+        </div>
+
+        {orderedItems.length === 0 ? (
+          <div style={{ padding: "16px", color: "#777", lineHeight: 1.45 }}>No beats imported yet. Use the Import Beats button above to paste and review a beat sheet.</div>
+        ) : (
+          orderedItems.map((item, index) => {
+            const previousAct = orderedItems.slice(0, index).reverse().find(outlineItem => outlineItem.type === "act");
+            const isHiddenByCollapsedAct = item.type === "beat" && previousAct && collapsedActIds[previousAct.id];
+
+            if (item.type === "act") {
+              const isCollapsed = Boolean(collapsedActIds[item.id]);
+
+              return (
+                <div key={item.id} draggable onDragStart={(event) => handleDragStart(event, item.id)} onDragOver={(event) => handleDragOver(event, item.id)} onDrop={(event) => handleDrop(event, item.id)} onDragEnd={clearDragState} style={{ padding: "10px 10px", borderTop: getDropBorderStyle(item.id, "before"), borderBottom: getDropBorderStyle(item.id, "after") || "1px solid #b0bec5", backgroundColor: dragState.draggedId === item.id ? "#B0BEC5" : "#CFD8DC", color: "#263238", fontWeight: "bold", letterSpacing: "0.02em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "8px", cursor: "grab" }}>
+                  <button type="button" onClick={() => onToggleAct?.(item.id)} title={isCollapsed ? "Expand act" : "Collapse act"} style={{ width: "22px", height: "22px", border: "1px solid #90A4AE", borderRadius: "3px", backgroundColor: "white", color: "#455A64", cursor: "pointer", fontSize: "12px", fontWeight: "bold", lineHeight: "18px", padding: 0, flexShrink: 0 }}>
+                    {isCollapsed ? ">" : "v"}
+                  </button>
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title}</span>
+                  <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                    <button type="button" onClick={() => onDeleteItem?.(item.id)} title="Delete act" style={{ width: "22px", height: "22px", border: "1px solid #c62828", borderRadius: "3px", backgroundColor: "#c62828", color: "white", cursor: "pointer", fontSize: "12px", fontWeight: "bold", lineHeight: "18px", padding: 0 }}>
+                      x
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
+            const isConverted = item.convertedSceneId;
+            beatDisplayNumber += 1;
+            if (isHiddenByCollapsedAct) return null;
+
+            return (
+              <div key={item.id} draggable onDragStart={(event) => handleDragStart(event, item.id)} onDragOver={(event) => handleDragOver(event, item.id)} onDrop={(event) => handleDrop(event, item.id)} onDragEnd={clearDragState} onDoubleClick={() => onOpenItem?.(item.id)} title="Double-click to edit beat" style={{ padding: "10px", borderTop: getDropBorderStyle(item.id, "before"), borderBottom: getDropBorderStyle(item.id, "after") || "1px solid #eee", backgroundColor: dragState.draggedId === item.id ? "#ECEFF1" : isConverted ? "#E8F5E9" : item.verified ? "#F1F8E9" : "white", cursor: "grab" }}>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "5px" }}>
+                  <span style={{ fontSize: "8px", color: "#777", fontVariantNumeric: "tabular-nums", minWidth: "22px" }}>#{beatDisplayNumber}</span>
+                  {item.originalBeatNumber && item.originalBeatNumber !== beatDisplayNumber && (
+                    <span style={{ fontSize: "6px", color: "#c62828", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontWeight: "bold" }}>{item.originalBeatNumber}</span>
+                  )}
+                  <strong style={{ flex: 1, minWidth: 0, fontSize: "11px", color: "#222", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title || `Beat ${beatDisplayNumber}`}</strong>
+                  <button type="button" disabled={Boolean(isConverted) || !onConvertItem} onClick={(event) => { event.stopPropagation(); onConvertItem?.(item.id); }} onDoubleClick={(event) => event.stopPropagation()} style={{ padding: "3px 6px", border: "1px solid #ddd", borderRadius: "4px", backgroundColor: isConverted ? "#E8F5E9" : "#f5f5f5", color: isConverted ? "#2E7D32" : "#777", cursor: isConverted || !onConvertItem ? "default" : "pointer", fontSize: "8px", fontWeight: "bold", whiteSpace: "nowrap" }}>
+                    {isConverted ? "Converted" : "Convert to Scene"}
+                  </button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); onDeleteItem?.(item.id); }} onDoubleClick={(event) => event.stopPropagation()} title="Delete beat" style={{ width: "20px", height: "20px", border: "1px solid #c62828", borderRadius: "3px", backgroundColor: "#c62828", color: "white", cursor: "pointer", fontSize: "10px", fontWeight: "bold", lineHeight: "16px", padding: 0, flexShrink: 0 }}>
+                    x
+                  </button>
+                </div>
+                <div style={{ fontSize: "10px", lineHeight: 1.4, color: "#444", whiteSpace: "pre-wrap" }}>{item.description || "No description."}</div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Continuous Script (View + Edit) ─────────────────────────────────────────
 const ContinuousScript = React.memo(function ContinuousScript({
   scenes, sceneRefs, isEditMode, editingScenes, setEditingScenes,
   setActiveBlock, taggedItems, tagCategories,
   showTagDropdown, setShowTagDropdown, tagWord, untagWordInstance,
   isWordInstanceTagged, getSceneStatusColor, committedRounds,
-  viewingRevision, setCurrentIndex, onSceneHeadingChange,
+  viewingRevision, setCurrentIndex, onSceneHeadingChange, onCreateSceneAfter,
 }) {
   const blockRefs = useRef({});
+  const sceneHeadingRefs = useRef({});
   const getKey = (si, bi) => `${si}-${bi}`;
   const lastArrowKey = useRef(null);
   const preArrowCaretRect = useRef(null);
   const preArrowBlockKey = useRef(null);
+  const lastSceneCreationRef = useRef({ si: null, bi: null, at: 0 });
 
   // ── Undo stack ────────────────────────────────────────────────────────────
   const undoStack = useRef([]);
@@ -320,6 +667,39 @@ const ContinuousScript = React.memo(function ContinuousScript({
       if (el) { el.focus(); setActiveBlock({ si, bi: afterBi + 1 }); }
     }, 30);
   }, [setEditingScenes, setActiveBlock]);
+
+  const canCreateSceneFromEmptyBlock = (block) => {
+    return block?.type === "Action" || block?.type === "Scene Heading" || block?.type === "Transition";
+  };
+
+  const createSceneAfterBlock = useCallback((si, bi) => {
+    if (!onCreateSceneAfter) return false;
+
+    const now = Date.now();
+    const last = lastSceneCreationRef.current;
+    if (last.si === si && last.bi === bi && now - last.at < 800) return true;
+
+    pushStructuralSnapshot(si, bi);
+    lastSceneCreationRef.current = { si, bi, at: now };
+    const domText = blockRefs.current[getKey(si, bi)]?.textContent || "";
+    onCreateSceneAfter(si, bi, domText);
+
+    setActiveBlock(null);
+    setTimeout(() => {
+      const headingEl = sceneHeadingRefs.current[si + 1];
+      if (!headingEl) return;
+
+      headingEl.focus();
+      const range = document.createRange();
+      range.selectNodeContents(headingEl);
+      range.collapse(false);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }, 60);
+
+    return true;
+  }, [onCreateSceneAfter, setActiveBlock]);
 
   const deleteBlock = useCallback((si, bi, len) => {
     if (len <= 1) return;
@@ -467,6 +847,7 @@ const ContinuousScript = React.memo(function ContinuousScript({
     if (e.key === "Enter") {
       e.preventDefault();
       const txt = blockRefs.current[getKey(si, bi)]?.textContent || "";
+      if (!txt.trim() && canCreateSceneFromEmptyBlock(block) && createSceneAfterBlock(si, bi)) return;
       let next = ENTER_NEXT_TYPE[block.type] || "Action";
       if (block.type === "Dialogue" && !txt.trim()) next = "Action";
       addBlock(si, bi, next);
@@ -480,7 +861,7 @@ const ContinuousScript = React.memo(function ContinuousScript({
       e.preventDefault();
       updateBlockType(si, bi, TYPE_SHORTCUTS[e.key]);
     }
-  }, [editingScenes, updateBlockType, addBlock, deleteBlock, setActiveBlock]);
+  }, [editingScenes, updateBlockType, addBlock, deleteBlock, setActiveBlock, createSceneAfterBlock]);
 
   const renderTagged = (text, si, bi, block) => {
     if (block?.formatting) { const fmt = formatElementText(block); if (React.isValidElement(fmt)) return fmt; }
@@ -562,6 +943,7 @@ const ContinuousScript = React.memo(function ContinuousScript({
             <div ref={el => { sceneRefs.current[si] = el; }} data-scene-index={si} style={{ marginTop: si === 0 ? 0 : "32pt", paddingTop: si === 0 ? 0 : "8pt", borderTop: si === 0 ? "none" : "1px solid #e8e8e8" }}>
             {isEditMode ? (
                 <h2
+                  ref={el => { sceneHeadingRefs.current[si] = el; }}
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => {
@@ -686,6 +1068,14 @@ function Script({
   const [scriptMoodboardImages, setScriptMoodboardImages] = useState([]);
   const [showMoodOverlaySettings, setShowMoodOverlaySettings] = useState(false);
   const [moodOverlayCycleIndex, setMoodOverlayCycleIndex] = useState(0);
+  const [beats, setBeats] = useState([]);
+  const [activeSidePanelTab, setActiveSidePanelTab] = useState("scenes");
+  const [showBeatsTrack, setShowBeatsTrack] = useState(true);
+  const [showBeatImportDialog, setShowBeatImportDialog] = useState(false);
+  const [beatImportText, setBeatImportText] = useState("");
+  const [beatImportDraft, setBeatImportDraft] = useState(null);
+  const [selectedBeatDetailId, setSelectedBeatDetailId] = useState(null);
+  const [collapsedActIds, setCollapsedActIds] = useState({});
   const [scriptWorkflowMode, setScriptWorkflowMode] = useState(() => {
     const stored = localStorage.getItem("scriptWorkflowMode");
     return stored === "production" ? "production" : "writing";
@@ -698,6 +1088,10 @@ function Script({
   const containerRef    = useRef(null);
   const observerRef     = useRef(null);
   const replaceInputRef = useRef(null);
+  const skipNextBeatPersistRef = useRef(false);
+  const skipNextTabPersistRef = useRef(false);
+  const skipNextCollapsedActsPersistRef = useRef(false);
+  const convertingBeatIdsRef = useRef(new Set());
 
   const isWritingMode = scriptWorkflowMode === "writing";
   const isProductionMode = scriptWorkflowMode === "production";
@@ -711,6 +1105,11 @@ function Script({
   const getTimelinePositionsStorageKey = useCallback(() => {
     const projectId = selectedProject?.id || selectedProject?.name || "default-project";
     return `scriptTimelinePositions:${projectId}`;
+  }, [selectedProject?.id, selectedProject?.name]);
+
+  const getBeatsStorageKey = useCallback(() => {
+    const projectId = selectedProject?.id || selectedProject?.name || "default-project";
+    return `scriptBeats:${projectId}`;
   }, [selectedProject?.id, selectedProject?.name]);
 
   const persistTimelinePositions = useCallback((sceneList = []) => {
@@ -740,6 +1139,80 @@ function Script({
   }, [selectedProject]);
 
   useEffect(() => { loadRevisions(); }, [loadRevisions]);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+
+    try {
+      const storedBeats = JSON.parse(localStorage.getItem(getBeatsStorageKey()) || "[]");
+      skipNextBeatPersistRef.current = true;
+      setBeats(normalizeOutlineItems(storedBeats));
+    } catch (err) {
+      console.warn("Could not load beats:", err);
+      skipNextBeatPersistRef.current = true;
+      setBeats([]);
+    }
+  }, [selectedProject?.id, selectedProject?.name, getBeatsStorageKey]);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+    if (skipNextBeatPersistRef.current) {
+      skipNextBeatPersistRef.current = false;
+      return;
+    }
+
+    try {
+      localStorage.setItem(getBeatsStorageKey(), JSON.stringify(beats));
+    } catch (err) {
+      console.warn("Could not persist beats:", err);
+    }
+  }, [beats, selectedProject?.id, selectedProject?.name, getBeatsStorageKey]);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+
+    const storedTab = localStorage.getItem(getProjectStorageKey("scriptSidePanelTab"));
+    skipNextTabPersistRef.current = true;
+    setActiveSidePanelTab(storedTab === "beats" ? "beats" : "scenes");
+  }, [selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+    if (skipNextTabPersistRef.current) {
+      skipNextTabPersistRef.current = false;
+      return;
+    }
+
+    localStorage.setItem(getProjectStorageKey("scriptSidePanelTab"), activeSidePanelTab === "beats" ? "beats" : "scenes");
+  }, [activeSidePanelTab, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+
+    try {
+      const storedCollapsedActs = JSON.parse(localStorage.getItem(getProjectStorageKey("scriptCollapsedActs")) || "{}");
+      skipNextCollapsedActsPersistRef.current = true;
+      setCollapsedActIds(storedCollapsedActs && typeof storedCollapsedActs === "object" && !Array.isArray(storedCollapsedActs) ? storedCollapsedActs : {});
+    } catch (err) {
+      console.warn("Could not load collapsed acts:", err);
+      skipNextCollapsedActsPersistRef.current = true;
+      setCollapsedActIds({});
+    }
+  }, [selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+    if (skipNextCollapsedActsPersistRef.current) {
+      skipNextCollapsedActsPersistRef.current = false;
+      return;
+    }
+
+    try {
+      localStorage.setItem(getProjectStorageKey("scriptCollapsedActs"), JSON.stringify(collapsedActIds));
+    } catch (err) {
+      console.warn("Could not persist collapsed acts:", err);
+    }
+  }, [collapsedActIds, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
 
   useEffect(() => {
     const handleTimelinePopupKeyDown = (event) => {
@@ -885,9 +1358,10 @@ function Script({
 
     autoSaveTimerRef.current = setTimeout(async () => {
       try {
-        await saveScenesDatabase(editingScenes);
-        setScenes(editingScenes);
-        await syncWritingModeCharacters(editingScenes);
+        const normalizedScenes = normalizeSceneIds(editingScenes);
+        await saveScenesDatabase(normalizedScenes);
+        setScenes(normalizedScenes);
+        await syncWritingModeCharacters(normalizedScenes);
         lastAutoSavePayloadRef.current = payload;
       } catch (err) {
         console.error("Writing mode autosave failed:", err);
@@ -954,7 +1428,7 @@ function Script({
           .from("moodboard_data")
           .select("images")
           .eq("project_id", selectedProject.id)
-          .single();
+          .maybeSingle();
 
         if (error) throw error;
 
@@ -1010,7 +1484,53 @@ function Script({
     return Math.max(...numericSceneNumbers) + 1;
   };
 
+  const isValidSceneId = (id) => {
+    return typeof id === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  };
+
+  const createSceneId = () => {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+
+    return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, char =>
+      (Number(char) ^ Math.random() * 16 >> Number(char) / 4).toString(16)
+    );
+  };
+
+  const normalizeSceneIds = (sceneList = []) => {
+    return sceneList.map(scene => {
+      if (!scene?.id || isValidSceneId(scene.id)) return scene;
+      return { ...scene, id: createSceneId() };
+    });
+  };
+
+  const syncLocalStripboardFromScenes = (sceneList = []) => {
+    if (!setStripboardScenes) return;
+
+    setStripboardScenes(prevStripboardScenes => {
+      const existingStripboardScenes = Array.isArray(prevStripboardScenes) ? prevStripboardScenes : [];
+
+      return sceneList.map(scene => {
+        const existing =
+          existingStripboardScenes.find(stripScene => stripScene.sceneId && scene.id && String(stripScene.sceneId) === String(scene.id)) ||
+          existingStripboardScenes.find(stripScene => stripScene.id && scene.id && String(stripScene.id) === String(scene.id)) ||
+          existingStripboardScenes.find(stripScene => String(stripScene.sceneNumber) === String(scene.sceneNumber));
+
+        return {
+          ...scene,
+          sceneId: scene.id || existing?.sceneId || null,
+          status: existing?.status || scene.status || "Not Scheduled",
+          scheduledDate: existing?.scheduledDate || null,
+          scheduledTime: existing?.scheduledTime || null,
+        };
+      });
+    });
+  };
+
   const createBlankScene = (sceneNumber, timelineStartPage = 0) => ({
+    id: createSceneId(),
     sceneNumber,
     heading: "INT. LOCATION - DAY",
     timelineStartPage,
@@ -1028,11 +1548,8 @@ function Script({
     ],
   });
 
-  const handleAddScene = async () => {
-    const baseScenes = isEditMode ? editingScenes : scenes;
-    const nextSceneNumber = getNextSceneNumber(baseScenes);
-
-    const lastTimelineEndPage = baseScenes.reduce((maxPage, scene) => {
+  const getContinuousTimelineStartPage = (sceneList = []) => {
+    const lastTimelineEndPage = sceneList.reduce((maxPage, scene) => {
       const startPage = Number.isFinite(Number(scene.timelineStartPage))
         ? Number(scene.timelineStartPage)
         : 0;
@@ -1040,15 +1557,22 @@ function Script({
       return Math.max(maxPage, startPage + getSceneEstimatedPageLength(scene));
     }, 0);
 
-    const timelineStartPage = Math.min(
-      Math.max(0, Math.ceil(lastTimelineEndPage)),
+    return Math.min(
+      Math.max(0, lastTimelineEndPage),
       Math.max(0, targetPageCount - 1)
     );
+  };
 
+  const handleAddScene = async () => {
+    const baseScenes = isEditMode ? editingScenes : scenes;
+    const nextSceneNumber = getNextSceneNumber(baseScenes);
+
+    const timelineStartPage = getContinuousTimelineStartPage(baseScenes);
     const newScene = createBlankScene(nextSceneNumber, timelineStartPage);
-    const updatedScenes = [...baseScenes, newScene];
+    const updatedScenes = normalizeSceneIds([...baseScenes, newScene]);
 
     setScenes(updatedScenes);
+    syncLocalStripboardFromScenes(updatedScenes);
     setCurrentIndex(updatedScenes.length - 1);
     setCurrentSceneNumber(newScene.sceneNumber);
 
@@ -1081,6 +1605,98 @@ function Script({
     }, 100);
   };
 
+  const handleCreateSceneAfter = useCallback((sceneIndex, blockIndex, blockText = "") => {
+    const baseScenes = isScriptEditable ? editingScenes : scenes;
+    const insertAfterIndex = Math.max(0, Math.min(sceneIndex, baseScenes.length - 1));
+    const sourceScene = baseScenes[insertAfterIndex];
+    if (!sourceScene) return;
+
+    const nextSceneNumber = getNextSceneNumber(baseScenes);
+    const sourceStartPage = Number.isFinite(Number(sourceScene.timelineStartPage))
+      ? Number(sourceScene.timelineStartPage)
+      : 0;
+    const timelineStartPage = Math.min(
+      Math.max(0, sourceStartPage + getSceneEstimatedPageLength(sourceScene)),
+      Math.max(0, targetPageCount - 1)
+    );
+    const newScene = createBlankScene(nextSceneNumber, timelineStartPage);
+    const normalizedSourceScene = {
+      ...sourceScene,
+      content: Array.isArray(sourceScene.content)
+        ? sourceScene.content.map((block, index) => index === blockIndex ? { ...block, text: blockText } : { ...block })
+        : [],
+    };
+    const updatedScenes = normalizeSceneIds([
+      ...baseScenes.slice(0, insertAfterIndex + 1),
+      newScene,
+      ...baseScenes.slice(insertAfterIndex + 1),
+    ].map((scene, index) => index === insertAfterIndex ? normalizedSourceScene : scene));
+
+    setScenes(updatedScenes);
+    syncLocalStripboardFromScenes(updatedScenes);
+    setCurrentIndex(insertAfterIndex + 1);
+    setCurrentSceneNumber(newScene.sceneNumber);
+    setEditingScenes(updatedScenes.map(scene => ({
+      ...scene,
+      content: Array.isArray(scene.content) ? scene.content.map(block => ({ ...block })) : [],
+    })));
+
+    const origMap = {};
+    updatedScenes.forEach(scene => {
+      origMap[scene.sceneNumber] = Array.isArray(scene.content)
+        ? scene.content.map(block => ({ ...block }))
+        : [];
+    });
+    setOriginalContent(origMap);
+    setIsEditMode(true);
+
+    saveScenesDatabase(updatedScenes).catch((err) => {
+      console.error("Error creating scene from writing:", err);
+      alert("Could not create scene: " + err.message);
+    });
+  }, [editingScenes, scenes, isScriptEditable, targetPageCount, saveScenesDatabase, setScenes, setCurrentIndex]);
+
+  const handleDeleteScene = async (sceneIndex) => {
+    const baseScenes = isScriptEditable ? editingScenes : scenes;
+    const sceneToDelete = baseScenes[sceneIndex];
+    if (!sceneToDelete) return;
+
+    const confirmed = window.confirm(`Delete Scene ${sceneToDelete.sceneNumber}? This cannot be undone.`);
+    if (!confirmed) return;
+
+    const updatedScenes = baseScenes.filter((_, index) => index !== sceneIndex);
+    const nextIndex = updatedScenes.length === 0 ? 0 : Math.min(currentIndex >= sceneIndex ? Math.max(0, currentIndex - 1) : currentIndex, updatedScenes.length - 1);
+
+    setScenes(updatedScenes);
+    syncLocalStripboardFromScenes(updatedScenes);
+    setCurrentIndex(nextIndex);
+    setCurrentSceneNumber(updatedScenes[nextIndex]?.sceneNumber || null);
+
+    if (isScriptEditable) {
+      setEditingScenes(updatedScenes.map(scene => ({
+        ...scene,
+        content: Array.isArray(scene.content) ? scene.content.map(block => ({ ...block })) : [],
+      })));
+      setActiveBlock(null);
+    }
+
+    try {
+      await saveScenesDatabase(updatedScenes);
+      if (sceneToDelete.id) {
+        const { error } = await supabase
+          .from("scenes")
+          .delete()
+          .eq("id", sceneToDelete.id)
+          .eq("project_id", selectedProject.id);
+
+        if (error) throw error;
+      }
+    } catch (err) {
+      console.error("Error deleting scene:", err);
+      alert("Could not delete scene: " + err.message);
+    }
+  };
+
   const renumberScenesByTimeline = (sceneList) => {
     return [...sceneList]
       .sort((a, b) => {
@@ -1092,6 +1708,325 @@ function Script({
         ...scene,
         sceneNumber: index + 1,
       }));
+  };
+
+  const handleOpenBeatImport = () => {
+    setBeatImportText("");
+    setBeatImportDraft(null);
+    setShowBeatImportDialog(true);
+    setActiveSidePanelTab("beats");
+  };
+
+  const appendOutlineItem = (type) => {
+    setBeats(prevBeats => {
+      const existingItems = normalizeOutlineItems(prevBeats);
+      const order = existingItems.length + 1;
+      const itemType = type === "act" ? "act" : "beat";
+      const actNumber = existingItems.filter(item => item.type === "act").length + 1;
+      const sourceText = `${itemType}-${order}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      const newItem = itemType === "act"
+        ? {
+            id: createBeatId(sourceText, order, "act"),
+            type: "act",
+            title: `ACT ${actNumber}`,
+            order,
+            sourceText: "",
+          }
+        : {
+            id: createBeatId(sourceText, order, "beat"),
+            type: "beat",
+            title: `Beat ${order}`,
+            description: "",
+            order,
+            verified: false,
+            convertedSceneId: null,
+            originalBeatNumber: null,
+            sourceText: "",
+          };
+
+      return [...existingItems, newItem];
+    });
+    setActiveSidePanelTab("beats");
+  };
+
+  const deleteOutlineItem = (itemId) => {
+    setBeats(prevBeats =>
+      normalizeOutlineItems(prevBeats)
+        .filter(item => item.id !== itemId)
+        .map((item, index) => ({ ...item, order: index + 1 }))
+    );
+    setCollapsedActIds(prev => {
+      if (!prev?.[itemId]) return prev;
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  };
+
+  const toggleCollapsedAct = (actId) => {
+    setCollapsedActIds(prev => ({
+      ...prev,
+      [actId]: !prev?.[actId],
+    }));
+  };
+
+  const reorderOutlineItem = (draggedId, targetId, position = "before") => {
+    if (!draggedId || !targetId || draggedId === targetId) return;
+
+    setBeats(prevBeats => {
+      const orderedItems = normalizeOutlineItems(prevBeats).sort((a, b) => {
+        if (a.order !== b.order) return a.order - b.order;
+        return String(a.title || "").localeCompare(String(b.title || ""));
+      });
+      const currentIndex = orderedItems.findIndex(item => item.id === draggedId);
+      const targetIndex = orderedItems.findIndex(item => item.id === targetId);
+
+      if (currentIndex === -1 || targetIndex === -1) {
+        return orderedItems;
+      }
+
+      const draggedItem = orderedItems[currentIndex];
+      const groupEndIndex = draggedItem.type === "act"
+        ? orderedItems.findIndex((item, index) => index > currentIndex && item.type === "act")
+        : currentIndex + 1;
+      const safeGroupEndIndex = groupEndIndex === -1 ? orderedItems.length : groupEndIndex;
+      const movingItems = orderedItems.slice(currentIndex, safeGroupEndIndex);
+      const movingIds = new Set(movingItems.map(item => item.id));
+
+      if (movingIds.has(targetId)) {
+        return orderedItems;
+      }
+
+      const nextItems = [...orderedItems];
+      nextItems.splice(currentIndex, movingItems.length);
+      const targetIndexAfterRemoval = nextItems.findIndex(item => item.id === targetId);
+
+      if (targetIndexAfterRemoval === -1) {
+        return orderedItems;
+      }
+
+      const targetItemAfterRemoval = nextItems[targetIndexAfterRemoval];
+      const nextTargetActIndex = targetItemAfterRemoval?.type === "act"
+        ? nextItems.findIndex((item, index) => index > targetIndexAfterRemoval && item.type === "act")
+        : -1;
+      const targetGroupEndIndex = nextTargetActIndex === -1 ? nextItems.length : nextTargetActIndex;
+      const insertIndex = draggedItem.type === "act" && targetItemAfterRemoval?.type === "act" && position === "after"
+        ? targetGroupEndIndex
+        : position === "after"
+          ? targetIndexAfterRemoval + 1
+          : targetIndexAfterRemoval;
+
+      nextItems.splice(insertIndex, 0, ...movingItems);
+
+      return nextItems.map((item, index) => ({ ...item, order: index + 1 }));
+    });
+  };
+
+  const updateOutlineBeat = (itemId, patch) => {
+    setBeats(prevBeats =>
+      normalizeOutlineItems(prevBeats).map(item => {
+        if (item.id !== itemId || item.type === "act") return item;
+
+        return {
+          ...item,
+          title: patch.title !== undefined ? String(patch.title) : item.title,
+          description: patch.description !== undefined ? String(patch.description) : item.description,
+          verified: patch.verified !== undefined ? Boolean(patch.verified) : Boolean(item.verified),
+        };
+      })
+    );
+  };
+
+  const handleConvertBeatToScene = async (beatId) => {
+    if (convertingBeatIdsRef.current.has(beatId)) return;
+
+    const outlineItems = normalizeOutlineItems(beats);
+    const beat = outlineItems.find(item => item.id === beatId && item.type === "beat");
+    if (!beat || beat.convertedSceneId) return;
+
+    convertingBeatIdsRef.current.add(beatId);
+
+    const baseScenes = isEditMode ? editingScenes : scenes;
+    const nextSceneNumber = getNextSceneNumber(baseScenes);
+    const newScene = {
+      ...createBlankScene(nextSceneNumber, getContinuousTimelineStartPage(baseScenes)),
+      metadata: {
+        intExt: "INT.",
+        location: "LOCATION",
+        timeOfDay: "DAY",
+        sourceBeatId: beat.id,
+      },
+      content: [
+        {
+          type: "Action",
+          text: beat.title || `Beat ${beat.order}`,
+          formatting: null,
+        },
+        ...(beat.description
+          ? [{
+              type: "Action",
+              text: beat.description,
+              formatting: null,
+            }]
+          : []),
+      ],
+    };
+    const updatedScenes = normalizeSceneIds([...baseScenes, newScene]);
+
+    setScenes(updatedScenes);
+    syncLocalStripboardFromScenes(updatedScenes);
+    setCurrentIndex(updatedScenes.length - 1);
+    setCurrentSceneNumber(newScene.sceneNumber);
+
+    setEditingScenes(updatedScenes.map(scene => ({
+      ...scene,
+      content: Array.isArray(scene.content) ? scene.content.map(block => ({ ...block })) : [],
+    })));
+
+    const origMap = {};
+    updatedScenes.forEach(scene => {
+      origMap[scene.sceneNumber] = Array.isArray(scene.content)
+        ? scene.content.map(block => ({ ...block }))
+        : [];
+    });
+    setOriginalContent(origMap);
+    setActiveBlock({ si: updatedScenes.length - 1, bi: 0 });
+    setIsEditMode(true);
+
+    try {
+      await saveScenesDatabase(updatedScenes);
+      setBeats(prevBeats =>
+        normalizeOutlineItems(prevBeats).map(item =>
+          item.id === beat.id && item.type === "beat"
+            ? { ...item, convertedSceneId: newScene.id }
+            : item
+        )
+      );
+    } catch (err) {
+      console.error("Error converting beat to scene:", err);
+      alert("Could not convert beat to scene: " + err.message);
+    } finally {
+      convertingBeatIdsRef.current.delete(beatId);
+    }
+  };
+
+  const handleParseBeatImport = () => {
+    setBeatImportDraft(parseBeatSheetText(beatImportText));
+  };
+
+  const handleCancelBeatImport = () => {
+    setShowBeatImportDialog(false);
+    setBeatImportText("");
+    setBeatImportDraft(null);
+  };
+
+  const updateDraftBeat = (beatId, patch) => {
+    setBeatImportDraft(prev => {
+      if (!prev) return prev;
+
+      const nextItems = prev.items.map(beat =>
+        beat.id === beatId ? {
+          ...beat,
+          ...patch,
+          description: patch.type === "beat" && beat.description === undefined ? "" : (patch.description !== undefined ? patch.description : beat.description),
+          verified: patch.type === "act" ? false : (patch.verified !== undefined ? patch.verified : Boolean(beat.verified)),
+        } : beat
+      );
+
+      return {
+        ...prev,
+        items: nextItems,
+        beats: nextItems.filter(item => item.type === "beat"),
+        acts: nextItems.filter(item => item.type === "act"),
+      };
+    });
+  };
+
+  const removeDraftBeat = (itemId) => {
+    setBeatImportDraft(prev => {
+      if (!prev) return prev;
+
+      const nextItems = prev.items
+        .filter(item => item.id !== itemId)
+        .map((item, index) => ({ ...item, order: index + 1 }));
+
+      return {
+        ...prev,
+        items: nextItems,
+        beats: nextItems.filter(item => item.type === "beat"),
+        acts: nextItems.filter(item => item.type === "act"),
+      };
+    });
+  };
+
+  const handleConfirmBeatImport = () => {
+    if (!beatImportDraft || !Array.isArray(beatImportDraft.items)) return;
+
+    setBeats(prevBeats => {
+      const existingBeats = normalizeOutlineItems(prevBeats);
+      const startOrder = existingBeats.length;
+
+      const importedBeats = beatImportDraft.items.map((beat, index) => {
+        const order = startOrder + index + 1;
+        if (beat.type === "act") {
+          return {
+            id: createBeatId(beat.sourceText || beat.title || "", order, "act"),
+            type: "act",
+            order,
+            title: String(beat.title || `Act ${order}`).trim(),
+            sourceText: beat.sourceText || "",
+          };
+        }
+
+        return {
+          id: createBeatId(beat.sourceText || beat.title || "", order, "beat"),
+          type: "beat",
+          order,
+          title: String(beat.title || `Beat ${order}`).trim(),
+          description: String(beat.description || "").trim(),
+          verified: Boolean(beat.verified),
+          convertedSceneId: beat.convertedSceneId || null,
+          originalBeatNumber: Number.isFinite(Number(beat.originalBeatNumber)) ? Number(beat.originalBeatNumber) : null,
+          sourceText: beat.sourceText || "",
+        };
+      });
+
+      return [...existingBeats, ...importedBeats];
+    });
+
+    setShowBeatsTrack(true);
+    setActiveSidePanelTab("beats");
+    handleCancelBeatImport();
+  };
+
+  const orderedOutlineItemsForDetail = normalizeOutlineItems(beats).sort((a, b) => {
+    if (a.order !== b.order) return a.order - b.order;
+    return String(a.title || "").localeCompare(String(b.title || ""));
+  });
+  let detailBeatNumber = 0;
+  let detailCurrentAct = "";
+  const selectedBeatDetail = orderedOutlineItemsForDetail.reduce((match, item) => {
+    if (item.type === "act") {
+      detailCurrentAct = item.title || "";
+      return match;
+    }
+
+    detailBeatNumber += 1;
+    if (item.id !== selectedBeatDetailId) return match;
+
+    return {
+      ...item,
+      beatNumber: detailBeatNumber,
+      currentActTitle: detailCurrentAct,
+      originalBeatNumber: Number.isFinite(Number(item.originalBeatNumber)) ? Number(item.originalBeatNumber) : null,
+    };
+  }, null);
+
+  const handleDeleteBeatDetail = () => {
+    if (!selectedBeatDetail?.id) return;
+    deleteOutlineItem(selectedBeatDetail.id);
+    setSelectedBeatDetailId(null);
   };
 
   const handleTimelineSceneMove = async (sceneIndex, nextStartPage, shouldPersist = false) => {
@@ -1127,27 +2062,10 @@ function Script({
   };
 
   const handleStartNewScript = async () => {
-    const newScenes = [
-      {
-        sceneNumber: 1,
-        heading: "INT. LOCATION - DAY",
-        timelineStartPage: 0,
-        metadata: {
-          intExt: "INT.",
-          location: "LOCATION",
-          timeOfDay: "DAY",
-        },
-        content: [
-          {
-            type: "Action",
-            text: "",
-            formatting: null,
-          },
-        ],
-      },
-    ];
+    const newScenes = [createBlankScene(1, 0)];
 
     setScenes(newScenes);
+    syncLocalStripboardFromScenes(newScenes);
     setCurrentIndex(0);
     setCurrentSceneNumber(1);
 
@@ -1181,8 +2099,13 @@ function Script({
 
     if (isWritingMode) {
       try {
-        await saveScenesDatabase(editingScenes);
-        setScenes(editingScenes);
+        const normalizedScenes = normalizeSceneIds(editingScenes);
+        await saveScenesDatabase(normalizedScenes);
+        setScenes(normalizedScenes);
+        setEditingScenes(normalizedScenes.map(scene => ({
+          ...scene,
+          content: Array.isArray(scene.content) ? scene.content.map(block => ({ ...block })) : [],
+        })));
       } catch (err) {
         console.error("Writing save error:", err);
         alert("Save failed: " + err.message);
@@ -1207,11 +2130,12 @@ function Script({
           diffs.push({ scene_number: scene.sceneNumber, block_index: bi, block_type: scene.content[bi].type, old_text: "", new_text: scene.content[bi].text || "", timestamp: new Date().toISOString() });
         }
       });
-      setScenes(editingScenes);
-      await saveScenesDatabase(editingScenes);
+      const normalizedScenes = normalizeSceneIds(editingScenes);
+      setScenes(normalizedScenes);
+      await saveScenesDatabase(normalizedScenes);
       if (diffs.length > 0) await savePendingDiffs(diffs);
       const newOrig = {};
-      editingScenes.forEach(s => { newOrig[s.sceneNumber] = s.content.map(b => ({ ...b })); });
+      normalizedScenes.forEach(s => { newOrig[s.sceneNumber] = s.content.map(b => ({ ...b })); });
       setOriginalContent(newOrig);
       setIsEditMode(false); setActiveBlock(null);
     } catch (err) { console.error("Save error:", err); alert("Save failed: " + err.message); }
@@ -1513,6 +2437,8 @@ function Script({
           {ENABLE_WRITING_TIMELINE && showWritingTimeline && (
             <WritingTimeline
             scenes={isScriptEditable ? editingScenes : scenes}
+            beats={beats.filter(item => (item.type || "beat") === "beat")}
+            showBeatsTrack={showBeatsTrack}
             currentSceneNumber={displaySceneNumber}
             setCurrentIndex={setCurrentIndex}
             sceneRefs={sceneRefs}
@@ -1545,14 +2471,26 @@ function Script({
             </select>
 
             {ENABLE_WRITING_TIMELINE && (
-              <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", color: "#333", whiteSpace: "nowrap", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}>
-                <input
-                  type="checkbox"
-                  checked={showWritingTimeline}
-                  onChange={(e) => setShowWritingTimeline(e.target.checked)}
-                />
-                Show Timeline
-              </label>
+              <>
+                <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", color: "#333", whiteSpace: "nowrap", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}>
+                  <input
+                    type="checkbox"
+                    checked={showWritingTimeline}
+                    onChange={(e) => setShowWritingTimeline(e.target.checked)}
+                  />
+                  Show Timeline
+                </label>
+                {beats.some(item => (item.type || "beat") === "beat") && (
+                  <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", color: "#333", whiteSpace: "nowrap", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}>
+                    <input
+                      type="checkbox"
+                      checked={showBeatsTrack}
+                      onChange={(e) => setShowBeatsTrack(e.target.checked)}
+                    />
+                    Beats Track
+                  </label>
+                )}
+              </>
             )}
 
 {isWritingMode && (
@@ -1570,22 +2508,25 @@ function Script({
 
             {isViewOnly && <div style={{ padding: "6px 12px", backgroundColor: "#FF9800", color: "white", borderRadius: "4px", fontWeight: "bold", fontSize: "13px" }}>VIEW ONLY</div>}
 
-            {canEdit && !isScriptEditable && scenes.length === 0 && (
+            {!isViewOnly && scenes.length === 0 && (
               <button
                 onClick={handleStartNewScript}
                 style={{ padding: "6px 14px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "13px" }}
               >
-                Start Writing
+                New Script
               </button>
             )}
 
-{canEdit && scenes.length > 0 && (
+{!isViewOnly && scenes.length > 0 && (
               <button
                 onClick={handleAddScene}
                 style={{ padding: "6px 14px", backgroundColor: "#607D8B", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "13px" }}
               >
                 Add Scene
               </button>
+            )}
+            {isWritingMode && scenes.length > 0 && (
+              <ElementTypeToolbar activeBlock={activeBlock} editingScenes={editingScenes} onTypeChange={handleToolbarTypeChange} />
             )}
             {isWritingMode && (
               <button
@@ -1628,11 +2569,171 @@ function Script({
           </div>
         </div>
 
-        {/* Right section — sits above the scene list panel */}
+        {/* Right section reserved for future controls; panel tabs live with the visible side panel. */}
         <div style={{ flex: 1, backgroundColor: "white" }} />
       </div>
 
       {showRevisionModal && pendingRecord && <RevisionRoundModal pendingRecord={pendingRecord} committedRounds={committedRounds} onCommit={handleCommitRevision} onClose={() => setShowRevisionModal(false)} />}
+
+      {showBeatImportDialog && (
+        <>
+          <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 22000 }} onClick={handleCancelBeatImport} />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "760px", maxWidth: "calc(100vw - 40px)", maxHeight: "82vh", overflow: "hidden", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", zIndex: 22001, fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "18px 20px", borderBottom: "1px solid #e5e5e5", display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center" }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "18px" }}>Import Beat Sheet</h2>
+                <div style={{ fontSize: "12px", color: "#777", marginTop: "4px" }}>Paste semi-structured beat sheet text, review the parsed beats, then confirm.</div>
+              </div>
+              <button type="button" onClick={handleCancelBeatImport} style={{ border: "none", backgroundColor: "#eee", borderRadius: "50%", width: "28px", height: "28px", cursor: "pointer", fontWeight: "bold" }}>x</button>
+            </div>
+
+            {!beatImportDraft ? (
+              <>
+                <div style={{ padding: "18px 20px", overflow: "auto" }}>
+                  <textarea value={beatImportText} onChange={(e) => setBeatImportText(e.target.value)} placeholder="Paste beat sheet text here..." autoFocus style={{ width: "100%", height: "360px", resize: "vertical", border: "1px solid #ccc", borderRadius: "4px", padding: "10px", boxSizing: "border-box", fontSize: "13px", lineHeight: 1.45, fontFamily: "inherit" }} />
+                </div>
+                <div style={{ padding: "14px 20px", borderTop: "1px solid #e5e5e5", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                  <button type="button" onClick={handleCancelBeatImport} style={{ padding: "9px 16px", backgroundColor: "#e0e0e0", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>Cancel</button>
+                  <button type="button" onClick={handleParseBeatImport} disabled={!beatImportText.trim()} style={{ padding: "9px 18px", backgroundColor: "#455A64", color: "white", border: "none", borderRadius: "4px", cursor: beatImportText.trim() ? "pointer" : "not-allowed", fontWeight: "bold", opacity: beatImportText.trim() ? 1 : 0.5 }}>Parse Beats</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ padding: "14px 20px", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center" }}>
+                  <div style={{ fontSize: "12px", color: "#555" }}>
+                    Detected <strong>{beatImportDraft.items.length}</strong> outline item{beatImportDraft.items.length === 1 ? "" : "s"}: <strong>{beatImportDraft.acts.length}</strong> act{beatImportDraft.acts.length === 1 ? "" : "s"} and <strong>{beatImportDraft.beats.length}</strong> beat{beatImportDraft.beats.length === 1 ? "" : "s"}. Import will append after existing outline items.
+                  </div>
+                  <button type="button" onClick={() => setBeatImportDraft(null)} style={{ padding: "7px 12px", backgroundColor: "#f5f5f5", border: "1px solid #ccc", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "12px" }}>Back to Text</button>
+                </div>
+
+                {beatImportDraft.warnings.length > 0 && (
+                  <div style={{ padding: "10px 20px", backgroundColor: "#FFF8E1", borderBottom: "1px solid #F3E0A1", color: "#665200", fontSize: "12px" }}>
+                    {beatImportDraft.warnings.slice(0, 3).join(" ")}
+                    {beatImportDraft.warnings.length > 3 ? ` ${beatImportDraft.warnings.length - 3} more warning(s).` : ""}
+                  </div>
+                )}
+
+                <div style={{ padding: "16px 20px", overflow: "auto", display: "grid", gap: "10px" }}>
+                  {(() => {
+                    let reviewBeatNumber = 0;
+
+                    return beatImportDraft.items.map((item) => {
+                      const isAct = item.type === "act";
+                      if (!isAct) reviewBeatNumber += 1;
+                      const descriptionRows = Math.max(2, Math.min(10, String(item.description || "").split("\n").length + Math.ceil(String(item.description || "").length / 80)));
+
+                      return (
+                        <div key={item.id} style={{ border: isAct ? "1px solid #90A4AE" : "1px solid #ddd", borderRadius: "6px", padding: isAct ? "10px 12px" : "12px", backgroundColor: isAct ? "#ECEFF1" : "#fafafa" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: isAct ? 0 : "8px" }}>
+                            <span style={{ fontSize: "11px", fontWeight: "bold", color: isAct ? "#455A64" : "#777", minWidth: "82px" }}>{isAct ? "ACT HEADING" : `BEAT #${reviewBeatNumber}`}</span>
+                            <label style={{ display: "flex", alignItems: "center", gap: "6px", margin: 0 }}>
+                              <span style={{ fontSize: "10px", fontWeight: "bold", color: "#777" }}>TYPE</span>
+                              <select value={item.type === "act" ? "act" : "beat"} onChange={(e) => updateDraftBeat(item.id, { type: e.target.value, description: e.target.value === "beat" ? (item.description || "") : item.description })} style={{ padding: "6px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "12px", backgroundColor: "white" }}>
+                                <option value="act">Act</option>
+                                <option value="beat">Beat</option>
+                              </select>
+                            </label>
+                            <label style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, margin: 0 }}>
+                              <span style={{ fontSize: "10px", fontWeight: "bold", color: "#777", width: "34px", textAlign: "left" }}>TITLE</span>
+                              <input type="text" value={item.title} onChange={(e) => updateDraftBeat(item.id, { title: e.target.value })} style={{ width: "100%", boxSizing: "border-box", padding: "7px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "12px", fontWeight: isAct ? "bold" : "normal", textTransform: isAct ? "uppercase" : "none" }} />
+                            </label>
+                            {!isAct && (
+                              <button type="button" onClick={() => updateDraftBeat(item.id, { verified: !item.verified })} title={item.verified ? "Verified" : "Mark verified"} style={{ width: "28px", height: "28px", border: `1px solid ${item.verified ? "#4CAF50" : "#ccc"}`, borderRadius: "4px", backgroundColor: item.verified ? "#4CAF50" : "white", color: item.verified ? "white" : "#777", cursor: "pointer", fontWeight: "bold" }}>
+                                ✓
+                              </button>
+                            )}
+                            <button type="button" onClick={() => updateDraftBeat(item.id, { showSourceText: !item.showSourceText })} style={{ padding: "6px 8px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: item.showSourceText ? "#FFF8E1" : "white", color: "#555", cursor: "pointer", fontSize: "10px", fontWeight: "bold" }}>
+                              Original
+                            </button>
+                            <button type="button" onClick={() => removeDraftBeat(item.id)} title="Remove" style={{ width: "28px", height: "28px", border: "1px solid #c62828", borderRadius: "4px", backgroundColor: "#c62828", color: "white", cursor: "pointer", fontWeight: "bold" }}>
+                              x
+                            </button>
+                          </div>
+
+                          {!isAct && (
+                            <label style={{ display: "grid", gridTemplateColumns: "76px 1fr", gap: "8px", alignItems: "start", margin: 0 }}>
+                              <span style={{ fontSize: "10px", fontWeight: "bold", color: "#777", paddingTop: "8px", textAlign: "left" }}>DESCRIPTION</span>
+                              <textarea rows={descriptionRows} value={item.description || ""} onChange={(e) => updateDraftBeat(item.id, { description: e.target.value })} style={{ width: "100%", resize: "none", overflow: "hidden", boxSizing: "border-box", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "12px", lineHeight: 1.4, fontFamily: "inherit" }} />
+                            </label>
+                          )}
+
+                          {item.showSourceText && (
+                            <div style={{ marginTop: "8px", padding: "8px", backgroundColor: "white", border: "1px dashed #bbb", borderRadius: "4px", color: "#555", fontSize: "11px", lineHeight: 1.4, whiteSpace: "pre-wrap" }}>
+                              {item.sourceText || "No original text captured."}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+
+                <div style={{ padding: "14px 20px", borderTop: "1px solid #e5e5e5", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                  <button type="button" onClick={handleCancelBeatImport} style={{ padding: "9px 16px", backgroundColor: "#e0e0e0", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>Cancel</button>
+                  <button type="button" onClick={handleConfirmBeatImport} disabled={beatImportDraft.items.length === 0} style={{ padding: "9px 18px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", cursor: beatImportDraft.items.length ? "pointer" : "not-allowed", fontWeight: "bold", opacity: beatImportDraft.items.length ? 1 : 0.5 }}>Confirm Import</button>
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {selectedBeatDetail && (
+        <>
+          <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.42)", zIndex: 21900 }} onClick={() => setSelectedBeatDetailId(null)} />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "640px", maxWidth: "calc(100vw - 40px)", maxHeight: "82vh", overflow: "hidden", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", zIndex: 21901, fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "18px 20px", borderBottom: "1px solid #e5e5e5", display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center" }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "18px" }}>Beat Detail</h2>
+                <div style={{ fontSize: "12px", color: "#777", marginTop: "4px" }}>
+                  Current Beat #{selectedBeatDetail.beatNumber}{selectedBeatDetail.currentActTitle ? ` · ${selectedBeatDetail.currentActTitle}` : ""}
+                </div>
+              </div>
+              <button type="button" onClick={() => setSelectedBeatDetailId(null)} style={{ border: "none", backgroundColor: "#eee", borderRadius: "50%", width: "28px", height: "28px", cursor: "pointer", fontWeight: "bold" }}>x</button>
+            </div>
+
+            <div style={{ padding: "18px 20px", overflow: "auto", display: "grid", gap: "14px" }}>
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", fontSize: "12px", color: "#555" }}>
+                <span><strong>Current Beat #:</strong> {selectedBeatDetail.beatNumber}</span>
+                <span><strong>Original Imported Beat #:</strong> {selectedBeatDetail.originalBeatNumber || "None"}</span>
+              </div>
+
+              <label style={{ display: "grid", gap: "6px", margin: 0 }}>
+                <span style={{ fontSize: "11px", fontWeight: "bold", color: "#555" }}>Title</span>
+                <input type="text" value={selectedBeatDetail.title || ""} onChange={(event) => updateOutlineBeat(selectedBeatDetail.id, { title: event.target.value })} autoFocus style={{ width: "100%", boxSizing: "border-box", padding: "10px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "14px", fontFamily: "inherit" }} />
+              </label>
+
+              <label style={{ display: "grid", gap: "6px", margin: 0 }}>
+                <span style={{ fontSize: "11px", fontWeight: "bold", color: "#555" }}>Description</span>
+                <textarea value={selectedBeatDetail.description || ""} onChange={(event) => updateOutlineBeat(selectedBeatDetail.id, { description: event.target.value })} rows={12} style={{ width: "100%", minHeight: "240px", boxSizing: "border-box", padding: "10px", border: "1px solid #ccc", borderRadius: "4px", resize: "vertical", fontSize: "13px", lineHeight: 1.45, fontFamily: "inherit" }} />
+              </label>
+
+              {selectedBeatDetail.convertedSceneId && (
+                <div style={{ padding: "8px 10px", backgroundColor: "#E8F5E9", border: "1px solid #C8E6C9", borderRadius: "4px", color: "#2E7D32", fontSize: "12px" }}>
+                  Converted scene: {selectedBeatDetail.convertedSceneId}
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: "14px 20px", borderTop: "1px solid #e5e5e5", display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }}>
+              <button type="button" onClick={handleDeleteBeatDetail} style={{ padding: "9px 14px", backgroundColor: "#c62828", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>
+                Delete Beat
+              </button>
+              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                <button type="button" disabled={Boolean(selectedBeatDetail.convertedSceneId) || isViewOnly} onClick={() => handleConvertBeatToScene(selectedBeatDetail.id)} style={{ padding: "9px 14px", backgroundColor: selectedBeatDetail.convertedSceneId ? "#E8F5E9" : "#607D8B", color: selectedBeatDetail.convertedSceneId ? "#2E7D32" : "white", border: selectedBeatDetail.convertedSceneId ? "1px solid #C8E6C9" : "none", borderRadius: "4px", cursor: selectedBeatDetail.convertedSceneId || isViewOnly ? "default" : "pointer", fontWeight: "bold" }}>
+                  {selectedBeatDetail.convertedSceneId ? "Converted" : "Convert to Scene"}
+                </button>
+                <button type="button" onClick={() => updateOutlineBeat(selectedBeatDetail.id, { verified: !selectedBeatDetail.verified })} style={{ padding: "9px 14px", backgroundColor: selectedBeatDetail.verified ? "#4CAF50" : "#f5f5f5", color: selectedBeatDetail.verified ? "white" : "#555", border: selectedBeatDetail.verified ? "none" : "1px solid #ccc", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>
+                  {selectedBeatDetail.verified ? "Verified" : "Mark Verified"}
+                </button>
+                <button type="button" onClick={() => setSelectedBeatDetailId(null)} style={{ padding: "9px 16px", backgroundColor: "#455A64", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {showTargetPageDialog && (
         <>
@@ -2058,6 +3159,7 @@ function Script({
               committedRounds={committedRounds} viewingRevision={viewingRevision}
               setCurrentIndex={setCurrentIndex}
               onSceneHeadingChange={handleSceneHeadingChange}
+              onCreateSceneAfter={handleCreateSceneAfter}
             />
           </div>
           {showTagDropdown && !isEditMode && (
@@ -2078,8 +3180,35 @@ function Script({
           )}
         </div>
         </div>
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", position: "relative", zIndex: 1, backgroundColor: showMoodOverlay ? "transparent" : "white" }}>
-          <SceneList scenes={scenes} currentSceneNumber={displaySceneNumber} sceneRefs={sceneRefs} getSceneStatusColor={getSceneStatusColor} selectedProject={selectedProject} user={user} onSceneNumberChange={onSceneNumberChange} setCurrentIndex={setCurrentIndex} showMoodOverlay={showMoodOverlay} />
+        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative", zIndex: 1, backgroundColor: showMoodOverlay ? "transparent" : "white", minWidth: 0 }}>
+          <div style={{ marginLeft: "20px", width: "500px", display: "flex", flexShrink: 0, gap: "6px", padding: "0 0 6px", boxSizing: "border-box", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}>
+            <button type="button" onClick={() => setActiveSidePanelTab("scenes")} style={{ padding: "6px 12px", border: "1px solid #ccc", borderBottomColor: activeSidePanelTab === "scenes" ? "#316AC5" : "#ccc", backgroundColor: activeSidePanelTab === "scenes" ? "#316AC5" : "#f5f5f5", color: activeSidePanelTab === "scenes" ? "white" : "#222", cursor: "pointer", fontWeight: "bold", fontSize: "12px" }}>
+              Scenes
+            </button>
+            <button type="button" onClick={() => setActiveSidePanelTab("beats")} style={{ padding: "6px 12px", border: "1px solid #ccc", borderBottomColor: activeSidePanelTab === "beats" ? "#316AC5" : "#ccc", backgroundColor: activeSidePanelTab === "beats" ? "#316AC5" : "#f5f5f5", color: activeSidePanelTab === "beats" ? "white" : "#222", cursor: "pointer", fontWeight: "bold", fontSize: "12px" }}>
+              Beats{beats.filter(item => (item.type || "beat") === "beat").length ? ` (${beats.filter(item => (item.type || "beat") === "beat").length})` : ""}
+            </button>
+            {!isViewOnly && activeSidePanelTab === "beats" && (
+              <div style={{ marginLeft: "auto", display: "flex", gap: "6px" }}>
+                <button type="button" onClick={() => appendOutlineItem("act")} style={{ padding: "6px 8px", backgroundColor: "#607D8B", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "11px" }}>
+                  Add Act
+                </button>
+                <button type="button" onClick={() => appendOutlineItem("beat")} style={{ padding: "6px 8px", backgroundColor: "#6D4C41", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "11px" }}>
+                  Add Beat
+                </button>
+                <button type="button" onClick={handleOpenBeatImport} style={{ padding: "6px 10px", backgroundColor: "#455A64", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "11px" }}>
+                  Import Beats
+                </button>
+              </div>
+            )}
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+            {activeSidePanelTab === "scenes" ? (
+              <SceneList scenes={scenes} currentSceneNumber={displaySceneNumber} sceneRefs={sceneRefs} getSceneStatusColor={getSceneStatusColor} selectedProject={selectedProject} user={user} onSceneNumberChange={onSceneNumberChange} setCurrentIndex={setCurrentIndex} showMoodOverlay={showMoodOverlay} canCreateScene={!isViewOnly} onCreateFirstScene={handleStartNewScript} canDeleteScene={!isViewOnly} onDeleteScene={handleDeleteScene} />
+            ) : (
+              <BeatsList beats={beats} onDeleteItem={deleteOutlineItem} onReorderItem={reorderOutlineItem} onOpenItem={setSelectedBeatDetailId} onConvertItem={!isViewOnly ? handleConvertBeatToScene : null} collapsedActIds={collapsedActIds} onToggleAct={toggleCollapsedAct} />
+            )}
+          </div>
         </div>
       </div>
     </div>

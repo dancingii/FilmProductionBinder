@@ -443,7 +443,7 @@ export const loadCallSheetDataFromDatabase = async (
       .eq("project_id", selectedProject.id)
       .order("id", { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (error && error.code !== "PGRST116") throw error;
 
@@ -591,7 +591,7 @@ export const loadBudgetDataFromDatabase = async (
       .from("budget_data")
       .select("*")
       .eq("project_id", selectedProject.id)
-      .single();
+      .maybeSingle();
 
     if (error && error.code !== "PGRST116") throw error;
 
@@ -741,7 +741,7 @@ export const loadContinuityElementsFromDatabase = async (
       .from("continuity_elements")
       .select("*")
       .eq("project_id", selectedProject.id)
-      .single();
+      .maybeSingle();
 
     if (error && error.code !== "PGRST116") throw error;
 
@@ -765,7 +765,15 @@ export const saveScenesDatabase = async (
   isSavingScenes,
   setIsSavingScenes
 ) => {
-  if (!selectedProject || !scenesLoaded || isSavingScenes) return;
+  if (!selectedProject) return;
+
+  if (!scenesLoaded) {
+    console.warn("Saving scenes before initial scene load completed.");
+  }
+
+  if (isSavingScenes) {
+    console.warn("Saving scenes while another scene save is marked in progress.");
+  }
 
   setIsSavingScenes(true);
 
@@ -801,12 +809,33 @@ export const saveScenesDatabase = async (
 
     if (error) throw error;
 
+    const { data: savedScenes, error: verifyError } = await supabase
+      .from("scenes")
+      .select("id, scene_number")
+      .eq("project_id", selectedProject.id);
+
+    if (verifyError) throw verifyError;
+
+    const savedIds = new Set((savedScenes || []).map((scene) => String(scene.id)));
+    const missingScenes = scenesData.filter((scene) => scene.id && !savedIds.has(String(scene.id)));
+
+    if (missingScenes.length > 0) {
+      console.warn("sync_scenes did not persist every scene; applying direct scene upsert fallback.", missingScenes.map((scene) => scene.scene_number));
+
+      const { error: fallbackError } = await supabase
+        .from("scenes")
+        .upsert(scenesData, { onConflict: "id" });
+
+      if (fallbackError) throw fallbackError;
+    }
+
     console.log("✅ Scenes saved successfully to database");
   } catch (error) {
     console.error("❌ Critical error saving scenes:", error);
     alert(
       `Database save failed: ${error.message}. Your changes may not persist.`
     );
+    throw error;
   } finally {
     setIsSavingScenes(false);
   }
@@ -3554,7 +3583,7 @@ export const loadDoodSettings = async (selectedProject, setDoodSettings) => {
       .from("dood_settings")
       .select("*")
       .eq("project_id", selectedProject.id)
-      .single();
+      .maybeSingle();
 
     if (error) {
       // Settings might not exist yet - that's OK
@@ -3564,6 +3593,12 @@ export const loadDoodSettings = async (selectedProject, setDoodSettings) => {
         return;
       }
       throw error;
+    }
+
+    if (!data) {
+      console.log("ℹ️ No DOOD settings found, will use defaults");
+      setDoodSettings(null);
+      return;
     }
 
     // Transform from database format to app format

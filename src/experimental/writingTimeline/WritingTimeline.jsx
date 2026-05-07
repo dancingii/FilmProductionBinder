@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_TARGET_PAGES,
   getSceneTimelineData,
@@ -9,6 +9,8 @@ import {
 
 function WritingTimeline({
   scenes = [],
+  beats = [],
+  showBeatsTrack = false,
   currentSceneNumber,
   setCurrentIndex,
   sceneRefs,
@@ -24,6 +26,7 @@ function WritingTimeline({
     const [snapIndicatorPage, setSnapIndicatorPage] = useState(null);
     const [zoomWindowRange, setZoomWindowRange] = useState(null);
     const [timelineZoom, setTimelineZoom] = useState(1);
+    const [contextMenu, setContextMenu] = useState(null);
     const dragOffsetRef = useRef(0);
     const ZOOM_FACTOR = 10;
     const ZOOM_LENS_WIDTH_PERCENT = 40;
@@ -31,7 +34,13 @@ function WritingTimeline({
     const MIN_TIMELINE_ZOOM = 1;
     const MAX_TIMELINE_ZOOM = 6;
     const TIMELINE_ZOOM_STEP = 0.5;
-    const TIMELINE_BAR_HEIGHT = 60;
+    const hasVisibleBeatsTrack = showBeatsTrack && Array.isArray(beats) && beats.length > 0;
+    const SCENE_TRACK_HEIGHT_PX = 34;
+    const ZOOM_LENS_HEIGHT_PX = 58;
+    const BEAT_TRACK_TOP_PX = 64;
+    const BEAT_TRACK_HEIGHT_PX = 22;
+    const PAGE_TICK_TOP_PX = hasVisibleBeatsTrack ? 92 : 38;
+    const TIMELINE_BAR_HEIGHT = hasVisibleBeatsTrack ? 114 : 60;
     const SCROLLBAR_GUTTER_PX = 14;
     const SCENE_LABEL_MIN_WIDTH_PX = 22;
     const lensDelayRef = useRef(null);
@@ -69,6 +78,21 @@ function WritingTimeline({
 
   const remainingPages = Math.max(0, targetPages - totalWrittenPages);
   const writtenPercent = Math.min(100, (totalWrittenPages / targetPages) * 100);
+
+  const beatTimelineData = useMemo(() => {
+    const orderedBeats = [...(beats || [])].sort((a, b) => {
+      if (a.order !== b.order) return a.order - b.order;
+      return String(a.title || "").localeCompare(String(b.title || ""));
+    });
+
+    const count = Math.max(1, orderedBeats.length);
+
+    return orderedBeats.map((beat, index) => ({
+      beat,
+      leftPercent: (index / count) * 100,
+      widthPercent: Math.max(1.5, 100 / count),
+    }));
+  }, [beats]);
 
   const pageTicks = useMemo(() => {
     const safeTargetPages = Math.max(1, Math.round(Number(targetPages) || DEFAULT_TARGET_PAGES));
@@ -119,6 +143,105 @@ function WritingTimeline({
   const SNAP_THRESHOLD = 0.5; // pages (tweak later)
 
   const getSceneKey = (scene, index) => scene?.id || `${scene?.sceneNumber}-${index}`;
+
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    const closeContextMenu = () => setContextMenu(null);
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") closeContextMenu();
+    };
+
+    window.addEventListener("mousedown", closeContextMenu);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("mousedown", closeContextMenu);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
+
+  const getTimelineGaps = () => {
+    const sortedItems = [...renderTimelineData].sort((a, b) => {
+      if (a.startPage !== b.startPage) return a.startPage - b.startPage;
+      return a.index - b.index;
+    });
+    const gaps = [];
+    const EPSILON = 0.001;
+
+    if (sortedItems.length === 0) return gaps;
+
+    if (sortedItems[0].startPage > EPSILON) {
+      gaps.push({
+        startPage: 0,
+        endPage: sortedItems[0].startPage,
+        length: sortedItems[0].startPage,
+        previousSceneIndex: null,
+        nextSceneIndex: sortedItems[0].index,
+      });
+    }
+
+    for (let i = 0; i < sortedItems.length - 1; i += 1) {
+      const current = sortedItems[i];
+      const next = sortedItems[i + 1];
+
+      if (next.startPage > current.endPage + EPSILON) {
+        gaps.push({
+          startPage: current.endPage,
+          endPage: next.startPage,
+          length: next.startPage - current.endPage,
+          previousSceneIndex: current.index,
+          nextSceneIndex: next.index,
+        });
+      }
+    }
+
+    return gaps;
+  };
+
+  const getGapAtPage = (page) => {
+    return getTimelineGaps().find(
+      (gap) => page >= gap.startPage && page <= gap.endPage
+    ) || null;
+  };
+
+  const openContextMenu = (event, menuData) => {
+    event.preventDefault();
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      ...menuData,
+    });
+  };
+
+  const handleTimelineContextMenu = (event) => {
+    const page = getPageFromPointer(event.clientX);
+    const gap = getGapAtPage(page);
+
+    openContextMenu(event, {
+      page,
+      targetType: gap ? "gap" : "background",
+      gap,
+      sceneKey: null,
+      sceneIndex: null,
+      sceneNumber: null,
+    });
+  };
+
+  const handleSceneContextMenu = (event, item) => {
+    event.stopPropagation();
+
+    const sceneKey = getSceneKey(item.scene, item.index);
+
+    openContextMenu(event, {
+      page: item.startPage,
+      targetType: "scene",
+      gap: null,
+      sceneKey,
+      sceneIndex: item.index,
+      sceneNumber: item.scene?.sceneNumber ?? null,
+    });
+  };
 
   const updateTimelineZoom = (direction) => {
     const scrollEl = timelineScrollRef.current;
@@ -173,6 +296,43 @@ function WritingTimeline({
     return Math.max(0, rawPage);
   };
 
+  const getSnapCandidates = (snapData = []) => {
+    const sortedItems = [...snapData].sort((a, b) => {
+      if (a.startPage !== b.startPage) return a.startPage - b.startPage;
+      return a.index - b.index;
+    });
+    const candidates = [];
+    const clusters = [];
+    const EPSILON = 0.001;
+
+    sortedItems.forEach((item) => {
+      candidates.push(
+        { page: item.startPage, type: "scene-start", priority: 1 },
+        { page: item.endPage, type: "scene-end", priority: 1 }
+      );
+
+      const currentCluster = clusters[clusters.length - 1];
+      if (!currentCluster || item.startPage > currentCluster.endPage + EPSILON) {
+        clusters.push({
+          startPage: item.startPage,
+          endPage: item.endPage,
+        });
+        return;
+      }
+
+      currentCluster.endPage = Math.max(currentCluster.endPage, item.endPage);
+    });
+
+    clusters.forEach((cluster) => {
+      candidates.push(
+        { page: cluster.startPage, type: "cluster-start", priority: 2 },
+        { page: cluster.endPage, type: "cluster-end", priority: 2 }
+      );
+    });
+
+    return candidates;
+  };
+
   const getDragStartPageFromPointer = (clientX, item) => {
     const pointerPage = getPageFromPointer(clientX);
     const roundedPointerPage = Math.round(pointerPage * 8) / 8;
@@ -185,36 +345,48 @@ function WritingTimeline({
     const sceneKey = getSceneKey(item.scene, item.index);
     let bestSnap = null;
 
-    const activeSnapTimelineData = dragPreview ? snapTimelineData : timelineData;
+    const sourceClosedScenes = getSourceClosedTimelineScenes(scenes, item.index);
+    const activeSnapTimelineData = getSceneTimelineData(sourceClosedScenes, targetPages);
+    const snapCandidates = getSnapCandidates(
+      activeSnapTimelineData.filter((other) => {
+        return getSceneKey(other.scene, other.index) !== sceneKey;
+      })
+    );
 
-    for (const other of activeSnapTimelineData) {
-      const otherKey = getSceneKey(other.scene, other.index);
-      if (sceneKey === otherKey) continue;
+    const chooseClosestSnap = (snapOptions) => {
+      return snapOptions.reduce((closest, option) => {
+        if (option.distance >= SNAP_THRESHOLD) return closest;
+        if (!closest || option.distance < closest.distance) return option;
+        if (option.distance === closest.distance && option.priority > closest.priority) {
+          return option;
+        }
+        return closest;
+      }, null);
+    };
 
-      const leftToRightDistance = Math.abs(clampedCandidateStart - other.endPage);
-      if (
-        leftToRightDistance < SNAP_THRESHOLD &&
-        (!bestSnap || leftToRightDistance < bestSnap.distance)
-      ) {
-        bestSnap = {
-          distance: leftToRightDistance,
-          startPage: other.endPage,
-          indicatorPage: other.endPage,
-        };
-      }
+    bestSnap = chooseClosestSnap(
+      snapCandidates.flatMap((candidate) => {
+        if (candidate.type === "scene-end" || candidate.type === "cluster-end") {
+          return [{
+            distance: Math.abs(clampedCandidateStart - candidate.page),
+            startPage: candidate.page,
+            indicatorPage: candidate.page,
+            priority: candidate.priority,
+          }];
+        }
 
-      const rightToLeftDistance = Math.abs(candidateEndPage - other.startPage);
-      if (
-        rightToLeftDistance < SNAP_THRESHOLD &&
-        (!bestSnap || rightToLeftDistance < bestSnap.distance)
-      ) {
-        bestSnap = {
-          distance: rightToLeftDistance,
-          startPage: other.startPage - item.pageLength,
-          indicatorPage: other.startPage,
-        };
-      }
-    }
+        if (candidate.type === "scene-start" || candidate.type === "cluster-start") {
+          return [{
+            distance: Math.abs(candidateEndPage - candidate.page),
+            startPage: candidate.page - item.pageLength,
+            indicatorPage: candidate.page,
+            priority: candidate.priority,
+          }];
+        }
+
+        return [];
+      })
+    );
 
     if (bestSnap) {
       setSnapIndicatorPage(bestSnap.indicatorPage);
@@ -230,6 +402,7 @@ function WritingTimeline({
   const startDrag = (e, item) => {
     e.preventDefault();
     e.stopPropagation();
+    setContextMenu(null);
 
     if (e.detail >= 2) {
       onSceneOpen?.(item);
@@ -411,7 +584,7 @@ function WritingTimeline({
 
         <div style={{ fontVariantNumeric: "tabular-nums", color: "#666" }}>
           {totalWrittenPages.toFixed(1)} written · {remainingPages.toFixed(1)} remaining ·{" "}
-          {writtenPercent.toFixed(0)}%
+          {writtenPercent.toFixed(0)}%{hasVisibleBeatsTrack ? ` · ${beats.length} beats` : ""}
         </div>
       </div>
 
@@ -429,6 +602,7 @@ function WritingTimeline({
       >
       <div
         ref={timelineBarRef}
+        onContextMenu={handleTimelineContextMenu}
         style={{
           position: "relative",
           height: `${TIMELINE_BAR_HEIGHT}px`,
@@ -443,7 +617,7 @@ function WritingTimeline({
             top: 0,
             left: 0,
             right: 0,
-            height: "34px",
+            height: `${SCENE_TRACK_HEIGHT_PX}px`,
             background:
               "repeating-linear-gradient(45deg, #ffdddd, #ffdddd 7px, #ff8f8f 7px, #ff8f8f 14px)",
             border: "1px solid #d5d5d5",
@@ -452,6 +626,54 @@ function WritingTimeline({
             boxSizing: "border-box",
           }}
         />
+
+{hasVisibleBeatsTrack && (
+          <div
+            style={{
+              position: "absolute",
+              top: `${BEAT_TRACK_TOP_PX}px`,
+              left: 0,
+              right: 0,
+              height: `${BEAT_TRACK_HEIGHT_PX}px`,
+              backgroundColor: "#F6F0DF",
+              border: "1px solid #d8cda7",
+              borderRadius: "4px",
+              boxSizing: "border-box",
+              overflow: "hidden",
+            }}
+          >
+            {beatTimelineData.map(({ beat, leftPercent, widthPercent }) => {
+              const isConverted = beat.status === "converted" || beat.convertedSceneId;
+              return (
+                <div
+                  key={beat.id}
+                  title={`${beat.order}. ${beat.title || "Untitled Beat"}${beat.section ? ` | ${beat.section}` : ""}`}
+                  style={{
+                    position: "absolute",
+                    left: `${leftPercent}%`,
+                    top: "2px",
+                    width: `${widthPercent}%`,
+                    height: "16px",
+                    backgroundColor: isConverted ? "#66BB6A" : "#8D6E63",
+                    borderRight: "1px solid rgba(255,255,255,0.55)",
+                    color: "white",
+                    fontSize: "9px",
+                    fontWeight: "bold",
+                    lineHeight: "16px",
+                    padding: "0 4px",
+                    boxSizing: "border-box",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    zIndex: 3,
+                  }}
+                >
+                  {beat.order}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
 {zoomWindowRange !== null && (
           <div
@@ -463,7 +685,7 @@ function WritingTimeline({
                 100 - ZOOM_LENS_WIDTH_PERCENT
               )}%`,
               width: `${ZOOM_LENS_WIDTH_PERCENT}%`,
-              height: "58px",
+              height: `${ZOOM_LENS_HEIGHT_PX}px`,
               border: "4px solid rgb(255, 204, 0)",
               backgroundColor: "rgba(255,255,255,0.92)",
               boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
@@ -511,9 +733,8 @@ function WritingTimeline({
                     height: "36px",
                     backgroundColor: isCurrent ? "#316AC5" : "#9d9d9d",
                     opacity: isDragging ? 0.85 : 0.95,
-                    borderLeft: "1px solid rgba(255,255,255,0.95)",
-                    borderRight: "1px solid rgba(0,0,0,0.45)",
-                    boxShadow: "inset 1px 0 rgba(0,0,0,0.22), inset -1px 0 rgba(255,255,255,0.75)",
+                    borderLeft: "1px solid rgba(0,0,0,0.34)",
+                    borderRight: "1px solid rgba(0,0,0,0.34)",
                     zIndex: 5,
                   }}
                 >
@@ -584,7 +805,7 @@ function WritingTimeline({
               style={{
                 position: "absolute",
                 left: `${leftPercent}%`,
-                top: "38px",
+                top: `${PAGE_TICK_TOP_PX}px`,
                 transform: isFirst ? "translateX(0)" : isLast ? "translateX(-100%)" : "translateX(-50%)",
                 textAlign: "center",
                 minWidth: "18px",
@@ -629,6 +850,7 @@ function WritingTimeline({
               key={sceneKey}
               type="button"
               onMouseDown={(e) => startDrag(e, item)}
+              onContextMenu={(e) => handleSceneContextMenu(e, item)}
               onDoubleClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -642,11 +864,12 @@ function WritingTimeline({
                 top: 0,
                 left: `${leftPercent}%`,
                 width: `${widthPercent}%`,
-                height: "34px",
+                height: `${SCENE_TRACK_HEIGHT_PX}px`,
                 padding: 0,
                 margin: 0,
                 border: "none",
-                borderRight: "1px solid #e8e8e8",
+                borderLeft: "1px solid rgba(0,0,0,0.3)",
+                borderRight: "1px solid rgba(0,0,0,0.34)",
                 backgroundColor: isCurrent ? "#316AC5" : "#b8b8b8",
                 opacity: isDragging ? 0.7 : isCurrent ? 1 : 0.95,
                 cursor: isDragging ? "grabbing" : "grab",
@@ -683,6 +906,64 @@ function WritingTimeline({
         })}
       </div>
       </div>
+      {contextMenu && (
+        <div
+          onMouseDown={(event) => event.stopPropagation()}
+          style={{
+            position: "fixed",
+            left: `${contextMenu.x}px`,
+            top: `${contextMenu.y}px`,
+            minWidth: "160px",
+            backgroundColor: "white",
+            border: "1px solid #bbb",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.18)",
+            zIndex: 1000,
+            padding: "4px 0",
+            fontSize: "11px",
+            color: "#222",
+          }}
+        >
+          {[
+            {
+              label: "Close Gap",
+              enabled: contextMenu.targetType === "gap",
+            },
+            {
+              label: "Select All Before",
+              enabled: false,
+            },
+            {
+              label: "Select All After",
+              enabled: false,
+            },
+            {
+              label: "Change Scene Color",
+              enabled: contextMenu.targetType === "scene",
+            },
+          ].map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              disabled={!item.enabled}
+              onClick={() => setContextMenu(null)}
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "6px 10px",
+                border: "none",
+                backgroundColor: "transparent",
+                color: item.enabled ? "#222" : "#999",
+                textAlign: "left",
+                fontSize: "11px",
+                fontFamily: "inherit",
+                cursor: item.enabled ? "pointer" : "default",
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -997,16 +997,18 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
     syncLocks.current.scenes = true;
     console.log("🔒 Scenes sync lock ENABLED");
 
-    await database.saveScenesDatabase(
-      selectedProject,
-      updatedScenes,
-      scenesLoaded,
-      isSavingScenes,
-      setIsSavingScenes
-    );
-
-    syncLocks.current.scenes = false;
-    console.log("🔓 Scenes sync lock RELEASED");
+    try {
+      await database.saveScenesDatabase(
+        selectedProject,
+        updatedScenes,
+        scenesLoaded,
+        isSavingScenes,
+        setIsSavingScenes
+      );
+    } finally {
+      syncLocks.current.scenes = false;
+      console.log("🔓 Scenes sync lock RELEASED");
+    }
   };
 
   const syncShootingDaysToDatabase = async (updatedShootingDays) => {

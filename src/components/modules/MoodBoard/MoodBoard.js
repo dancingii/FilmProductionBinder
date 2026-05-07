@@ -388,7 +388,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           .from("moodboard_data")
           .select("*")
           .eq("project_id", selectedProject.id)
-          .single();
+          .maybeSingle();
           if (!error && data) {
             applyNormalized(normalizeImportedState({
               boards: data.boards, activeBoardId: data.active_board_id,

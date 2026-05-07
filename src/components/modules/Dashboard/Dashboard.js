@@ -692,7 +692,7 @@ function Dashboard({
 
               return (
                 <div
-                  key={day.day_id}
+                  key={day.day_id || day.id || `${day.date}-${day.day_number}`}
                   style={{
                     padding: "10px",
                     marginBottom: "8px",
