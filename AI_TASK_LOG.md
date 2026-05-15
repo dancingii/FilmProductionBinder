@@ -28,6 +28,28 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 4D Screenplay Preview Relocation
+
+**Task:**
+Move the screenplay preview implementation into the WritingScript module area with a compatibility re-export and no runtime behavior changes.
+
+**Files Changed:**
+- `src/components/modules/WritingScript/ScreenplayPagePreview.jsx`
+- `src/components/modules/Script/ScreenplayPagePreview.jsx`
+- `src/components/modules/WritingScript/index.js`
+- `src/components/modules/WritingScript/ARCHITECTURE.md`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Summary:**
+Moved the implementation source from `Script/ScreenplayPagePreview.jsx` to `WritingScript/ScreenplayPagePreview.jsx`. The old Script path now re-exports the new implementation so legacy imports continue to resolve. No implementation import paths needed adjustment beyond the relocation because the component only imports React.
+
+**Verification:**
+- Build: `npm run build` passed
+
+**Remaining Issues:**
+The preview is not yet part of a dedicated routed WritingScript module. Future phases still need to route Writing through writing-only props and keep preview/editor behavior isolated from production data.
+
 ### 2026-05-15 — Codex — Phase 4C Writing Editor Relocation
 
 **Task:**

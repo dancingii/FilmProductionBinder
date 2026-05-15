@@ -8,6 +8,9 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ### Working
 
+- Phase 4D screenplay preview relocation is implemented: `src/components/modules/WritingScript/ScreenplayPagePreview.jsx` now contains the screenplay preview implementation.
+- `src/components/modules/Script/ScreenplayPagePreview.jsx` remains as a compatibility re-export for legacy imports.
+- Phase 4D did not change preview behavior, app routing, Script runtime behavior, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, or production characters.
 - Phase 4C writing editor relocation is implemented: `src/components/modules/WritingScript/WritingScriptEditor.jsx` now contains the writing editor implementation.
 - `src/components/modules/Script/ScriptWritingEditor.jsx` remains as a compatibility re-export, so the legacy mixed Script module can keep importing the old path.
 - Phase 4C did not change editor behavior, app routing, Script runtime behavior, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, or production characters.

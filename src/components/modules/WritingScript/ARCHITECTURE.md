@@ -35,3 +35,8 @@ Phase 4C moved the legacy writing editor implementation into
 `WritingScriptEditor.jsx`. The old
 `src/components/modules/Script/ScriptWritingEditor.jsx` path remains as a
 compatibility re-export while the mixed Script module is extracted.
+
+Phase 4D moved the legacy screenplay preview implementation into
+`ScreenplayPagePreview.jsx`. The old
+`src/components/modules/Script/ScreenplayPagePreview.jsx` path remains as a
+compatibility re-export while the mixed Script module is extracted.
