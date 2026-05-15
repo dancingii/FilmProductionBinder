@@ -40,3 +40,7 @@ Phase 4D moved the legacy screenplay preview implementation into
 `ScreenplayPagePreview.jsx`. The old
 `src/components/modules/Script/ScreenplayPagePreview.jsx` path remains as a
 compatibility re-export while the mixed Script module is extracted.
+
+Phase 4E added `WritingTimelinePanel.jsx` as a pass-through ownership wrapper
+around `src/experimental/writingTimeline/WritingTimeline.jsx`. The experimental
+timeline implementation and timeline utilities were not moved or edited.

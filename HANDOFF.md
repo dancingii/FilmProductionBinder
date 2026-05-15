@@ -8,6 +8,9 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ### Working
 
+- Phase 4E timeline ownership wrapper is implemented: `src/components/modules/WritingScript/WritingTimelinePanel.jsx` now wraps the existing experimental `WritingTimeline` component.
+- `Script.js` still imports `src/experimental/writingTimeline/WritingTimeline.jsx` directly; Phase 4E intentionally did not change existing timeline runtime imports.
+- Phase 4E did not edit `WritingTimeline.jsx`, `writingTimelineUtils.js`, Script runtime logic, app routing, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, or production characters.
 - Phase 4D screenplay preview relocation is implemented: `src/components/modules/WritingScript/ScreenplayPagePreview.jsx` now contains the screenplay preview implementation.
 - `src/components/modules/Script/ScreenplayPagePreview.jsx` remains as a compatibility re-export for legacy imports.
 - Phase 4D did not change preview behavior, app routing, Script runtime behavior, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, or production characters.

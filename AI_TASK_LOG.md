@@ -28,6 +28,27 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 4E Writing Timeline Panel Wrapper
+
+**Task:**
+Create a WritingScript-owned timeline panel wrapper around the existing experimental WritingTimeline component without changing runtime behavior.
+
+**Files Changed:**
+- `src/components/modules/WritingScript/WritingTimelinePanel.jsx`
+- `src/components/modules/WritingScript/index.js`
+- `src/components/modules/WritingScript/ARCHITECTURE.md`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Summary:**
+Added `WritingTimelinePanel` as a pass-through wrapper around `src/experimental/writingTimeline/WritingTimeline.jsx` and exported it from the WritingScript module index. The legacy mixed Script module still imports the experimental timeline directly; no timeline runtime imports, props, drag/reorder/snap behavior, or utilities were changed.
+
+**Verification:**
+- Build: `npm run build` passed
+
+**Remaining Issues:**
+Future phases still need to route Writing through a dedicated WritingScript component before this wrapper becomes the active timeline render path.
+
 ### 2026-05-15 — Codex — Phase 4D Screenplay Preview Relocation
 
 **Task:**
