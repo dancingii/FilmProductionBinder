@@ -74,7 +74,7 @@ import CallSheetModule from "./components/modules/CallSheet/CallSheet";
 import WardrobeModule from "./components/modules/Wardrobe/Wardrobe";
 import StripboardScheduleModule from "./components/modules/StripboardSchedule/StripboardSchedule";
 import CastCrewModule from "./components/modules/CastCrew/CastCrew";
-import ScriptBreakdownModule from "./components/modules/Script/Script";
+import ScriptBreakdownModule from "./components/modules/ScriptBreakdown";
 import MakeupModule from "./components/modules/Makeup/Makeup";
 import ProductionDesignModule from "./components/modules/ProductionDesign/ProductionDesign";
 import ReportsModule from "./components/modules/Reports/Reports";

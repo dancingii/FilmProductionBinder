@@ -28,6 +28,35 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 4A Script Split Structure
+
+**Task:**
+Create structure-only compatibility folders for the future WritingScript, ScriptBreakdown, WritingCharacters, and Writing-to-Pre-Production handoff split.
+
+**Files Changed:**
+- `src/App.js`
+- `src/components/modules/ScriptBreakdown/ScriptBreakdown.jsx`
+- `src/components/modules/ScriptBreakdown/index.js`
+- `src/components/modules/ScriptBreakdown/ARCHITECTURE.md`
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `src/components/modules/WritingScript/index.js`
+- `src/components/modules/WritingScript/ARCHITECTURE.md`
+- `src/components/modules/WritingCharacters/WritingCharacters.jsx`
+- `src/components/modules/WritingCharacters/index.js`
+- `src/components/modules/WritingCharacters/ARCHITECTURE.md`
+- `src/components/workspace/handoff/ARCHITECTURE.md`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Summary:**
+Added placeholder module folders and architecture notes for the planned split. `ScriptBreakdown` is a temporary pass-through wrapper around the legacy mixed `Script` module, and `App.js` now imports the production-facing Script Breakdown module through that wrapper. No Script internals, database code, persistence, scene data, characters, schedules, tags, revisions, or runtime behavior were changed.
+
+**Verification:**
+- Build: `npm run build` passed
+
+**Remaining Issues:**
+Future phases still need to extract actual Writing Script logic, Script Breakdown logic, Writing Characters behavior, and the explicit handoff layer.
+
 ### 2026-05-15 — Codex — Phase 3 Script Breakdown Label Compatibility
 
 **Task:**
