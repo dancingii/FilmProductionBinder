@@ -6,6 +6,7 @@ import {
   estimateSceneLines,
   updateScenesWithPageData,
   parseSceneHeading,
+  buildHeadingString,
   extractLocations,
   extractLocationsHierarchical,
   getElementStyle,
@@ -14,6 +15,12 @@ import {
   LINES_PER_PAGE,
 } from "./utils.js";
 import { PDFExporter } from "./utils/pdfExport";
+import {
+  cleanVisiblePhrase,
+  createScriptSearchKey,
+  searchScript as searchScriptUtil,
+  resolveInstanceSceneIndex,
+} from "./utils/scriptSearch";
 import ToDoListModule from "./components/modules/ToDoList";
 import BudgetModule from "./components/modules/Budget/Budget";
 import ShotListModule from "./components/modules/ShotList/ShotList";
@@ -34,11 +41,17 @@ import AuthWrapper from "./components/auth/AuthWrapper";
 import { supabase } from "./supabase";
 import * as database from "./services/database";
 import {
+  createSceneId,
   getSceneId,
+  isValidSceneId,
   normalizeScheduleBlock,
   normalizeSceneRef,
   sameScene,
 } from "./utils/sceneIdentity";
+import {
+  normalizePropScenesOnAdd,
+  normalizePropScenesOnRemove,
+} from "./utils/propSceneRefs";
 import {
   uploadImage,
   deleteImage,
@@ -66,6 +79,7 @@ import MakeupModule from "./components/modules/Makeup/Makeup";
 import ProductionDesignModule from "./components/modules/ProductionDesign/ProductionDesign";
 import ReportsModule from "./components/modules/Reports/Reports";
 import PropsModule from "./components/modules/Props/Props";
+import WorkflowWorkspace from "./components/workspace/WorkflowWorkspace";
 
 
 const canEdit = (userRole) => ["owner", "editor"].includes(userRole);
@@ -95,7 +109,7 @@ const getAccessibleModules = (userRole, modulePermissions) => {
   return ROLE_MODULES[userRole] || ALL_MODULES;
 };
 
-function App({ selectedProject, userRole, modulePermissions, user }) {
+function App({ selectedProject, userRole, modulePermissions, user, activeWorkflow = "writing" }) {
   // Removed app render logging - causing sync loops
   // console.log("🔄 App render:", { projectId: selectedProject?.id, userRole });
   // Database-synced scenes state
@@ -274,10 +288,19 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
           filter: `project_id=eq.${selectedProject.id}`,
         },
         (payload) => {
-          console.log("🔴 REALTIME: Scenes changed by another user");
+          // Throttle repeated realtime events (one per changed row) to a single
+          // log line per 2-second window so the console stays readable.
+          const now = Date.now();
+          if (!window._scenesRealtimeLogAt || now - window._scenesRealtimeLogAt > 2000) {
+            console.log("🔴 REALTIME: Scenes changed by another user");
+            window._scenesRealtimeLogAt = now;
+          }
 
           if (syncLocks.current.scenes) {
-            console.log("⏭️ SKIPPING Scenes reload - sync lock active");
+            if (!window._scenesSkipLogAt || now - window._scenesSkipLogAt > 2000) {
+              console.log("⏭️ SKIPPING Scenes reload - sync lock active");
+              window._scenesSkipLogAt = now;
+            }
             return;
           }
 
@@ -1006,8 +1029,13 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
         setIsSavingScenes
       );
     } finally {
-      syncLocks.current.scenes = false;
-      console.log("🔓 Scenes sync lock RELEASED");
+      // Delay lock release to cover the 500ms realtime debounce window plus
+      // network variance — prevents the realtime handler from reloading stale
+      // DB data triggered by our own write.
+      setTimeout(() => {
+        syncLocks.current.scenes = false;
+        console.log("🔓 Scenes sync lock RELEASED (delayed)");
+      }, 750);
     }
   };
 
@@ -1986,37 +2014,95 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
     { name: "Extras", color: "#85C1E9" },
   ];
 
-  const untagWordInstance = (word, sceneIndex, blockIndex, wordIndex) => {
-    const cleanWord = stemWord(word.toLowerCase().replace(/[^\w]/g, ""));
-    const instanceId = `${sceneIndex}-${blockIndex}-${wordIndex}`;
+  const untagWordInstance = (wordOrKey, sceneIndex, blockIndex, wordIndex) => {
+    // Accept either a taggedItems key directly (phrase tags) or a raw word (single-word tags).
+    const cleanWord = taggedItems[wordOrKey]
+      ? wordOrKey
+      : stemWord(wordOrKey.toLowerCase().replace(/[^\w]/g, ""));
 
-    if (taggedItems[cleanWord]) {
-      const currentItem = taggedItems[cleanWord];
-      const updatedInstances = currentItem.instances.filter(
-        (id) => id !== instanceId
-      );
-
+    if (!Number.isFinite(Number(sceneIndex))) {
       setTaggedItems((prev) => {
-        const newTaggedItems = { ...prev };
-
-        if (updatedInstances.length === 0) {
-          // If no instances left, remove the entire word
-          delete newTaggedItems[cleanWord];
-        } else {
-          // Update with remaining instances
-          newTaggedItems[cleanWord] = {
-            ...currentItem,
-            instances: updatedInstances,
-          };
-        }
-
-        return newTaggedItems;
+        if (!prev[cleanWord]) return prev;
+        const newItems = { ...prev };
+        delete newItems[cleanWord];
+        syncTaggedItemsToDatabase(newItems);
+        return newItems;
       });
+      setShowTagDropdown(null);
+      return;
     }
+
+    const scene = scenes[sceneIndex];
+    const uuidId = scene?.id ? `${scene.id}-${blockIndex}-${wordIndex}` : null;
+    const legacyId = `${sceneIndex}-${blockIndex}-${wordIndex}`;
+
+    setTaggedItems((prev) => {
+      const item = prev[cleanWord];
+      if (!item) return prev;
+
+      // For phrase tags (multiple words), remove all instance IDs in the same
+      // block so the whole phrase occurrence is untagged together.
+      const phraseLength = (item.displayName || "")
+        .split(/\s+/)
+        .filter(Boolean).length;
+      let updatedInstances;
+      if (phraseLength > 1 && scene?.id) {
+        const clickedId = `${scene.id}-${blockIndex}-${wordIndex}`;
+        const matchedGroup = (item.matchGroups || []).find((group) =>
+          (group.instanceIds || []).includes(clickedId)
+        );
+        const idsToRemove = matchedGroup?.instanceIds || [clickedId];
+        updatedInstances = item.instances.filter(
+          (id) => !idsToRemove.includes(id)
+        );
+      } else {
+        updatedInstances = item.instances.filter(
+          (id) => id !== uuidId && id !== legacyId
+        );
+      }
+
+      const newItems = { ...prev };
+      if (updatedInstances.length === 0) {
+        delete newItems[cleanWord];
+      } else {
+        newItems[cleanWord] = {
+          ...item,
+          instances: updatedInstances,
+          matchGroups: (item.matchGroups || []).filter((group) =>
+            (group.instanceIds || []).some((id) => updatedInstances.includes(id))
+          ),
+        };
+      }
+      syncTaggedItemsToDatabase(newItems);
+      return newItems;
+    });
     setShowTagDropdown(null);
   };
 
   const getWordPosition = (word) => {
+    const firstMatch = searchScriptUtil(scenes, word, stemWord).matchGroups?.[0];
+    if (firstMatch) {
+      let position = 0;
+      for (let sceneIndex = 0; sceneIndex < scenes.length; sceneIndex++) {
+        const scene = scenes[sceneIndex];
+        for (let blockIndex = 0; blockIndex < scene.content.length; blockIndex++) {
+          const block = scene.content[blockIndex];
+          const words = block.text.split(/(\s+)/);
+          for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
+            if (!words[wordIndex].trim()) continue;
+            if (
+              scene.id === firstMatch.sceneId &&
+              blockIndex === firstMatch.blockIndex &&
+              wordIndex === firstMatch.startWordIndex
+            ) {
+              return position;
+            }
+            position++;
+          }
+        }
+      }
+    }
+
     // Find the position of this word in the entire script
     let position = 0;
     for (let sceneIndex = 0; sceneIndex < scenes.length; sceneIndex++) {
@@ -2045,42 +2131,12 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
   };
 
   const findAllWordInstances = (targetWord) => {
-    const cleanTargetWord = stemWord(
-      targetWord.toLowerCase().replace(/[^\w]/g, "")
+    const { instanceIds, sceneIds, sceneNumbers, matchGroups } = searchScriptUtil(
+      scenes,
+      targetWord,
+      stemWord
     );
-    const instances = [];
-    const foundScenes = [];
-
-    for (let sceneIndex = 0; sceneIndex < scenes.length; sceneIndex++) {
-      const scene = scenes[sceneIndex];
-      let sceneHasWord = false;
-
-      for (
-        let blockIndex = 0;
-        blockIndex < scene.content.length;
-        blockIndex++
-      ) {
-        const block = scene.content[blockIndex];
-        const words = block.text.split(/(\s+)/);
-
-        for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
-          const word = words[wordIndex];
-          if (word.trim() === "") continue; // Skip whitespace
-
-          const cleanWord = stemWord(word.toLowerCase().replace(/[^\w]/g, ""));
-          if (cleanWord === cleanTargetWord) {
-            const instanceId = `${sceneIndex}-${blockIndex}-${wordIndex}`;
-            instances.push(instanceId);
-            if (!sceneHasWord) {
-              foundScenes.push(scene.sceneNumber);
-              sceneHasWord = true;
-            }
-          }
-        }
-      }
-    }
-
-    return { instances, scenes: foundScenes };
+    return { instances: instanceIds, scenes: sceneNumbers, sceneIds, matchGroups };
   };
 
   const stemWord = (word) => {
@@ -2202,14 +2258,21 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
   };
 
   const tagWord = (word, category) => {
-    const cleanWord = stemWord(word.toLowerCase().replace(/[^\w]/g, ""));
+    const displayPhrase = cleanVisiblePhrase(word);
+    const normalizedKey = createScriptSearchKey(displayPhrase, stemWord);
+    const legacyKey = stemWord(displayPhrase.toLowerCase().replace(/[^\w]/g, ""));
+    const cleanWord = taggedItems[normalizedKey] || !taggedItems[legacyKey]
+      ? normalizedKey
+      : legacyKey;
+    if (!cleanWord) return;
     const categoryData = tagCategories.find((cat) => cat.name === category);
 
     if (!taggedItems[cleanWord]) {
-      const wordPosition = getWordPosition(word);
+      const wordPosition = getWordPosition(displayPhrase);
 
-      // Find all instances of this word
-      const { instances, scenes: foundScenes } = findAllWordInstances(word);
+      // Find all instances of this word/phrase
+      const { instances, scenes: foundScenes, sceneIds: foundSceneIds, matchGroups } =
+        findAllWordInstances(displayPhrase);
 
       console.log(`Found instances for "${cleanWord}":`, instances);
 
@@ -2226,13 +2289,15 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
 
       // Create new tagged item with all instances
       const newItem = {
-        displayName: word,
+        displayName: displayPhrase,
         category: category,
-        color: categoryData.color,
+        color: categoryData?.color || "#FFE082",
         chronologicalNumber: chronologicalNumber,
         position: wordPosition,
         scenes: foundScenes,
+        sceneIds: foundSceneIds || [],
         instances: instances,
+        matchGroups: matchGroups || [],
       };
 
       // Update existing items that come after this position
@@ -2254,22 +2319,41 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
       const itemsWithCategoryNumbers = calculateCategoryNumbers(updatedItems);
       setTaggedItems(itemsWithCategoryNumbers);
       syncTaggedItemsToDatabase(itemsWithCategoryNumbers);
+    } else {
+      const { instances, scenes: foundScenes, sceneIds: foundSceneIds, matchGroups } =
+        findAllWordInstances(displayPhrase);
+      const existingItem = taggedItems[cleanWord];
+      const mergedInstances = Array.from(new Set([...(existingItem.instances || []), ...instances]));
+      const mergedScenes = Array.from(new Set([...(existingItem.scenes || []), ...foundScenes])).sort((a, b) => a - b);
+      const mergedSceneIds = Array.from(new Set([...(existingItem.sceneIds || []), ...(foundSceneIds || [])]));
+      const updatedItems = {
+        ...taggedItems,
+        [cleanWord]: {
+          ...existingItem,
+          displayName: existingItem.displayName || displayPhrase,
+          category: existingItem.category || category,
+          color: existingItem.color || categoryData?.color || "#FFE082",
+          instances: mergedInstances,
+          scenes: mergedScenes,
+          sceneIds: mergedSceneIds,
+          matchGroups: matchGroups || existingItem.matchGroups || [],
+        },
+      };
+      const itemsWithCategoryNumbers = calculateCategoryNumbers(updatedItems);
+      setTaggedItems(itemsWithCategoryNumbers);
+      syncTaggedItemsToDatabase(itemsWithCategoryNumbers);
     }
 
     setShowTagDropdown(null);
   };
 
-  const isWordInstanceTagged = (
-    cleanWord,
-    sceneIndex,
-    blockIndex,
-    wordIndex
-  ) => {
-    const instanceId = `${sceneIndex}-${blockIndex}-${wordIndex}`;
-    return (
-      taggedItems[cleanWord] &&
-      taggedItems[cleanWord].instances.includes(instanceId)
-    );
+  const isWordInstanceTagged = (cleanWord, sceneIndex, blockIndex, wordIndex) => {
+    const item = taggedItems[cleanWord];
+    if (!item) return false;
+    const scene = scenes[sceneIndex];
+    const uuidId = scene?.id ? `${scene.id}-${blockIndex}-${wordIndex}` : null;
+    const legacyId = `${sceneIndex}-${blockIndex}-${wordIndex}`;
+    return item.instances.some((id) => id === uuidId || id === legacyId);
   };
 
   // parseSceneHeading and extractLocations functions moved to utils.js
@@ -2556,12 +2640,18 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
           if (type === "Scene Heading") {
             if (currentScene) {
               currentScene.sceneNumber = sceneNumber++;
+              currentScene.metadata = {
+                ...(currentScene.metadata || {}),
+                originalSceneNumber: currentScene.sceneNumber,
+                originalScriptOrder: currentScene.sceneNumber - 1,
+              };
               parsedScenes.push(currentScene);
             }
 
             const headingText = content.toUpperCase();
             const metadata = parseSceneHeading(headingText);
             currentScene = {
+              id: createSceneId(),
               heading: headingText,
               content: [],
               metadata: metadata,
@@ -2594,6 +2684,11 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
 
         if (currentScene) {
           currentScene.sceneNumber = sceneNumber;
+          currentScene.metadata = {
+            ...(currentScene.metadata || {}),
+            originalSceneNumber: currentScene.sceneNumber,
+            originalScriptOrder: currentScene.sceneNumber - 1,
+          };
           parsedScenes.push(currentScene);
         }
 
@@ -2791,6 +2886,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
             const headingText = content.toUpperCase();
             const metadata = parseSceneHeading(headingText);
             currentScene = {
+              id: createSceneId(),
               heading: headingText,
               content: [],
               metadata: metadata,
@@ -2831,10 +2927,22 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
 
           // Preserve original scene metadata
           const originalScene = scenes[currentIndex];
+          newScene.id = isValidSceneId(originalScene.id) ? originalScene.id : createSceneId();
           newScene.sceneNumber = originalScene.sceneNumber;
           newScene.status = originalScene.status;
           newScene.pageNumber = originalScene.pageNumber;
           newScene.pageLength = originalScene.pageLength;
+          const preservedOriginalScriptOrder =
+            originalScene.metadata?.originalScriptOrder ??
+            originalScene.metadata?.scriptOrder ??
+            (Number.isInteger(currentIndex) ? currentIndex : undefined);
+          newScene.metadata = {
+            ...(newScene.metadata || {}),
+            originalSceneNumber: originalScene.metadata?.originalSceneNumber ?? originalScene.sceneNumber,
+            ...(preservedOriginalScriptOrder !== undefined && preservedOriginalScriptOrder !== null
+              ? { originalScriptOrder: preservedOriginalScriptOrder }
+              : {}),
+          };
 
           // Update scenes array
           const updatedScenes = [...scenes];
@@ -3287,9 +3395,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
             const location = value.location || "";
             const timeOfDay = value.timeOfDay || "";
             const modifier = value.modifier || "";
-            const fullHeading = `${intExt} ${location}${
-              timeOfDay ? ` - ${timeOfDay}` : ""
-            }${modifier ? ` - ${modifier}` : ""}`.trim();
+            const fullHeading = buildHeadingString({ intExt, location, timeOfDay, modifier });
             updatedScenes[sceneIndex] = {
               ...updatedScenes[sceneIndex],
               heading: fullHeading,
@@ -3298,6 +3404,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
                 intExt,
                 location,
                 timeOfDay,
+                modifier,
               },
             };
           } else if (field === "status") {
@@ -3379,9 +3486,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
             const location = value.location || "";
             const timeOfDay = value.timeOfDay || "";
             const modifier = value.modifier || "";
-            const fullHeading = `${intExt} ${location}${
-              timeOfDay ? ` - ${timeOfDay}` : ""
-            }${modifier ? ` - ${modifier}` : ""}`.trim();
+            const fullHeading = buildHeadingString({ intExt, location, timeOfDay, modifier });
             updatedMainScenes[sceneIndex] = {
               ...updatedMainScenes[sceneIndex],
               heading: fullHeading,
@@ -3390,6 +3495,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
                 intExt,
                 location,
                 timeOfDay,
+                modifier,
               },
             };
             database
@@ -3437,13 +3543,14 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
       if (!item || !item.instances) return prev;
 
       const updatedInstances = item.instances.filter((instanceId) => {
-        const instanceSceneIndex = parseInt(instanceId.split("-")[0]);
+        const instanceSceneIndex = resolveInstanceSceneIndex(instanceId, scenes);
         return instanceSceneIndex !== sceneIndex;
       });
 
-      const updatedScenes = item.scenes.filter((sceneNum) => {
-        return sceneNum !== scenes[sceneIndex]?.sceneNumber;
-      });
+      const scene = scenes[sceneIndex];
+      const updatedScenes = scene
+        ? normalizePropScenesOnRemove(item.scenes, scene)
+        : item.scenes.filter((ref) => ref !== scenes[sceneIndex]?.sceneNumber);
 
       let updated;
       if (updatedInstances.length === 0) {
@@ -3504,20 +3611,16 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
       const item = prev[propWord];
       if (!item) return prev;
 
-      const syntheticInstanceId = `${sceneIndex}-manual-${Date.now()}`;
+      const syntheticInstanceId = `${scene.id}-manual-${Date.now()}`;
       const updatedInstances = [...(item.instances || []), syntheticInstanceId];
-      const updatedScenes = [...(item.scenes || [])];
-
-      if (!updatedScenes.includes(scene.sceneNumber)) {
-        updatedScenes.push(scene.sceneNumber);
-      }
+      const updatedScenes = normalizePropScenesOnAdd(item.scenes, scene);
 
       const updated = {
         ...prev,
         [propWord]: {
           ...item,
           instances: updatedInstances,
-          scenes: updatedScenes.sort((a, b) => a - b),
+          scenes: updatedScenes,
         },
       };
 
@@ -3529,16 +3632,21 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
   const onCreateNewProp = (
     propName,
     sceneIndex,
-    confirmedSceneNumbers,
+    confirmedScenes,
     instanceChars
   ) => {
     const propsCategory = tagCategories.find((cat) => cat.name === "Props");
     const propColor = propsCategory?.color || "#FF6B6B";
 
+    // confirmedScenes may be { sceneNumber, sceneId }[] (new) or plain number[] (legacy)
+    const normalizedScenes = (confirmedScenes || []).map((s) =>
+      typeof s === "object" ? s : { sceneNumber: s, sceneId: null }
+    );
+
     // Build scene numbers array — either from confirmed viewer selections or legacy single scene
     let sceneNumbers = [];
-    if (confirmedSceneNumbers && confirmedSceneNumbers.length > 0) {
-      sceneNumbers = confirmedSceneNumbers;
+    if (normalizedScenes.length > 0) {
+      sceneNumbers = normalizedScenes.map((s) => s.sceneNumber).filter(Boolean);
     } else if (sceneIndex !== null && sceneIndex !== undefined) {
       const scene = scenes[sceneIndex];
       if (scene) sceneNumbers = [scene.sceneNumber];
@@ -3555,7 +3663,17 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
       .replace(/[^\w]/g, "_")}_${Date.now()}`;
     const existingItems = Object.entries(taggedItems);
     const chronologicalNumber = existingItems.length + 1;
-    const syntheticInstanceId = `manual-${Date.now()}`;
+
+    // Create UUID-anchored instance IDs — one per confirmed scene with a scene.id
+    const now = Date.now();
+    const syntheticInstances = normalizedScenes
+      .filter((s) => s.sceneId)
+      .map((s) => `${s.sceneId}-manual-${now}`);
+    // Fallback for edge case where no scene IDs are available (legacy path)
+    const instances =
+      syntheticInstances.length > 0
+        ? syntheticInstances
+        : [`manual-${now}`];
 
     const newItem = {
       displayName: propName,
@@ -3564,7 +3682,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
       chronologicalNumber,
       position: 0,
       scenes: sceneNumbers,
-      instances: [syntheticInstanceId],
+      instances,
       customTitle: propName,
       manuallyCreated: true,
       assignedCharacters: allAssignedChars,
@@ -3600,7 +3718,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
       if (!item || !item.instances) return prev;
 
       const updatedInstances = item.instances.filter((instanceId) => {
-        const instanceSceneIndex = parseInt(instanceId.split("-")[0]);
+        const instanceSceneIndex = resolveInstanceSceneIndex(instanceId, scenes);
         return instanceSceneIndex !== sceneIndex;
       });
 
@@ -3667,7 +3785,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
       const item = prev[pdWord];
       if (!item) return prev;
 
-      const syntheticInstanceId = `${sceneIndex}-manual-${Date.now()}`;
+      const syntheticInstanceId = `${scene.id}-manual-${Date.now()}`;
       const updatedInstances = [...(item.instances || []), syntheticInstanceId];
       const updatedScenes = [...(item.scenes || [])];
 
@@ -3706,7 +3824,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
     const pdCategory = tagCategories.find(
       (cat) => cat.name === "Production Design"
     );
-    const syntheticInstanceId = `${sceneIndex}-manual-${Date.now()}`;
+    const syntheticInstanceId = `${scene.id}-manual-${Date.now()}`;
 
     const newItem = {
       displayName: itemName,
@@ -3749,7 +3867,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
       if (!item || !item.instances) return prev;
 
       const updatedInstances = item.instances.filter((instanceId) => {
-        const instanceSceneIndex = parseInt(instanceId.split("-")[0]);
+        const instanceSceneIndex = resolveInstanceSceneIndex(instanceId, scenes);
         return instanceSceneIndex !== sceneIndex;
       });
 
@@ -3816,7 +3934,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
       const item = prev[makeupWord];
       if (!item) return prev;
 
-      const syntheticInstanceId = `${sceneIndex}-manual-${Date.now()}`;
+      const syntheticInstanceId = `${scene.id}-manual-${Date.now()}`;
       const updatedInstances = [...(item.instances || []), syntheticInstanceId];
       const updatedScenes = [...(item.scenes || [])];
 
@@ -3853,7 +3971,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
     let chronologicalNumber = existingItems.length + 1;
     const position = getWordPosition(itemName);
     const makeupCategory = tagCategories.find((cat) => cat.name === "Makeup");
-    const syntheticInstanceId = `${sceneIndex}-manual-${Date.now()}`;
+    const syntheticInstanceId = `${scene.id}-manual-${Date.now()}`;
 
     const newItem = {
       displayName: itemName,
@@ -4255,9 +4373,11 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
             syncCharactersToDatabase={syncCharactersToDatabase}
             moodboardImages={scriptMoodImages}
             setStripboardScenes={setStripboardScenes}
-            syncStripboardScenesToDatabase={syncStripboardScenesToDatabase}
-            onScenesReordered={handleScriptScenesReordered}
-          />
+	            syncStripboardScenesToDatabase={syncStripboardScenesToDatabase}
+	            onScenesReordered={handleScriptScenesReordered}
+	            onAlert={showAlert}
+	            onConfirm={showConfirm}
+	          />
         );
         case "Stripboard":
           return (
@@ -4756,6 +4876,7 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
         overflow: "hidden",
       }}
     >
+      <WorkflowWorkspace activeWorkflow={activeWorkflow}>
       <div
         style={{
           width: "120px",
@@ -5026,24 +5147,25 @@ function App({ selectedProject, userRole, modulePermissions, user }) {
           boxSizing: "border-box",
           position: "fixed",
           top: "44px",
-          right: "0",
-          bottom: "0",
-          overflow: "hidden",
-        }}
+	          right: "0",
+	          bottom: "0",
+	          overflow: "auto",
+	        }}
       >
         {renderModule()}
       </div>
+      </WorkflowWorkspace>
 
       {/* Centered Alert/Confirm Modal */}
       {appAlert && (
         <div
           style={{
             position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            backgroundColor: "rgba(0,0,0,0.5)",
+	            top: "44px",
+	            left: "120px",
+	            right: 0,
+	            bottom: 0,
+	            backgroundColor: "rgba(0,0,0,0.5)",
             zIndex: 99998,
             display: "flex",
             alignItems: "center",

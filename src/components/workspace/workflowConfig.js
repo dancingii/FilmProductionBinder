@@ -6,3 +6,5 @@ export const WORKFLOWS = [
   { id: "postProduction", label: "Post-Production", enabled: false, badge: "Coming Soon" },
 ];
 
+export const getWorkflowById = (workflowId) =>
+  WORKFLOWS.find((workflow) => workflow.id === workflowId) || WORKFLOWS[0];

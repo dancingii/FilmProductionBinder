@@ -979,7 +979,7 @@ function AuthWrapper({ children }) {
       {selectedProject ? (
         <React.Fragment>
           <TeamManagementModal />
-          {React.cloneElement(children, { selectedProject, userRole, modulePermissions, user })}
+          {React.cloneElement(children, { selectedProject, userRole, modulePermissions, user, activeWorkflow })}
         </React.Fragment>
       ) : (
         <ProjectSelector

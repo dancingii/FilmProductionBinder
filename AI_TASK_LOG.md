@@ -28,6 +28,37 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 2 Workflow Workspace Routing
+
+**Task:**
+Add workflow-level routing/workspace structure while keeping existing module behavior stable. Phase 2 only; no Script split, data persistence, module rename, handoff, or module internals changes.
+
+**Files Changed:**
+- `src/components/auth/AuthWrapper.js`
+- `src/App.js`
+- `src/components/workspace/WorkflowWorkspace.jsx`
+- `src/components/workspace/WritingWorkspace.jsx`
+- `src/components/workspace/PreProductionWorkspace.jsx`
+- `src/components/workspace/ProductionWorkspace.jsx`
+- `src/components/workspace/ComingSoonWorkspace.jsx`
+- `src/components/workspace/workflowConfig.js`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Changes:**
+- Passed `activeWorkflow` from `AuthWrapper` into `App` through the existing clone/injection path.
+- Added a lightweight `WorkflowWorkspace` router.
+- Added placeholder workspace components for Writing, Pre-Production, and Production. They currently render the existing module system unchanged.
+- Added a stable `ComingSoonWorkspace` for disabled workflow states if reached directly.
+- Added `getWorkflowById` helper to workflow config.
+
+**Verification:**
+- Build: `npm run build` PASSED.
+
+**Notes:**
+- No changes were made to `Script.js`, `database.js`, `saveScenesDatabase`, scenes, writing draft data, stripboard data, schedules, tags, revisions, realtime subscriptions, module routing internals, or production module internals.
+- Separate `activeModuleByWorkflow` was intentionally not added in Phase 2. Keeping the current single `activeModule` avoids changing existing sidebar/module behavior and avoids widening module navigation changes before the Script split plan is ready.
+
 ### 2026-05-15 — Codex — Phase 1 Workflow Toolbar Shell
 
 **Task:**

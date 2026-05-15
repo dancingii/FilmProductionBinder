@@ -8,6 +8,9 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ### Working
 
+- Phase 2 workflow workspace routing is implemented: `AuthWrapper` passes `activeWorkflow` into `App`, and `App` wraps the existing sidebar/module content in `WorkflowWorkspace`.
+- Writing, Pre-Production, and Production currently render the existing module system unchanged through thin workspace placeholders. Pitching/Post-Production have a defensive Coming Soon workspace if reached directly.
+- Phase 2 intentionally did not add `activeModuleByWorkflow`; current single `activeModule` behavior remains unchanged to avoid destabilizing existing sidebar/module callbacks.
 - Phase 1 workflow toolbar shell is implemented: top-level workflow tabs now sit centered in the desktop toolbar, the project name sits beside the welcome/display-name area, and tab selection is visual only. Pitching and Post-Production are visible disabled "Coming Soon" tabs.
 - Phase 1 intentionally did not change module routing, Script internals, database persistence, realtime subscriptions, scene data, writing draft data, stripboard data, schedules, tags, or revisions.
 - Scene identity is centralized in `src/utils/sceneIdentity.js`.
