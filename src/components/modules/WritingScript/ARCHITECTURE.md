@@ -67,3 +67,9 @@ Phase 4I updated `WritingScript.jsx` into a non-routed shell. It returns `null`
 by default and only renders an inert hidden preview shell when explicitly passed
 `previewShell={true}`. It does not own runtime state yet and must not be routed
 until writing-only props, persistence, and data boundaries are ready.
+
+Phase 4K added inactive writing draft persistence foundations:
+`writingDraftPersistence.js` and `useWritingDraftState.js`. They preserve the
+current `scriptWritingDraft:${projectId}` localStorage key and payload shape for
+future compatibility. They are not used by active runtime yet and must not call
+production save paths such as `saveScenesDatabase`.

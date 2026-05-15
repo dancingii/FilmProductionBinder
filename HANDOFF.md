@@ -8,6 +8,9 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ### Working
 
+- Phase 4K writing draft persistence foundation is implemented: `src/components/modules/WritingScript/writingDraftPersistence.js` and `src/components/modules/WritingScript/useWritingDraftState.js` exist but are not used by active runtime.
+- The new helper preserves the current `scriptWritingDraft:${projectId}` localStorage key and payload shape for future compatibility.
+- Phase 4K did not route WritingScript, edit Script.js runtime behavior, change active localStorage behavior, import production callbacks, edit database code, touch `saveScenesDatabase`, or mutate production scenes/stripboard/schedules/tags/revisions/characters.
 - Phase 4I non-routed WritingScript shell is implemented: `src/components/modules/WritingScript/WritingScript.jsx` returns `null` by default and is not routed.
 - If explicitly passed `previewShell={true}`, `WritingScript` renders only hidden inert surface markers; it does not mount active editor/timeline components, create runtime state, call callbacks, or write persistence.
 - Phase 4I did not edit Script.js, app routing, workflow routing, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, production characters, or production save paths.

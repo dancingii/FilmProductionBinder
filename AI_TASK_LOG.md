@@ -28,6 +28,28 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 4K Writing Draft Persistence Foundation
+
+**Task:**
+Create the WritingScript-owned writing draft persistence/state foundation without routing WritingScript or changing runtime behavior.
+
+**Files Changed:**
+- `src/components/modules/WritingScript/writingDraftPersistence.js`
+- `src/components/modules/WritingScript/useWritingDraftState.js`
+- `src/components/modules/WritingScript/index.js`
+- `src/components/modules/WritingScript/ARCHITECTURE.md`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Summary:**
+Added inactive WritingScript-owned localStorage persistence helpers and a draft-state hook for future activation. The helper preserves the existing `scriptWritingDraft:${projectId}` key and payload shape (`projectId`, `savedAt`, `hasUserCreatedScript`, `nodes`). Nothing is routed or used by active runtime yet, and no production mutation callbacks are imported.
+
+**Verification:**
+- Build: `npm run build` passed
+
+**Remaining Issues:**
+Future phases still need to wire WritingScript to these helpers and then remove the active writing draft persistence from the legacy mixed Script module.
+
 ### 2026-05-15 — Codex — Phase 4I Non-Routed WritingScript Shell
 
 **Task:**
