@@ -418,7 +418,7 @@ function AuthWrapper({ children }) {
     const [emailSuggestions, setEmailSuggestions] = useState([]);
 
     const ALL_MODULES_LIST = [
-      "Script", "Stripboard", "StripboardSchedule", "Calendar", "Day Out of Days",
+      "Script Breakdown", "Stripboard", "StripboardSchedule", "Calendar", "Day Out of Days",
       "Cast & Crew", "Characters", "Locations", "CallSheet", "ShotList", "ToDoList",
       "Timeline", "Props", "Makeup", "Production Design", "Wardrobe",
       "Cost Report", "Reports", "Budget",
@@ -689,14 +689,15 @@ function AuthWrapper({ children }) {
                         <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", marginBottom: "8px", textTransform: "uppercase" }}>Module Access</div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
                           {ALL_MODULES_LIST.map(mod => {
-                            const checked = currentCustomModules.includes(mod);
+                            const legacyModule = mod === "Script Breakdown" ? "Script" : null;
+                            const checked = currentCustomModules.includes(mod) || (legacyModule && currentCustomModules.includes(legacyModule));
                             return (
                               <label key={mod} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", cursor: "pointer", backgroundColor: checked ? "#e3f2fd" : "white", padding: "3px 8px", borderRadius: "4px", border: `1px solid ${checked ? "#90caf9" : "#ddd"}` }}>
                                 <input type="checkbox" checked={checked}
                                   onChange={(e) => {
                                     const updated = e.target.checked
                                       ? [...currentCustomModules, mod]
-                                      : currentCustomModules.filter(m => m !== mod);
+                                      : currentCustomModules.filter(m => m !== mod && m !== legacyModule);
                                     changeRole(member.id, "custom", updated);
                                   }}
                                   style={{ cursor: "pointer" }} />

@@ -8,6 +8,8 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ### Working
 
+- Phase 3 module label compatibility is implemented: the general production/pre-production module list now displays `Script Breakdown`, and old `"Script"` active module / custom permission values normalize to `Script Breakdown`.
+- `Script Breakdown` still renders the existing `src/components/modules/Script/Script.js` component through an alias import. The actual Script split has not started.
 - Phase 2 workflow workspace routing is implemented: `AuthWrapper` passes `activeWorkflow` into `App`, and `App` wraps the existing sidebar/module content in `WorkflowWorkspace`.
 - Writing, Pre-Production, and Production currently render the existing module system unchanged through thin workspace placeholders. Pitching/Post-Production have a defensive Coming Soon workspace if reached directly.
 - Phase 2 intentionally did not add `activeModuleByWorkflow`; current single `activeModule` behavior remains unchanged to avoid destabilizing existing sidebar/module callbacks.

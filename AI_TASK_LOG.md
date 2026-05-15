@@ -28,6 +28,32 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 3 Script Breakdown Label Compatibility
+
+**Task:**
+Rename the production-facing module label from Script to Script Breakdown in the general module system while preserving backward compatibility with old "Script" references. Phase 3 only; no Script split, persistence changes, or handoff implementation.
+
+**Files Changed:**
+- `src/App.js`
+- `src/components/auth/AuthWrapper.js`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Changes:**
+- Added `SCRIPT_BREAKDOWN_MODULE`, `normalizeModuleName`, and `normalizeModuleList` helpers in `App.js`.
+- Changed the general module list label from `Script` to `Script Breakdown`.
+- Aliased the existing `src/components/modules/Script/Script.js` import as `ScriptBreakdownModule` without moving or editing the file.
+- Updated module rendering so normalized `Script` and `Script Breakdown` values both render the existing script component.
+- Updated permission handling so old custom permissions containing `Script` normalize to `Script Breakdown`.
+- Updated sidebar active-state and Script-specific content padding to use normalized module names.
+- Updated the team custom-permissions picker to show `Script Breakdown` while treating old stored `Script` values as checked and removable.
+
+**Verification:**
+- Build: `npm run build` PASSED.
+
+**Notes:**
+- No changes were made to `Script.js`, `database.js`, `saveScenesDatabase`, scene data, writing draft data, stripboard data, schedules, tags, revisions, realtime subscriptions, production module internals, or handoff behavior.
+
 ### 2026-05-15 — Codex — Phase 2 Workflow Workspace Routing
 
 **Task:**

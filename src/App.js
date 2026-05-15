@@ -74,7 +74,7 @@ import CallSheetModule from "./components/modules/CallSheet/CallSheet";
 import WardrobeModule from "./components/modules/Wardrobe/Wardrobe";
 import StripboardScheduleModule from "./components/modules/StripboardSchedule/StripboardSchedule";
 import CastCrewModule from "./components/modules/CastCrew/CastCrew";
-import Script from "./components/modules/Script/Script";
+import ScriptBreakdownModule from "./components/modules/Script/Script";
 import MakeupModule from "./components/modules/Makeup/Makeup";
 import ProductionDesignModule from "./components/modules/ProductionDesign/ProductionDesign";
 import ReportsModule from "./components/modules/Reports/Reports";
@@ -86,9 +86,16 @@ const canEdit = (userRole) => ["owner", "editor"].includes(userRole);
 const canDelete = (userRole) => userRole === "owner";
 const canManageTeam = (userRole) => userRole === "owner";
 const isViewOnly = (userRole) => userRole === "viewer";
+const SCRIPT_BREAKDOWN_MODULE = "Script Breakdown";
+
+const normalizeModuleName = (name) =>
+  name === "Script" ? SCRIPT_BREAKDOWN_MODULE : name;
+
+const normalizeModuleList = (modules = []) =>
+  Array.from(new Set((Array.isArray(modules) ? modules : []).map(normalizeModuleName)));
 
 const ALL_MODULES = [
-  "Script", "Stripboard", "StripboardSchedule", "Calendar", "Day Out of Days",
+  SCRIPT_BREAKDOWN_MODULE, "Stripboard", "StripboardSchedule", "Calendar", "Day Out of Days",
   "Cast & Crew", "Characters", "Locations", "CallSheet", "ShotList", "ToDoList",
   "Timeline", "MoodBoard", "Props", "Makeup", "Production Design", "Wardrobe",
   "Cost Report", "Reports", "Budget",
@@ -105,8 +112,8 @@ const ROLE_MODULES = {
 };
 
 const getAccessibleModules = (userRole, modulePermissions) => {
-  if (userRole === "custom" && modulePermissions) return modulePermissions;
-  return ROLE_MODULES[userRole] || ALL_MODULES;
+  if (userRole === "custom" && modulePermissions) return normalizeModuleList(modulePermissions);
+  return normalizeModuleList(ROLE_MODULES[userRole] || ALL_MODULES);
 };
 
 function App({ selectedProject, userRole, modulePermissions, user, activeWorkflow = "writing" }) {
@@ -4310,7 +4317,8 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
 
   const renderModule = () => {
     const accessible = getAccessibleModules(userRole, modulePermissions);
-    if (activeModule && activeModule !== "Dashboard" && !accessible.includes(activeModule)) {
+    const normalizedActiveModule = normalizeModuleName(activeModule);
+    if (normalizedActiveModule && normalizedActiveModule !== "Dashboard" && !accessible.includes(normalizedActiveModule)) {
       return (
         <div style={{ padding: "40px", textAlign: "center", color: "#888" }}>
           <h2>Access Restricted</h2>
@@ -4318,7 +4326,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
         </div>
       );
     }
-    if (!activeModule || activeModule === "Dashboard") {
+    if (!normalizedActiveModule || normalizedActiveModule === "Dashboard") {
       return (
         <Dashboard
           user={user}
@@ -4343,10 +4351,10 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
       );
     }
 
-    switch (activeModule) {
-      case "Script":
+    switch (normalizedActiveModule) {
+      case SCRIPT_BREAKDOWN_MODULE:
         return (
-          <Script
+          <ScriptBreakdownModule
             scenes={scenes}
             currentIndex={currentIndex}
             setCurrentIndex={setCurrentIndex}
@@ -5124,10 +5132,10 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
               style={{
                 margin: "5px 0",
                 padding: "8px 4px",
-                backgroundColor: activeModule === mod ? "#ddd" : "transparent",
+                backgroundColor: normalizeModuleName(activeModule) === mod ? "#ddd" : "transparent",
                 border: "1px solid #ccc",
                 cursor: "pointer",
-                fontWeight: activeModule === mod ? "bold" : "normal",
+                fontWeight: normalizeModuleName(activeModule) === mod ? "bold" : "normal",
                 fontSize: "11px",
                 width: "100px",
               }}
@@ -5142,7 +5150,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
           marginLeft: "120px",
           width: "calc(100vw - 120px)",
           maxWidth: "calc(100vw - 120px)",
-          padding: activeModule === "Script" ? "10px" : "0",
+          padding: normalizeModuleName(activeModule) === SCRIPT_BREAKDOWN_MODULE ? "10px" : "0",
           fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
           boxSizing: "border-box",
           position: "fixed",
