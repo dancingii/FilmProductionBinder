@@ -73,3 +73,11 @@ Phase 4K added inactive writing draft persistence foundations:
 current `scriptWritingDraft:${projectId}` localStorage key and payload shape for
 future compatibility. They are not used by active runtime yet and must not call
 production save paths such as `saveScenesDatabase`.
+
+Phase 4L added an isolated editor-only preview path to `WritingScript.jsx`.
+`WritingScript` still returns `null` by default and is not routed. When
+explicitly passed `previewMode="editor"`, it uses `useWritingDraftState` and
+renders only `WritingScriptEditor`, save status, and a writing-only New Script
+button. It does not receive or call production mutation callbacks. Follow-up:
+`createEmptySceneHeadingNode` still uses the shared scene identity helper for
+draft node IDs and should later be clarified as writing-scene identity.

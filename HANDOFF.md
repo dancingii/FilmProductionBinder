@@ -8,6 +8,9 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ### Working
 
+- Phase 4L isolated WritingScript editor preview is implemented: `WritingScript` still returns `null` by default and is not routed, but can render an editor-only preview if explicitly passed `previewMode="editor"`.
+- The preview uses `useWritingDraftState(selectedProject)` and `WritingScriptEditor` only. It shows draft save status and a writing-only New Script button; it does not render timeline, scene list, beats, settings modal, or production UI.
+- Phase 4L did not edit Script.js, app routing, workflow routing, database code, `saveScenesDatabase`, production callbacks, production scenes, stripboard, schedules, tags, revisions, production characters, or production save paths.
 - Phase 4K writing draft persistence foundation is implemented: `src/components/modules/WritingScript/writingDraftPersistence.js` and `src/components/modules/WritingScript/useWritingDraftState.js` exist but are not used by active runtime.
 - The new helper preserves the current `scriptWritingDraft:${projectId}` localStorage key and payload shape for future compatibility.
 - Phase 4K did not route WritingScript, edit Script.js runtime behavior, change active localStorage behavior, import production callbacks, edit database code, touch `saveScenesDatabase`, or mutate production scenes/stripboard/schedules/tags/revisions/characters.

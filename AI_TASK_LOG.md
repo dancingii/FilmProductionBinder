@@ -28,6 +28,26 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 4L WritingScript Editor Preview
+
+**Task:**
+Make the non-routed WritingScript shell capable of rendering an isolated editor-only preview using WritingScript-owned draft state.
+
+**Files Changed:**
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `src/components/modules/WritingScript/ARCHITECTURE.md`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Summary:**
+Added an explicit `previewMode="editor"` path to `WritingScript`. The component still returns `null` by default and remains unrouted. In editor preview mode it uses `useWritingDraftState(selectedProject)`, renders `WritingScriptEditor`, shows writing draft save status, and provides a writing-only New Script action that creates draft nodes through writing draft helpers. No production callbacks or production scene data are imported or used.
+
+**Verification:**
+- Build: `npm run build` passed
+
+**Remaining Issues:**
+The New Script preview path uses `createEmptySceneHeadingNode`, which still relies on the shared scene identity helper. This remains compatible for now but should be clarified later as writing-scene identity, not production scene identity.
+
 ### 2026-05-15 — Codex — Phase 4K Writing Draft Persistence Foundation
 
 **Task:**
