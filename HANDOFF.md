@@ -8,6 +8,9 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ### Working
 
+- Phase 4I non-routed WritingScript shell is implemented: `src/components/modules/WritingScript/WritingScript.jsx` returns `null` by default and is not routed.
+- If explicitly passed `previewShell={true}`, `WritingScript` renders only hidden inert surface markers; it does not mount active editor/timeline components, create runtime state, call callbacks, or write persistence.
+- Phase 4I did not edit Script.js, app routing, workflow routing, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, production characters, or production save paths.
 - Phase 4H writing settings ownership placeholder is implemented: `src/components/modules/WritingScript/WritingSettingsModal.jsx` exists and currently returns `null`.
 - Actual writing settings runtime behavior remains in the legacy mixed `Script.js`: target page count, target page modal, writing timeline visibility, beats visibility, scene-number visibility, editor element type controls, save-status display, toolbar settings buttons, and localStorage-backed preferences were not moved or edited.
 - Phase 4H did not edit Script runtime logic, target page behavior, timeline/beats/scene-number visibility behavior, app routing, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, or production characters.

@@ -28,6 +28,26 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 4I Non-Routed WritingScript Shell
+
+**Task:**
+Create a non-routed WritingScript shell that composes the future WritingScript surfaces without changing runtime behavior.
+
+**Files Changed:**
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `src/components/modules/WritingScript/ARCHITECTURE.md`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Summary:**
+Updated `WritingScript.jsx` from a null-only placeholder into a non-routed future shell. It returns `null` by default. If explicitly passed `previewShell={true}`, it renders only hidden inert surface markers for the future WritingTimelinePanel, WritingScriptEditor, WritingSceneList, WritingBeatsPanel, and WritingSettingsModal; it does not mount active editor/timeline components or create runtime state.
+
+**Verification:**
+- Build: `npm run build` passed
+
+**Remaining Issues:**
+WritingScript is still not routed. Future phases must provide writing-only props/state before activating this shell.
+
 ### 2026-05-15 — Codex — Phase 4H Writing Settings Placeholder
 
 **Task:**

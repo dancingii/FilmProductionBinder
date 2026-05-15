@@ -62,3 +62,8 @@ module. Future extraction must be careful because these controls currently
 affect target page count, writing timeline visibility, beats visibility, scene
 number visibility, writing editor element type, save status display, and
 localStorage-backed writing preferences.
+
+Phase 4I updated `WritingScript.jsx` into a non-routed shell. It returns `null`
+by default and only renders an inert hidden preview shell when explicitly passed
+`previewShell={true}`. It does not own runtime state yet and must not be routed
+until writing-only props, persistence, and data boundaries are ready.
