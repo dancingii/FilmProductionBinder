@@ -28,6 +28,41 @@ main
 
 ## Completed Tasks
 
+### Phase 4N — Writing Toolbar/Header
+
+**Date:** 2026-05-15
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+**Controls added to Writing toolbar/header:**
+- New Script button (only shown when `writingDraftNodes.length === 0`)
+- Element selector: `<select>` of all 7 node types, disabled when no node is focused, visible once a draft exists
+- Page count: "N pg / N pgs", sourced from `onPageCountChange` callback fed by editor's `paginatedPages.length`
+- Save status: fixed 68px width, shows Saved / Unsaved / Saving... / Save error
+
+**Element selector position fix:**
+- Added `showFloatingElementSelector = true` prop to `WritingScriptEditor`
+- Wrapped the existing fixed bottom-right floating element panel with `showFloatingElementSelector && activeNode && ...`
+- Passed `showFloatingElementSelector={false}` from `WritingScript` — floating selector is now suppressed
+- Element selector in the toolbar uses `activeElementType` state (bidirectional with editor via existing `onActiveElementTypeChange` → `activeElementType` prop cycle)
+
+**WritingScriptEditor edits:** Yes — minimal prop additions only (`showFloatingElementSelector`, `onPageCountChange`). No behavior changes, no production code touched.
+
+**Body/action persistence bug:** Not fixed in Phase 4N. Noted as highest-priority follow-up.
+
+**Production callback isolation confirmed:**
+- No production callbacks (`setScenes`, `saveScenesDatabase`, `setStripboardScenes`, `syncStripboardScenesToDatabase`, `tagWord`, `untagWordInstance`, production character/revision/schedule callbacks) were passed into WritingScript.
+- `database.js` was not touched.
+- `saveScenesDatabase` was not touched.
+- Pre-Production and Production behavior unchanged.
+
+**Build result:** Compiled successfully.
+
 ### 2026-05-15 — Codex — Phase 4M WritingScript Editor Activation
 
 **Task:**

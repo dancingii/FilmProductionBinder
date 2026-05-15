@@ -759,7 +759,9 @@ export default function ScriptWritingEditor({
   onActiveElementTypeSelect = null,
   sceneRefs = null,
   onSceneStatsChange = null,
+  onPageCountChange = null,
   showSceneNumbers = true,
+  showFloatingElementSelector = true,
 }) {
   const [nodes, setNodes] = useState(() => normalizeNodes(initialNodes));
   const [activeNodeId, setActiveNodeId] = useState(null);
@@ -816,6 +818,10 @@ export default function ScriptWritingEditor({
   useEffect(() => {
     onSceneStatsChange?.(getSceneStatsFromPaginatedPages(paginatedPages, nodes));
   }, [nodes, onSceneStatsChange, paginatedPages]);
+
+  useEffect(() => {
+    onPageCountChange?.(paginatedPages.length);
+  }, [paginatedPages.length, onPageCountChange]);
 
   const updateActiveElementRect = (nodeId = activeNodeId) => {
     requestAnimationFrame(() => {
@@ -2443,7 +2449,7 @@ export default function ScriptWritingEditor({
         </div>
       )}
 
-      {activeNode && (
+      {showFloatingElementSelector && activeNode && (
         <div
           contentEditable={false}
           style={{

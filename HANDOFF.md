@@ -10,7 +10,7 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ### Last Completed Implementation Phase
 
-Phase 4M: WritingScript editor-only activation.
+Phase 4N: WritingScript Writing toolbar/header added.
 
 ### Architecture Goal
 
@@ -36,29 +36,32 @@ Phase 4M: WritingScript editor-only activation.
 - Phase 4K: WritingScript-owned draft persistence/helper hook added.
 - Phase 4L: isolated editor-only preview mode added.
 - Phase 4M: Writing workflow now routes to `WritingScript` editor-only mode.
+- Phase 4N: Writing toolbar/header added; element selector moved from fixed bottom-right into toolbar.
 
-### Actual Manual Test Results After Phase 4M
+### Actual Manual Test Results After Phase 4N
 
-- Writing tab now shows the isolated `WritingScript` editor-only surface.
-- The old production/pre-production sidebar is gone in Writing mode.
-- Scene window, beats window, timeline, and settings/header controls are not present in Writing mode. This is expected for the editor-only activation phase and is intentionally incomplete.
-- The element selector/control appears in the bottom-right corner. This is not the desired final location and needs a future layout pass.
-- New Script appears to create a writing draft, but testing could not fully confirm all behavior from the current UI.
-- Reload seems to preserve the scene heading, but not the body/action text. This is the highest-priority next bug/regression in the new isolated WritingScript editor path.
-- It is not yet clear from the UI whether Writing actions are completely isolated from production scenes.
+- Writing tab shows the isolated `WritingScript` editor-only surface with a stable 40px toolbar/header.
+- Toolbar contains: New Script button (when no draft), element type selector (when draft exists), page count, and save status — all in the correct positions.
+- Element selector now lives in the Writing toolbar, not fixed bottom-right corner.
+- Element selector is disabled (greyed) when no node is focused; enables and shows active node type when focused.
+- Page count updates as content grows across pages.
+- Save status has fixed width and does not cause layout shift.
+- New Script button is gone once the draft is created; element selector takes its place stably.
+- Scene window, beats window, timeline, and settings/header controls are not present in Writing mode. This is intentional and incomplete.
+- Reload appears to preserve the scene heading, but not the body/action text. This is the highest-priority next bug.
 - Pre-Production still shows the existing module system.
 - Production still shows the existing module system.
-- Script Breakdown still appears to open and function.
-- Pre-Production Script Breakdown still contains the old writing-mode behavior/branches from legacy `Script.js`. This is expected for now because those branches have not yet been removed.
-- There may be a brief flash/load of the old writing side of Script Breakdown when switching workflows. Track this as a future routing/loading cleanup issue.
-- Phase 4M should be treated as the first rough activation of WritingScript, not a polished Writing workflow.
+- Script Breakdown still opens through the production path and behaves as before.
+- Pre-Production Script Breakdown still contains old writing-mode branches from legacy `Script.js`. Expected; not yet cleaned up.
+- Possible brief flash/load of the old writing side of Script Breakdown when switching workflows. Track as future routing cleanup.
 
 ### Next Recommended Phase
 
-Diagnose and fix the WritingScript editor persistence/body text issue before adding scene list, timeline, beats, settings, or Writing Characters. After persistence is reliable, add a proper Writing toolbar/layout pass, then continue with scene list/timeline/settings activation.
+Diagnose and fix the WritingScript editor persistence/body text issue (reload drops body/action text but preserves scene heading). After persistence is reliable, continue with scene list, timeline, beats, or settings activation.
 
 ### Working
 
+- Phase 4N Writing toolbar/header is implemented: `WritingScript` now renders a stable 40px toolbar above the editor. Controls: New Script button (when no draft), element type selector (when draft exists, disabled when no node is focused), page count display (updates from `onPageCountChange` callback), and save status with fixed width. The floating bottom-right element selector inside `WritingScriptEditor` is suppressed via `showFloatingElementSelector={false}`. No production callbacks were passed into WritingScript. `database.js` and `saveScenesDatabase` were not touched. Pre-Production and Production behavior were not changed.
 - Phase 4M editor-only WritingScript activation is implemented: when `activeWorkflow === "writing"`, `App` renders `WritingScript` with `previewMode="editor"` instead of the existing production/pre-production module sidebar.
 - Pre-Production and Production still render the existing sidebar/module system unchanged, including Script Breakdown through the compatibility wrapper around legacy `Script.js`.
 - WritingScript currently receives only `selectedProject`, `user`, and `userRole`; no production scene, stripboard, schedule, tag, revision, character, database, or `saveScenesDatabase` callbacks are passed into WritingScript.
@@ -125,9 +128,8 @@ Diagnose and fix the WritingScript editor persistence/body text issue before add
 
 ### Broken / Needs Work
 
-- Highest priority: WritingScript editor-only mode appears not to persist body/action text on reload. Scene heading seems to persist, but body/action text does not.
-- WritingScript element selector/control appears in the bottom-right corner. It needs a future layout pass.
-- Writing mode does not yet show the writing scene list, beats window, timeline, settings/header controls, or Writing Characters. This is intentional for Phase 4M but incomplete for real workflow use.
+- Highest priority: WritingScript editor-only mode appears not to persist body/action text on reload. Scene heading seems to persist, but body/action text does not. Do not chase this broadly until isolated — the root cause is unknown.
+- Writing mode does not yet show the writing scene list, beats window, timeline, settings/header controls, or Writing Characters. This is intentional but incomplete for real workflow use.
 - It is not yet clear from the UI whether Writing actions are fully isolated from production scenes. Verify while fixing persistence.
 - Script Breakdown still contains legacy writing-mode branches from `Script.js`. Do not remove them until WritingScript has stable editor persistence and the needed writing UI surfaces.
 - Possible brief flash/load of the old writing side of Script Breakdown when switching workflows. Track as future routing/loading cleanup.
