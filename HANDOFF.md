@@ -8,6 +8,9 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ### Working
 
+- Phase 4F beats/outline ownership placeholder is implemented: `src/components/modules/WritingScript/WritingBeatsPanel.jsx` exists and currently returns `null`.
+- Actual beats runtime behavior remains in the legacy mixed `Script.js`: `BeatsList`, beat state, import/detail UI, localStorage persistence, and `handleConvertBeatToScene` were not moved or edited.
+- Phase 4F did not edit Script runtime logic, beat conversion, app routing, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, or production characters.
 - Phase 4E timeline ownership wrapper is implemented: `src/components/modules/WritingScript/WritingTimelinePanel.jsx` now wraps the existing experimental `WritingTimeline` component.
 - `Script.js` still imports `src/experimental/writingTimeline/WritingTimeline.jsx` directly; Phase 4E intentionally did not change existing timeline runtime imports.
 - Phase 4E did not edit `WritingTimeline.jsx`, `writingTimelineUtils.js`, Script runtime logic, app routing, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, or production characters.

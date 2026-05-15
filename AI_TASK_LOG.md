@@ -28,6 +28,27 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 4F Writing Beats Panel Placeholder
+
+**Task:**
+Create a WritingScript-owned beats/outline panel placeholder without changing runtime behavior.
+
+**Files Changed:**
+- `src/components/modules/WritingScript/WritingBeatsPanel.jsx`
+- `src/components/modules/WritingScript/index.js`
+- `src/components/modules/WritingScript/ARCHITECTURE.md`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Summary:**
+Added `WritingBeatsPanel` as a non-rendering ownership placeholder and exported it from the WritingScript module index. Actual beats state, BeatsList, import/detail UI, persistence, and beat conversion remain in the legacy mixed Script module unchanged.
+
+**Verification:**
+- Build: `npm run build` passed
+
+**Remaining Issues:**
+Future extraction must handle `handleConvertBeatToScene` carefully because it currently creates production scenes directly. That behavior should become writing-only draft behavior or move behind the explicit Writing-to-Pre-Production handoff.
+
 ### 2026-05-15 — Codex — Phase 4E Writing Timeline Panel Wrapper
 
 **Task:**

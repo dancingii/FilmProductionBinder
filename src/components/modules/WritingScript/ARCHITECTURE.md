@@ -44,3 +44,9 @@ compatibility re-export while the mixed Script module is extracted.
 Phase 4E added `WritingTimelinePanel.jsx` as a pass-through ownership wrapper
 around `src/experimental/writingTimeline/WritingTimeline.jsx`. The experimental
 timeline implementation and timeline utilities were not moved or edited.
+
+Phase 4F added `WritingBeatsPanel.jsx` as a placeholder ownership component.
+Actual beats/outline runtime logic still lives inside the legacy mixed Script
+module. Future extraction must be careful because beat conversion currently
+creates production scenes directly and should eventually become writing-only
+draft behavior or an explicit handoff action.
