@@ -28,6 +28,28 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 4C Writing Editor Relocation
+
+**Task:**
+Move the writing editor implementation into the WritingScript module area with a compatibility re-export and no runtime behavior changes.
+
+**Files Changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `src/components/modules/Script/ScriptWritingEditor.jsx`
+- `src/components/modules/WritingScript/index.js`
+- `src/components/modules/WritingScript/ARCHITECTURE.md`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Summary:**
+Moved the implementation source from `Script/ScriptWritingEditor.jsx` to `WritingScript/WritingScriptEditor.jsx`. The old Script path now re-exports the new implementation so existing imports from the legacy mixed Script module continue to resolve unchanged. The only implementation import path adjustment was switching the editor model import to `./writingDraftModel`.
+
+**Verification:**
+- Build: `npm run build` passed
+
+**Remaining Issues:**
+The editor is still rendered through the legacy mixed Script module. Future phases still need to route Writing to a dedicated WritingScript component with writing-only props.
+
 ### 2026-05-15 — Codex — Phase 4B Writing Draft Model Extraction
 
 **Task:**
