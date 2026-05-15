@@ -28,6 +28,27 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 4H Writing Settings Placeholder
+
+**Task:**
+Create a WritingScript-owned settings modal placeholder without changing runtime behavior.
+
+**Files Changed:**
+- `src/components/modules/WritingScript/WritingSettingsModal.jsx`
+- `src/components/modules/WritingScript/index.js`
+- `src/components/modules/WritingScript/ARCHITECTURE.md`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Summary:**
+Added `WritingSettingsModal` as a non-rendering ownership placeholder and exported it from the WritingScript module index. Actual target page count, timeline/beats/scene-number visibility, editor element type, save-status display, toolbar settings buttons, and localStorage-backed writing settings remain in the legacy mixed Script module unchanged.
+
+**Verification:**
+- Build: `npm run build` passed
+
+**Remaining Issues:**
+Future extraction must split writing settings from the legacy Script module without changing the current localStorage keys or visible writing toolbar behavior.
+
 ### 2026-05-15 — Codex — Phase 4G Writing Scene List Placeholder
 
 **Task:**

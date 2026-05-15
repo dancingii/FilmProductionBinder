@@ -8,6 +8,9 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ### Working
 
+- Phase 4H writing settings ownership placeholder is implemented: `src/components/modules/WritingScript/WritingSettingsModal.jsx` exists and currently returns `null`.
+- Actual writing settings runtime behavior remains in the legacy mixed `Script.js`: target page count, target page modal, writing timeline visibility, beats visibility, scene-number visibility, editor element type controls, save-status display, toolbar settings buttons, and localStorage-backed preferences were not moved or edited.
+- Phase 4H did not edit Script runtime logic, target page behavior, timeline/beats/scene-number visibility behavior, app routing, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, or production characters.
 - Phase 4G scene-list ownership placeholder is implemented: `src/components/modules/WritingScript/WritingSceneList.jsx` exists and currently returns `null`.
 - Actual scene-list runtime behavior remains in the legacy mixed `Script.js`: `SceneList`, writing draft scene derivation, display labels, scene refs, drag/reorder, page metadata display, and scene selection were not moved or edited.
 - Phase 4G did not edit Script runtime logic, scene list behavior, drag/reorder behavior, page metadata display, app routing, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, or production characters.

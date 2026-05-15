@@ -55,3 +55,10 @@ Phase 4G added `WritingSceneList.jsx` as a placeholder ownership component.
 Actual writing scene-list runtime logic still lives inside the legacy mixed
 Script module. Future extraction must be careful because the current `SceneList`
 serves both writing draft scenes and production/script-breakdown scenes.
+
+Phase 4H added `WritingSettingsModal.jsx` as a placeholder ownership component.
+Actual writing settings runtime logic still lives inside the legacy mixed Script
+module. Future extraction must be careful because these controls currently
+affect target page count, writing timeline visibility, beats visibility, scene
+number visibility, writing editor element type, save status display, and
+localStorage-backed writing preferences.
