@@ -28,6 +28,40 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 4M WritingScript Editor Activation
+
+**Task:**
+Route the Writing workflow to the dedicated WritingScript module in editor-only mode while leaving Pre-Production and Production on the existing module system.
+
+**Files Changed:**
+- `src/App.js`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Summary:**
+Added the first active WritingScript route. When `activeWorkflow === "writing"`, `App` now renders `WritingScript` with `previewMode="editor"` in a fixed workspace pane and does not render the existing production/pre-production module sidebar. Pre-Production and Production continue to render the existing sidebar/module system unchanged. WritingScript receives only `selectedProject`, `user`, and `userRole`; no production mutation callbacks are passed.
+
+**Verification:**
+- Build: `npm run build` passed
+- Manual: Writing tab shows the isolated WritingScript editor-only surface.
+- Manual: The old production/pre-production sidebar is gone in Writing mode.
+- Manual: Pre-Production still shows the existing module system.
+- Manual: Production still shows the existing module system.
+- Manual: Script Breakdown still appears to open and function.
+- Manual: New Script appears to create a writing draft, but current UI testing did not fully confirm all behavior.
+- Manual: Reload appears to preserve the scene heading, but not body/action text.
+- Manual: It is not yet clear from the UI whether Writing actions are completely isolated from production scenes.
+
+**Remaining Issues:**
+- Phase 4M is the first rough activation of WritingScript, not a polished Writing workflow.
+- Editor-only Writing mode is intentionally incomplete. Scene window, beats window, timeline, and settings/header controls are not active yet.
+- Highest-priority next bug: body/action text persistence appears broken in the new isolated WritingScript editor path. Scene heading persistence appears to work on reload, but body/action text does not.
+- The element selector/control appears in the bottom-right corner. This is not the desired final location and needs a future layout pass.
+- Script Breakdown still contains legacy writing-mode behavior/branches from `Script.js` until later cleanup.
+- Pre-Production Script Breakdown still contains the old writing-mode behavior/branches from legacy `Script.js`; this is expected for now.
+- There may be a brief flash/load of the old writing side of Script Breakdown when switching workflows. Track this as a future routing/loading cleanup issue.
+- Handoff and Writing Characters remain inactive follow-up phases.
+
 ### 2026-05-15 — Codex — Phase 4L WritingScript Editor Preview
 
 **Task:**
