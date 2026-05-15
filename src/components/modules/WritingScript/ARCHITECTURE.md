@@ -50,3 +50,8 @@ Actual beats/outline runtime logic still lives inside the legacy mixed Script
 module. Future extraction must be careful because beat conversion currently
 creates production scenes directly and should eventually become writing-only
 draft behavior or an explicit handoff action.
+
+Phase 4G added `WritingSceneList.jsx` as a placeholder ownership component.
+Actual writing scene-list runtime logic still lives inside the legacy mixed
+Script module. Future extraction must be careful because the current `SceneList`
+serves both writing draft scenes and production/script-breakdown scenes.

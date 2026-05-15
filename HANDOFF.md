@@ -8,6 +8,9 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ### Working
 
+- Phase 4G scene-list ownership placeholder is implemented: `src/components/modules/WritingScript/WritingSceneList.jsx` exists and currently returns `null`.
+- Actual scene-list runtime behavior remains in the legacy mixed `Script.js`: `SceneList`, writing draft scene derivation, display labels, scene refs, drag/reorder, page metadata display, and scene selection were not moved or edited.
+- Phase 4G did not edit Script runtime logic, scene list behavior, drag/reorder behavior, page metadata display, app routing, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, or production characters.
 - Phase 4F beats/outline ownership placeholder is implemented: `src/components/modules/WritingScript/WritingBeatsPanel.jsx` exists and currently returns `null`.
 - Actual beats runtime behavior remains in the legacy mixed `Script.js`: `BeatsList`, beat state, import/detail UI, localStorage persistence, and `handleConvertBeatToScene` were not moved or edited.
 - Phase 4F did not edit Script runtime logic, beat conversion, app routing, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, or production characters.

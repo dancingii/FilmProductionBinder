@@ -28,6 +28,27 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 4G Writing Scene List Placeholder
+
+**Task:**
+Create a WritingScript-owned scene list placeholder without changing runtime behavior.
+
+**Files Changed:**
+- `src/components/modules/WritingScript/WritingSceneList.jsx`
+- `src/components/modules/WritingScript/index.js`
+- `src/components/modules/WritingScript/ARCHITECTURE.md`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Summary:**
+Added `WritingSceneList` as a non-rendering ownership placeholder and exported it from the WritingScript module index. Actual scene list UI, writing draft scene derivation, display labels, drag/reorder, page metadata display, scene refs, and selection behavior remain in the legacy mixed Script module unchanged.
+
+**Verification:**
+- Build: `npm run build` passed
+
+**Remaining Issues:**
+Future extraction must split the current mixed `SceneList`, which serves both writing draft scenes and production/script-breakdown scenes.
+
 ### 2026-05-15 — Codex — Phase 4F Writing Beats Panel Placeholder
 
 **Task:**
