@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import ProjectSelector from "../ProjectSelector";
+import WorkflowTabs from "../workspace/WorkflowTabs";
 
 // Display Name Editor Component
 function DisplayNameEditor({ user }) {
@@ -128,6 +129,7 @@ function AuthWrapper({ children }) {
   const [userRole, setUserRole] = useState(null);
   const [modulePermissions, setModulePermissions] = useState(null);
   const [showTeamModal, setShowTeamModal] = useState(false);
+  const [activeWorkflow, setActiveWorkflow] = useState("writing");
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -856,8 +858,9 @@ function AuthWrapper({ children }) {
           backgroundColor: "#2196F3",
           color: "white",
           padding: "10px 20px",
-          display: "flex",
-          justifyContent: "space-between",
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
+          columnGap: "16px",
           alignItems: "center",
           fontSize: "14px",
           position: "fixed",
@@ -866,29 +869,62 @@ function AuthWrapper({ children }) {
           right: 0,
           zIndex: 10000,
           fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+          boxSizing: "border-box",
         }}
       >
-        <div>
-          Welcome, <DisplayNameEditor user={user} />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "14px",
+            minWidth: 0,
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span style={{ flexShrink: 0 }}>
+            Welcome, <DisplayNameEditor user={user} />
+          </span>
+          {selectedProject && (
+            <span
+              style={{
+                fontWeight: "bold",
+                fontSize: "16px",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {selectedProject.name}
+            </span>
+          )}
         </div>
-        {selectedProject && (
-          <div
-            style={{
-              position: "absolute",
-              left: "50%",
-              transform: "translateX(-50%)",
-              fontWeight: "bold",
-              fontSize: "16px",
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              pointerEvents: "none",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {selectedProject.name}
-          </div>
-        )}
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            minWidth: 0,
+          }}
+        >
+          {selectedProject && (
+            <WorkflowTabs
+              activeWorkflow={activeWorkflow}
+              onWorkflowChange={setActiveWorkflow}
+            />
+          )}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: "10px",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            minWidth: 0,
+          }}
+        >
           {selectedProject && (
             <>
               <button
