@@ -28,6 +28,28 @@ main
 
 ## Completed Tasks
 
+### 2026-05-15 — Codex — Phase 4B Writing Draft Model Extraction
+
+**Task:**
+Extract pure writing draft model helpers into the new WritingScript module area without changing runtime behavior.
+
+**Files Changed:**
+- `src/components/modules/WritingScript/writingDraftModel.js`
+- `src/components/modules/WritingScript/index.js`
+- `src/components/modules/WritingScript/ARCHITECTURE.md`
+- `src/components/modules/Script/scriptWritingModel.js`
+- `AI_TASK_LOG.md`
+- `HANDOFF.md`
+
+**Summary:**
+Moved the existing writing draft model exports into `WritingScript/writingDraftModel.js`. The legacy `Script/scriptWritingModel.js` file is now a compatibility re-export, so existing imports from `Script.js` and `ScriptWritingEditor.jsx` continue to work unchanged. Helper behavior, return shapes, ID behavior, metadata behavior, and scene conversion behavior were intentionally preserved.
+
+**Verification:**
+- Build: `npm run build` passed
+
+**Remaining Issues:**
+`documentNodesFromScenes` and `scenesFromDocumentNodes` still preserve the existing production-shaped scene conversion behavior. They should be split later into writing-only draft helpers and explicit handoff mappers.
+
 ### 2026-05-15 — Codex — Phase 4A Script Split Structure
 
 **Task:**

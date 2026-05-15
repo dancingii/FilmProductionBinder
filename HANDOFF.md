@@ -8,6 +8,10 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ### Working
 
+- Phase 4B writing draft model extraction is implemented: `src/components/modules/WritingScript/writingDraftModel.js` is now the source file for the existing writing draft model exports.
+- `src/components/modules/Script/scriptWritingModel.js` remains as a compatibility re-export so existing `Script.js` and `ScriptWritingEditor.jsx` imports keep working unchanged.
+- Phase 4B did not change app routing, Script runtime behavior, database code, persistence behavior, scenes, writing draft state, stripboard data, schedules, tags, revisions, or production characters.
+- Known follow-up from Phase 4B: `documentNodesFromScenes` and `scenesFromDocumentNodes` still preserve the current production-shaped scene conversion behavior and should later be split into writing-only helpers plus handoff mappers.
 - Phase 4A structure-only split preparation is implemented: new `WritingScript`, `WritingCharacters`, `ScriptBreakdown`, and workspace `handoff` folders exist with architecture notes.
 - `ScriptBreakdown` is currently a temporary pass-through wrapper around the legacy mixed `src/components/modules/Script/Script.js` component.
 - `App.js` now imports the production-facing Script Breakdown module through `src/components/modules/ScriptBreakdown`; runtime props and behavior are intended to be unchanged.
