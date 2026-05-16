@@ -6,15 +6,40 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ## Current Known State
 
-## Claude Handoff — Workflow Split Through Phase 4W
+## Claude Handoff — Workflow Split Through Timeline Fix
 
 ### Last Completed Phase
 
-Architecture Audit (documentation-only): Full codebase audit and documentation created in `docs/`. Six documents cover app architecture, prop flow, module ownership, Writing/Production boundaries, data storage, and regression tests. No runtime code was changed. Key findings: WritingScript isolation confirmed. Mood overlay localStorage keys are unscoped (global) and WritingScript does not persist overlay changes back — this is the next known bug. `showBeatsTrack` is not persisted by WritingScript (unlike `showWritingTimeline`). See `docs/` for full details.
+**Writing Timeline Visibility Fix** (2026-05-16): Fixed Scene Timeline and Beats Timeline to operate as fully independent tracks in WritingTimeline.jsx.
+
+Root cause: `showSceneTrack` was not in WritingTimeline's function signature — the prop was silently ignored and the scene track always rendered. `hasVisibleBeatsTrack` was gated on `beats.length > 0`, so Beats Timeline with no beats showed nothing.
+
+Fixes applied to `src/experimental/writingTimeline/WritingTimeline.jsx`:
+- Added `showSceneTrack = true` to function signature.
+- Decoupled `hasVisibleBeatsTrack = showBeatsTrack` from beat count.
+- Fixed early return: `(showSceneTrack && scenes.length > 0) || showBeatsTrack`.
+- Gated entire scene track scroll area on `{showSceneTrack && ...}`.
+- Gated header labels and Scenes Zoom controls on `showSceneTrack`.
+- Gated beat count text on `showBeatsTrack && hasBeats`.
+
+WritingScript.jsx was not modified — already passes correct props.
+
+Behavior matrix verified correct:
+- Neither checked → no timeline.
+- Scene Timeline only → scene track; no beats track.
+- Beats Timeline only (with beats) → beats track; no scene track.
+- Beats Timeline only (no beats) → empty beats rail; no scene track; no fallback.
+- Both checked → both tracks.
+
+Build: Compiled successfully, no warnings.
 
 ### Previous Implementation Phase
 
-Phase 4Z: Full copy/adaptation of Script.js writing-mode implementation into WritingScript.jsx. All prior WritingScript.jsx internals replaced. WritingScript is now a self-contained writing-only module with full UI parity with Script.js writing mode. Production paths (saveScenesDatabase, setScenes, stripboard sync, tag callbacks) are removed. Beat Convert to Scene is disabled (`onConvertItem={null}`). Beats persist at `scriptBeats:${projectId}`. Draft persists at `scriptWritingDraft:${projectId}`. Build: clean (Compiled successfully, no warnings). Script.js was not modified.
+Architecture Audit (documentation-only): Full codebase audit and documentation created in `docs/`. Six documents cover app architecture, prop flow, module ownership, Writing/Production boundaries, data storage, and regression tests. No runtime code was changed.
+
+### Prior Implementation Phase
+
+Phase 4Z: Full copy/adaptation of Script.js writing-mode implementation into WritingScript.jsx. All prior WritingScript.jsx internals replaced. WritingScript is now a self-contained writing-only module with full UI parity with Script.js writing mode. Production paths (saveScenesDatabase, setScenes, stripboard sync, tag callbacks) are removed. Beat Convert to Scene is disabled (`onConvertItem={null}`). Beats persist at `scriptBeats:${projectId}`. Draft persists at `scriptWritingDraft:${projectId}`. Build: clean. Script.js was not modified.
 
 ### Architecture Goal
 
@@ -84,11 +109,12 @@ Pending manual verification (test checklist from Phase 4Z):
 
 ### Next Recommended Phase
 
-Diagnose and fix the WritingScript editor persistence/body text issue (reload drops body/action text but preserves scene heading). The `handleWritingDraftNodesChange` debounce saves to localStorage after 650ms. Fix: add `beforeunload` immediate save in `useWritingDraftState.js`.
+**Timeline follow-up (narrow):** Beat drag-to-position on timeline — beats currently render as markers but cannot be dragged to specific positions. Beat hover tooltip — beat markers are clickable but show no tooltip on hover. Both are listed as J1/J2 in `docs/REGRESSION_TEST_CHECKLIST.md`.
 
-### Next Recommended Phase
-
-Diagnose and fix the WritingScript editor persistence/body text issue (reload drops body/action text but preserves scene heading). The `handleWritingDraftNodesChange` debounce saves to localStorage after 650ms. Fix: add `beforeunload` immediate save in `useWritingDraftState.js`.
+**Known bugs to fix in dedicated phases (do not fix incidentally):**
+- `showBeatsTrack` not persisted across reload (unlike `showWritingTimeline`). Fix: add load/save effect in WritingScript matching the `showWritingTimeline` pattern. (`docs/REGRESSION_TEST_CHECKLIST.md` J4)
+- Mood overlay localStorage keys are unscoped — `scriptMoodOverlayEnabled` / `scriptMoodOverlaySettings` are global, not per-project. WritingScript reads but never writes them back. Fix: scope to `${key}:${projectId}`. (`docs/REGRESSION_TEST_CHECKLIST.md` J3)
+- Presence channel `"script"` is shared between WritingScript and Script.js — should be `"writing-script"` in WritingScript. (`docs/REGRESSION_TEST_CHECKLIST.md` J5)
 
 ### Working
 

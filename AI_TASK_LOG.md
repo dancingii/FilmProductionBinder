@@ -28,6 +28,51 @@ main
 
 ## Completed Tasks
 
+### Writing Timeline Visibility Fix — Scene and Beats Tracks Independent
+
+**Date:** 2026-05-16
+**Branch:** main
+
+**Files changed:**
+- `src/experimental/writingTimeline/WritingTimeline.jsx` — five targeted changes (see below)
+- `build/` — rebuilt successfully (Compiled successfully, no warnings)
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Motivation:**
+Scene Timeline and Beats Timeline checkboxes were not independent. Enabling only Beats Timeline still showed the scene track because `showSceneTrack` was not in WritingTimeline's function signature (prop was silently ignored) and the scene track div rendered unconditionally. Enabling Beats Timeline with no beats showed nothing at all because `hasVisibleBeatsTrack = showBeatsTrack && beats.length > 0` hid the beats area when empty.
+
+**Changes to `WritingTimeline.jsx`:**
+1. Added `showSceneTrack = true` to the function signature (was missing — prop was silently ignored).
+2. Replaced `hasVisibleBeatsTrack = showBeatsTrack && beats.length > 0` with `hasVisibleBeatsTrack = showBeatsTrack` and `hasBeats = Array.isArray(beats) && beats.length > 0` (decoupled area visibility from content).
+3. Changed early return from `if (!scenes.length) return null` to `const hasAnythingToShow = (showSceneTrack && scenes.length > 0) || showBeatsTrack; if (!hasAnythingToShow) return null`.
+4. Scene Timeline label and Scenes Zoom controls gated on `{showSceneTrack && ...}`; "Beats Timeline" header label shown only when `!showSceneTrack && showBeatsTrack`.
+5. Entire scene track scroll area wrapped in `{showSceneTrack && ...}`.
+6. Beat count text gated on `showBeatsTrack && hasBeats`.
+
+**WritingScript.jsx was not modified** — already passes `showSceneTrack={showWritingTimeline}` and `showBeatsTrack={showBeatsTrack}` correctly.
+
+**Behavior after fix:**
+- Neither checked → timeline does not render.
+- Scene Timeline only → scene track visible; beats track hidden.
+- Beats Timeline only (with beats) → beats track visible; scene track hidden.
+- Beats Timeline only (no beats) → empty beats rail visible; scene track hidden; no fallback to scenes.
+- Both checked → both tracks visible.
+
+**Hard limits honored:**
+- No database.js, saveScenesDatabase, setScenes, setStripboardScenes, or production callbacks touched.
+- No Pre-Production, Production, or Script Breakdown behavior changed.
+- No localStorage key names changed.
+- No beat drag-to-position or hover tooltip implemented.
+
+**Build:** `npm run build` — Compiled successfully, no warnings.
+
+**Pending (not in this phase):**
+- Beat drag-to-position on timeline.
+- Beat hover tooltip on timeline.
+- `showBeatsTrack` persistence across reload (known bug — `docs/REGRESSION_TEST_CHECKLIST.md` J4).
+
+---
+
 ### Architecture Audit — Full Codebase Documentation
 
 **Date:** 2026-05-16
