@@ -69,3 +69,18 @@ export const normalizeScheduleBlock = (block) => {
     ...(sceneNumber !== null ? { sceneNumber } : {}),
   };
 };
+
+export const isValidSceneId = (id) => {
+  return typeof id === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+};
+
+export const createSceneId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, char =>
+    (Number(char) ^ Math.random() * 16 >> Number(char) / 4).toString(16)
+  );
+};

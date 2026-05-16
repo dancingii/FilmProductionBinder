@@ -200,76 +200,124 @@ const updateScenesWithPageData = (scenes) => {
   });
 };
 
+// Canonical time-of-day values and accepted synonyms used when parsing free-text headings.
+const TIME_OF_DAY_SYNONYMS = {
+  DAY:   ["DAY", "MORNING", "AFTERNOON", "NOON"],
+  NIGHT: ["NIGHT", "EVENING", "MIDNIGHT"],
+  DAWN:  ["DAWN", "SUNRISE"],
+  DUSK:  ["DUSK", "SUNSET", "TWILIGHT"],
+  OTHER: ["OTHER"],
+};
+
+// Multi-word modifiers listed longest-first so greedy matching picks them up correctly.
+const KNOWN_MODIFIERS = [
+  "MOMENTS LATER", "SAME TIME", "CONTINUOUS", "EARLIER", "MEANWHILE", "LATER", "SAME",
+];
+
+const normalizeTimeOfDay = (segment) => {
+  const u = (segment || "").trim().toUpperCase();
+  for (const [canonical, synonyms] of Object.entries(TIME_OF_DAY_SYNONYMS)) {
+    if (synonyms.includes(u)) return canonical;
+  }
+  return "";
+};
+
+/**
+ * Parses a free-text screenplay heading into structured fields.
+ *
+ * Primary format (produced by buildHeadingString):
+ *   INT. LOCATION - TIMEOFDAY - MODIFIER
+ *
+ * Fallback (legacy space-separated, no dashes):
+ *   EXT. LOCATION NIGHT CONTINUOUS
+ *
+ * Supports INT., EXT., and I/E prefixes.
+ * Returns { intExt, location, timeOfDay, modifier } — all strings, empty string when absent.
+ */
 const parseSceneHeading = (content) => {
-  console.log("=== PARSING SCENE HEADING ===");
-  console.log("Input:", content);
+  if (!content) return { intExt: "", location: "", timeOfDay: "", modifier: "" };
 
-  const metadata = {};
-  const parts = content.split(/\s+/);
+  const raw = content.trim().toUpperCase();
+  const result = { intExt: "", location: "", timeOfDay: "", modifier: "" };
 
-  // Get INT/EXT
-  if (
-    parts[0] &&
-    (parts[0].toUpperCase() === "INT." || parts[0].toUpperCase() === "EXT.")
-  ) {
-    metadata.intExt = parts[0].toUpperCase();
+  // 1. Extract INT/EXT/I/E prefix
+  let rest = raw;
+  for (const prefix of ["INT.", "EXT.", "I/E"]) {
+    if (raw.startsWith(prefix + " ") || raw === prefix) {
+      result.intExt = prefix;
+      rest = raw.slice(prefix.length).trimStart();
+      break;
+    }
   }
 
-  // HARD-CODED mapping - only these 4 values allowed
-  if (
-    content.toUpperCase().includes("DAWN") ||
-    content.toUpperCase().includes("SUNRISE")
-  ) {
-    metadata.timeOfDay = "DAWN";
-  } else if (
-    content.toUpperCase().includes("DUSK") ||
-    content.toUpperCase().includes("SUNSET") ||
-    content.toUpperCase().includes("TWILIGHT")
-  ) {
-    metadata.timeOfDay = "DUSK";
-  } else if (
-    content.toUpperCase().includes("NIGHT") ||
-    content.toUpperCase().includes("EVENING") ||
-    content.toUpperCase().includes("MIDNIGHT")
-  ) {
-    metadata.timeOfDay = "NIGHT";
-  } else if (
-    content.toUpperCase().includes("DAY") ||
-    content.toUpperCase().includes("MORNING") ||
-    content.toUpperCase().includes("AFTERNOON") ||
-    content.toUpperCase().includes("NOON")
-  ) {
-    metadata.timeOfDay = "DAY";
-  } else {
-    metadata.timeOfDay = ""; // Force empty if no match
+  // 2. Dash-separated format: LOCATION - TIMEOFDAY - MODIFIER
+  //    Split on " - " and resolve each segment.
+  if (rest.includes(" - ")) {
+    const segments = rest.split(" - ").map((s) => s.trim()).filter(Boolean);
+    result.location = segments[0] || "";
+
+    if (segments.length >= 2) {
+      const todCanonical = normalizeTimeOfDay(segments[1]);
+      if (todCanonical) {
+        result.timeOfDay = todCanonical;
+        if (segments.length >= 3) {
+          result.modifier = segments.slice(2).join(" - ").trim();
+        }
+      } else {
+        // Second segment is not a time-of-day — treat everything after location as modifier.
+        result.modifier = segments.slice(1).join(" - ").trim();
+      }
+    }
+    return result;
   }
 
-  // Simple location extraction - everything after INT/EXT, remove only the time we detected
-  let location = parts.slice(1).join(" ");
-  if (metadata.timeOfDay) {
-    // Remove the time of day from location
-    location = location.replace(
-      new RegExp(`\\b${metadata.timeOfDay}\\b`, "gi"),
-      ""
-    );
+  // 3. Space-separated fallback (no dashes).
+  let remaining = rest;
+
+  // Extract modifier first (longest keyword wins).
+  for (const mod of KNOWN_MODIFIERS) {
+    const pattern = new RegExp(`\\b${mod.replace(/ /g, "\\s+")}\\b`, "i");
+    if (pattern.test(remaining)) {
+      result.modifier = mod;
+      remaining = remaining.replace(pattern, "").replace(/\s+/g, " ").trim();
+      break;
+    }
   }
 
-  // Remove common unwanted words
-  location = location.replace(
-    /\b(CONTINUOUS|LATER|MOMENTS LATER|SAME TIME|SAME|EARLIER|MEANWHILE|MORNING|AFTERNOON|EVENING|NIGHT|DAY|DAWN|DUSK|NOON|MIDNIGHT)\b/gi,
-    ""
-  );
+  // Extract time-of-day keyword.
+  let matchedSynonym = "";
+  outer: for (const [canonical, synonyms] of Object.entries(TIME_OF_DAY_SYNONYMS)) {
+    for (const syn of synonyms) {
+      if (new RegExp(`\\b${syn}\\b`).test(remaining)) {
+        result.timeOfDay = canonical;
+        matchedSynonym = syn;
+        break outer;
+      }
+    }
+  }
+  if (matchedSynonym) {
+    remaining = remaining
+      .replace(new RegExp(`\\b${matchedSynonym}\\b`, "gi"), "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
 
-  metadata.location = location
-    .replace(/[^\w\s]/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  // Remaining text (minus any stray dashes) is the location.
+  result.location = remaining.replace(/\s*-\s*/g, " ").replace(/\s+/g, " ").trim();
 
-  console.log("Output timeOfDay:", metadata.timeOfDay);
-  console.log("Output location:", metadata.location);
-  console.log("=== END PARSING ===");
+  return result;
+};
 
-  return metadata;
+/**
+ * Builds the canonical screenplay heading string from structured fields.
+ * Produces: INT. LOCATION - TIMEOFDAY - MODIFIER
+ * Missing or empty fields are omitted cleanly (no double spaces, no stray dashes).
+ */
+const buildHeadingString = ({ intExt = "", location = "", timeOfDay = "", modifier = "" } = {}) => {
+  const parts = [intExt, location].filter(Boolean);
+  if (timeOfDay) parts.push(`- ${timeOfDay}`);
+  if (modifier) parts.push(`- ${modifier}`);
+  return parts.join(" ").trim();
 };
 
 const extractLocations = (scenes) => {
@@ -532,6 +580,7 @@ export {
   LINES_PER_PAGE,
   updateScenesWithPageData,
   parseSceneHeading,
+  buildHeadingString,
   extractLocations,
   extractLocationsHierarchical,
   getElementStyle,
