@@ -28,6 +28,451 @@ main
 
 ## Completed Tasks
 
+### Architecture Audit — Full Codebase Documentation
+
+**Date:** 2026-05-16
+**Branch:** main
+
+**Files created:**
+- `docs/APP_ARCHITECTURE_MAP.md` — App.js routing, workflow branching, AuthWrapper, WorkflowTabs, module mounting
+- `docs/PROP_FLOW_MAP.md` — Full prop map for App, ScriptBreakdown, Script.js, WritingScript, WritingScriptEditor, WritingTimeline, SceneList, BeatsList
+- `docs/SCRIPT_MODULE_OWNERSHIP.md` — Script.js production vs. writing mode responsibilities, what was copied into WritingScript, what remains only in Script.js
+- `docs/WRITING_VS_PRODUCTION_BOUNDARIES.md` — Canonical boundary definition: what WritingScript may own, must not receive, and future handoff design
+- `docs/DATA_STORAGE_MAP.md` — All localStorage keys with owner/shape/reader/writer; all Supabase tables; key risk areas (unscoped mood overlay keys)
+- `docs/REGRESSION_TEST_CHECKLIST.md` — Complete pre-commit checklist covering Writing editor, scene list, timeline, beats, settings, Script Breakdown, Stripboard, routing/layout, and data isolation
+
+**Key findings:**
+- WritingScript is correctly isolated — no production callbacks, no DB writes confirmed by grep
+- Mood overlay localStorage keys (`scriptMoodOverlayEnabled`, `scriptMoodOverlaySettings`) are UNSCOPED (global) in both WritingScript and Script.js init — WritingScript doesn't persist changes back; this is a known bug
+- `scriptBeats:${projectId}` and `scriptWritingDraft:${projectId}` are intentionally shared between WritingScript and Script.js writing mode
+- `showBeatsTrack` is NOT persisted by WritingScript (unlike `showWritingTimeline`)
+- Presence channel is `"script"` in both modules — should eventually be `"writing-script"`
+- `scriptTimelinePositions:${projectId}` is only written by Script.js, not by WritingScript
+
+**No runtime code was changed.**
+
+---
+
+### Phase 4Z — WritingScript: Full Copy of Script.js Writing Mode
+
+**Date:** 2026-05-16
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScript.jsx` — complete rewrite as full copy/adaptation of Script.js writing mode (~730 lines)
+- `build/` — rebuilt successfully (Compiled successfully, no warnings)
+- `HANDOFF.md`, `AI_TASK_LOG.md`, `src/components/modules/WritingScript/ARCHITECTURE.md`
+
+**Motivation:**
+User rejected the Phase 4Y partial stats fix and demanded a full direct copy/adaptation of the Script.js writing-mode implementation into WritingScript.jsx. All prior WritingScript.jsx internals were replaced.
+
+**What was copied from Script.js writing mode:**
+- All beat text helpers: `BEAT_MENU_COLORS`, `normalizeBeatText`, `createBeatId`, `stripBeatMarker`, `extractOriginalBeatNumber`, `isBeatSectionHeader`, `isActHeading`, `isNumberedBeatTitle`, `isBulletBeatTitle`, `isLikelyBeatTitle`, `createAutoBeatTitle`
+- `normalizeOutlineItems`, `parseBeatSheetText`
+- Full `BeatsList` component (drag/drop, color markers, context menu, act grouping, beat detail modal)
+- Full `SceneList` component with presence indicators, page stats display, drag/reorder
+- All writing state: `writingDraftNodes`, `writingDraftSaveStatus`, `writingScenePageStats`, `showWritingSceneNumbers`, `showWritingTimeline`, `targetPageCount`, `showTargetPageDialog`, `showMoodOverlaySettings`, `beats`, `activeSidePanelTab`, `showBeatsTrack`, `showBeatImportDialog`, `beatImportText`, `beatImportDraft`, `selectedBeatDetailId`, `collapsedActIds`, `currentIndex`, `currentSceneNumber`, `writingEditorElementType`
+- Full toolbar: Target button, element selector, save status, written/remaining/percent, New Script button, Settings button
+- WritingTimeline integration
+- Beat import modal, beat detail modal, target page dialog, settings modal (scene timeline/beats timeline/scene numbers/mood overlay toggles)
+- All handlers: `handleWritingDraftNodesChange`, `handleWritingSceneListReorder`, `handleTimelineSceneMove`, `handleStartNewScript`, all beat handlers
+- Multi-key stats lookup: `stableSceneId = headingNode.id || headingNode.sceneId || scene.sceneId || scene.id || fallback`
+
+**Production paths removed (per hard limits):**
+- No `saveScenesDatabase` call
+- No `setScenes` / `setStripboardScenes` / `syncStripboardScenesToDatabase`
+- No `tagWord` / `untagWordInstance`
+- No production character/revision/schedule/call-sheet/report callbacks
+- `handleStartNewScript` simplified to just `createEmptySceneHeadingNode()`
+- Beat Convert to Scene disabled: `onConvertItem={null}` in BeatsList, button always disabled
+- `isViewOnly` derived from `userRole === "viewer"` prop
+
+**Persistence keys (unchanged from Script.js writing mode):**
+- Draft: `scriptWritingDraft:${projectId}`
+- Beats: `scriptBeats:${projectId}`
+
+**Build:** `npm run build` — Compiled successfully, no warnings.
+
+---
+
+### Phase 4W — Writing Scene Page Stats: Full Reliable Rewrite
+
+**Date:** 2026-05-16
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/writingPageStats.js` — new file: `normalizeWritingDraftNodes` + `calculateWritingPageStats`
+- `src/components/modules/WritingScript/WritingScript.jsx` — replaced state-based stats with useMemo from normalized nodes
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Root cause (confirmed):**
+
+Two independent bugs combined to make all scenes show wrong stats:
+
+1. **Invalid sceneIds in existing localStorage data.** Scenes created via `transformEmptyNodeToNewSceneHeading` (Enter key from Action → Scene Heading) stored `sceneId: "temp-node-{timestamp}-{random}"` (non-UUID). `scenesFromDocumentNodes` checked `isValidSceneId(headingNode.sceneId)` and, finding false, called `createSceneId()` to generate a BRAND NEW UUID for `scene.id` on every render. Stats were keyed by the temp-node string. Lookup `scenePageStats[scene.id]` always found nothing for scene 2+.
+
+2. **Stats depended on editor-internal emission (`onSceneStatsChange`).** When the editor emitted stats, they were keyed by the heading node's `sceneId` (temp-node string). But `scene.id` in WritingSceneList came from `scenesFromDocumentNodes`, which generated a new UUID each render. Even after Phase 4V fixed the `createSceneId()` call for NEW scenes, existing saved drafts already had temp-node IDs in localStorage and were not migrated.
+
+**Phase 4V fix (partial — only helped future scenes):** Changed `transformEmptyNodeToNewSceneHeading` to use `createSceneId()` instead of `makeTempNodeId()` for scene heading `sceneId`. Didn't fix existing stored drafts.
+
+**Phase 4W fix (complete):**
+
+A. `normalizeWritingDraftNodes(nodes)` — repairs any heading node with non-UUID sceneId by assigning a new UUID. Body nodes following a heading inherit the corrected UUID. Returns original array reference (by reference equality) when no repair is needed, so useMemo doesn't thrash. Called on every `writingDraftNodes` change via useMemo in WritingScript.
+
+B. `calculateWritingPageStats(nodes)` — standalone stats calculator operating directly on normalized nodes. Duplicates the exact same algorithm as `getSceneStatsFromPaginatedPages` in WritingScriptEditor (same spacing rules, CHARS_PER_LINE_BY_TYPE, PAGE_BODY_HEIGHT_LINES=54, pageIndex/lineCursor, timelineStartPage, timelinePageLength, pageLength, pageNumber). Keyed by `node.sceneId` which is now guaranteed to be a valid UUID. No dependency on editor-internal state or `onSceneStatsChange`.
+
+C. In WritingScript.jsx: replaced `useState({})` / `setWritingScenePageStats` / `onSceneStatsChange` prop with:
+```js
+const normalizedDraftNodes = useMemo(() => normalizeWritingDraftNodes(writingDraftNodes), [writingDraftNodes]);
+const writingScenes = useMemo(() => scenesFromDocumentNodes(normalizedDraftNodes), [normalizedDraftNodes]);
+const writingScenePageStats = useMemo(() => calculateWritingPageStats(normalizedDraftNodes), [normalizedDraftNodes]);
+```
+A useEffect persists normalized nodes back to localStorage via `handleWritingDraftNodesChange` when repair was needed (avoids future re-normalization). Normalization effect has a ref guard to prevent double-writes.
+
+**Proof — different length scenes produce different stats:**
+```
+Scene 1 (heading + 1 short action): pageNumber=1, timelinePageLength=0.125 → 1/8
+Scene 2 (heading + 20 lines action): pageNumber=1, timelinePageLength=0.315 → 3/8
+Scene 3 (heading + 60 lines action): pageNumber=1, timelinePageLength=1.667 → 1 5/8
+```
+Verified by running the algorithm in Node.js before implementation.
+
+**Why "all scenes 1/8" happened:** When scene 2's stats lookup returned null (key mismatch), scene 2 showed nothing. But scene 1's stats always had `timelinePageLength = 0.125` because the editor-emitted stats used the node's `text` from React state (`nodes`), which was always empty (stale — `handleInput` never calls `setNodes`). So all visible stats showed 1/8.
+
+**Why "all scenes show last page's page number":** With the key mismatch, only scene 1's lookup succeeded. The `pageNumber` in its stats came from stale empty-text nodes where the line cursor never crossed a page boundary (lineCursor stayed small → pageIndex always 0 → pageNumber always 1). After Phase 4U added emission in `handleInput`, the live nodes had correct text, but the key mismatch still caused scene 2+ to show nothing. Any apparently "wrong" page numbers were from stale emissions.
+
+**localStorage compatibility:** Existing drafts with temp-node sceneIds are automatically normalized on load via the useMemo + useEffect pattern. No user action needed. Normalized IDs are written back to localStorage so future loads don't re-normalize.
+
+**Layout/beats/production:** No layout geometry, toolbar, sidebar, beats behavior, New Script behavior, production callbacks, database.js, or save paths changed.
+
+---
+
+### Phase 4V — Writing Scene IDs: Fix sceneId for New Scenes (Partial Fix)
+
+**Date:** 2026-05-15
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx` — import `createSceneId`; use it instead of `makeTempNodeId()` for sceneId in `transformEmptyNodeToNewSceneHeading`
+
+**Root cause addressed:** `transformEmptyNodeToNewSceneHeading` called `makeTempNodeId()` for the new scene's `sceneId`. This returned `"temp-node-{timestamp}-{random}"` (non-UUID), which failed `isValidSceneId()` in `scenesFromDocumentNodes`, causing a brand-new UUID to be generated for `scene.id` on every render — preventing stats from ever being found.
+
+**Why incomplete:** Only fixed NEW scenes created after the change. Existing localStorage drafts still had old temp-node sceneIds. Phase 4W added the full normalization pass.
+
+---
+
+### Phase 4U — Writing Scene Page Fractions: Fix Stale Stats (All Scenes 1/8)
+
+**Date:** 2026-05-15
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx` — emit stats from live DOM nodes on input
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Root cause (exact):**
+
+`handleInput` reads current DOM text into `liveNodes` and calls `emitNodesChange(liveNodes)` — but never calls `setNodes(liveNodes)`. The editor's internal `nodes` React state therefore stays at its initial/stale value (with empty text) throughout active typing. The stats `useEffect` fires only when `nodes` changes, which never happens during text input. The `initialNodes` sync effect is blocked by the `lastEmittedNodesPayloadRef` guard (it matches because `normalizeNodes(liveNodes) === liveNodes` in payload, so the guard short-circuits and `setNodes` is not called).
+
+**Consequence:** Stats (`timelinePageLength`) were always computed from nodes with empty text, resulting in minimal line counts. `timelinePageLength` always hit the `Math.max(0.125, ...)` fallback → every scene displayed "1/8" regardless of actual content length.
+
+**Why structural changes worked:** Enter/delete calls `updateNodes`, which calls `setNodes(normalizedNextNodes)` with DOM-fresh text via `readNodesFromDom`. That updates internal `nodes` → stats useEffect fires → correct stats computed. Text-only input never triggered this path.
+
+**Fix:** In `handleInput`, immediately after `emitNodesChange(liveNodes)`, also compute and emit page stats from the same live DOM nodes:
+```js
+const livePaginated = paginateNodesForScreen(liveNodes);
+onSceneStatsChange?.(getSceneStatsFromPaginatedPages(livePaginated, liveNodes));
+```
+Both functions are module-level (accessible in closure). `onSceneStatsChange` is the prop passed as `setWritingScenePageStats`. Stats now update in real-time as user types.
+
+**Old WritingSceneList fix preserved:** `stats?.timelinePageLength ?? stats?.pageLength` — correct field priority (decimal fraction first, integer whole-pages fallback).
+
+---
+
+### Phase 4T — Writing Scene Page Fractions: Wrong Field (All Showed "1")
+
+**Date:** 2026-05-15
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingSceneList.jsx` — changed `stats?.pageLength` to `stats?.timelinePageLength ?? stats?.pageLength`
+
+**Problem:** `pageLength` emitted by `getSceneStatsFromPaginatedPages` is an integer (whole pages, always >= 1). `formatScenePageLength(1)` = "1" (not a fraction). The decimal field is `timelinePageLength`. Fix: read `timelinePageLength` first (as legacy `getSceneMetadataColumns` does). This was correct but incomplete — stats themselves were still stale.
+
+---
+
+### Phase 4S — Writing Scene Page Fractions + New Script Caret Fix
+
+**Date:** 2026-05-15
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingSceneList.jsx` — added page fraction display
+- `src/components/modules/WritingScript/WritingScript.jsx` — fixed New Script creates only Scene Heading
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Problem A:** WritingSceneList only showed `pageNumber` (e.g., "Pg 2"), not fractional `pageLength` (e.g., "3/8"). The `pageLength` decimal (0.125 = 1/8 page) was already being provided by `writingScenePageStats` from `WritingScriptEditor`, but was not being formatted or displayed.
+
+**Fix A:** Added `formatScenePageLength()` (copied from `src/utils/scenePresentation.js`) directly into WritingSceneList.jsx. The formatter converts a decimal page length to eighths notation: `0.125 → "1/8"`, `0.375 → "3/8"`, `1.25 → "1 2/8"`. Both `pageNumber` and `pageLength` columns are now shown in scene rows.
+
+**Problem B:** `handleCreateWritingDraft` created two nodes — a Scene Heading and an Action body node. The caret landed on the Action line instead of the Scene Heading.
+
+**Fix B:** Removed the `createEmptyWritingNode("Action", ...)` call. `handleCreateWritingDraft` now creates only the Scene Heading node. The unused `createEmptyWritingNode` import was also removed.
+
+---
+
+### Phase 4R — Writing Layout Geometry Correction
+
+**Date:** 2026-05-15
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScript.jsx` — main workspace row geometry corrected
+- `src/App.js` — Writing content wrapper overflow corrected
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Problem:** The Writing layout had incorrect geometry:
+- Editor column used `flex: 1` — `WritingScriptEditor` centers 8.5in pages within whatever width it receives, creating excess left centering padding as the viewport widened.
+- Right panel also used `flex: 1` — both halves split the screen equally, causing the Scenes/Beats panel to drift far from the editor/page on wide screens.
+- No width constraint on the main content row.
+- App.js Writing content wrapper used `overflow: "hidden"` instead of `overflow: "auto"`, clipping content on narrow screens.
+
+**Fix — WritingScript.jsx main workspace (lines copied from Script.js line 5732 and 5908):**
+
+*Before:*
+```
+Main workspace div: flex: 1, display: "flex", flexDirection: "row", overflow: "hidden"
+Editor div: flex: 1, overflow: "auto"
+Right panel div: flex: 1, padding: "8px 20px 12px 0", boxSizing: "border-box"
+Tab bar div: display: "flex", gap: "6px", padding: "0 0 5px", marginLeft: "20px", width: "492px"
+```
+
+*After (matches Script.js):*
+```
+Main workspace div: display: "flex", flex: 1, overflow: "hidden", minWidth: 0, minHeight: 0,
+  width: "calc(8.5in + 520px)", maxWidth: "calc(8.5in + 520px)",
+  alignSelf: "flex-start", paddingTop: "5px", boxSizing: "border-box"
+
+Editor div: flex: "0 0 8.5in", width: "8.5in", minHeight: 0,
+  overflowY: "auto", overflowX: "hidden"
+
+Right panel div: flex: 1, overflow: "hidden", display: "flex", flexDirection: "column",
+  position: "relative", zIndex: 1, backgroundColor: "white", minWidth: 0
+  (no padding — removed "8px 20px 12px 0")
+
+Tab bar div: marginLeft: "20px", width: "492px", display: "flex",
+  flexShrink: 0, gap: "6px", padding: "0 0 5px", boxSizing: "border-box", alignItems: "center"
+```
+
+**Fix — App.js Writing content wrapper:**
+- Changed `overflow: "hidden"` → `overflow: "auto"` to match production content wrapper behavior (allows horizontal scroll on narrow screens).
+
+**Effect:**
+- Editor column is now exactly 8.5in wide — pages fill edge-to-edge with no centering margin, eliminating the excess left padding.
+- Right panel is constrained to the remaining space within `calc(8.5in + 520px)` — approximately 520px — matching the Script Breakdown side panel geometry. Panel no longer drifts on wide screens.
+- `alignSelf: "flex-start"` prevents the content row from stretching to fill the viewport width.
+- `paddingTop: "5px"` adds the same top inset as Script Breakdown.
+
+**Functionality preserved:**
+- New Script, element selector, save status, page count — unchanged.
+- Scene list (derives from writingDraftNodes only) — unchanged.
+- Beat add/edit/delete/reorder/color/context menu/detail modal — unchanged.
+- `writingBeats:${projectId}` localStorage key — unchanged.
+- Writing draft persistence — unchanged.
+- No production callbacks passed into WritingScript.
+- `database.js` and `saveScenesDatabase` not touched.
+- `Script.js` not edited.
+- Pre-Production and Production behavior unchanged.
+
+**Build result:** Compiled successfully.
+
+**Known issues:**
+- Body/action text persistence bug (650ms debounce) — unresolved, next priority.
+
+---
+
+### Phase 4Q — Writing Left Sidebar and Beats Panel Parity
+
+**Date:** 2026-05-15
+**Branch:** main
+
+**Files changed:**
+- `src/App.js` — Writing workflow block replaced with sidebar + content area; added `writingActiveModule` state
+- `src/components/modules/WritingScript/WritingScript.jsx` — beats state lifted here; beat detail modal; Add Beat/Act in tab bar
+- `src/components/modules/WritingScript/WritingBeatsPanel.jsx` — converted to pure display component, copy of BeatsList from Script.js minus Convert to Scene
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Part A — Writing left module sidebar:**
+- Writing workflow now renders a Writing sidebar (`position: fixed`, `left: 0`, `top: 44px`, `bottom: 0`, `width: 120px`, `backgroundColor: "#FFE5B4"`) — same dimensions and style as the production/pre-production sidebar
+- Writing content area starts at `left: "120px"` instead of `left: 0` — no more horizontal jump when switching workflows
+- Writing sidebar shows: Script (active — enabled, sets `writingActiveModule`), Moodboard (disabled placeholder, `opacity: 0.45`), Characters (disabled placeholder)
+- Moodboard shown as disabled because wiring it to the production MoodBoard component + `setScriptMoodImages` callback was out of scope and risked production coupling
+- Characters shown as disabled because Writing Characters is not implemented yet
+
+**Part B — Writing Beats parity with Script Breakdown BeatsList:**
+
+*WritingBeatsPanel.jsx (pure display component):*
+- Receives: `beats`, `onDeleteItem`, `onReorderItem`, `onOpenItem`, `onColorItem`, `collapsedActIds`, `onToggleAct`
+- Panel header: "Outline" label + beat count + act count — matches BeatsList header exactly
+- Beat rows: `padding: "10px"`, `borderBottom` from color or `#eee`, `borderLeft: 3px` color accent, `backgroundColor` from color — matches BeatsList
+- Beat row header: `#N` (8px, #777), strong title (11px, #222, ellipsis), red delete button (20×20, #c62828)
+- Description text below title: `fontSize: "10px"`, `color: "#444"`, `whiteSpace: "pre-wrap"`
+- Act rows: `#CFD8DC` background, uppercase bold, collapse toggle button (22×22), delete button
+- Drag-and-drop reorder: `draggable`, `onDragStart/Over/Drop/End`, drop indicator via `2px solid #316AC5`
+- Context menu on right-click: "Open Details", "Change Color" (with color picker submenu), "Delete Beat" — no "Convert to Scene"
+- Color markers: `BEAT_MENU_COLORS` (7 colors: default/red/orange/yellow/green/blue/purple) applied as `borderLeft` accent + `backgroundColor` tint — matches Script Breakdown exactly
+- Double-click opens beat detail modal (handled in WritingScript.jsx)
+- Act collapse/expand toggle via `collapsedActIds`
+
+*WritingScript.jsx (beats state owner):*
+- Beats state lifted from WritingBeatsPanel:
+  - `const [beats, setBeats] = useState(() => loadWritingBeats(projectId))`
+  - `const [collapsedActIds, setCollapsedActIds] = useState({})`
+  - `const [selectedBeatDetailId, setSelectedBeatDetailId] = useState(null)`
+- localStorage key unchanged: `writingBeats:${projectId || "default"}`
+- Backward compat: old beats with `notes` field are migrated to `description` on load
+- Beat shape extended: `{ id, type, title, description, order, markerColor }` (type: "beat" | "act")
+- Beat functions: `handleAppendBeat`, `handleDeleteBeat`, `handleReorderBeat`, `handleUpdateBeat`, `handleColorBeat`, `handleToggleAct`
+- "Add Act" + "Add Beat" buttons appear in tab bar when Beats tab is active — matches Script Breakdown layout
+- Beats tab label shows `"Beats (N)"` count when beats exist
+- Beat detail modal: title input + description textarea, Delete Beat + Close buttons — no Convert to Scene (Writing-only)
+
+**Functionality intentionally omitted (vs Script Breakdown):**
+- "Convert to Scene" — Writing-only, no production scene creation
+- "Import Beats" — not implemented in Phase 4Q, can be added later as Writing-only import
+- Moodboard module — shown as disabled placeholder, not wired to production
+- Characters module — disabled placeholder, Writing Characters not implemented
+
+**Backward compatibility of beat data:**
+- Old `notes` field migrated to `description` on load via `normalizeWritingBeats`
+- No change to localStorage key `writingBeats:${projectId}`
+
+**Production callback isolation confirmed:**
+- No production callbacks passed into WritingScript.
+- `database.js` not touched.
+- `saveScenesDatabase` not touched.
+- `Script.js` not edited.
+- Pre-Production and Production behavior unchanged.
+- Writing beats use `writingBeats:${projectId}` key (separate from production `scriptBeats:${projectId}`).
+
+**Build result:** Compiled successfully (+1.96 kB gzip).
+
+**Known issues / follow-up:**
+- Body/action text persistence bug (650ms debounce) — not fixed in 4Q, remains next priority.
+- Moodboard could be wired to the existing `MoodBoard` module in a future phase if writing-specific image storage is added.
+- Writing Characters module planned but not started.
+
+---
+
+### Phase 4P — Writing Workflow Visual Parity with Script Breakdown
+
+**Date:** 2026-05-15
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingSceneList.jsx` — restyled to match Script Breakdown SceneList
+- `src/components/modules/WritingScript/WritingBeatsPanel.jsx` — restyled to match Script Breakdown BeatsList
+- `src/components/modules/WritingScript/WritingScript.jsx` — tabbed right panel, restyled toolbar
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Layout change:**
+Replaced three-column workspace (scene list left | editor center | beats right) with:
+- Editor (flex, left)
+- Right panel (flex 1, ~512px effective) with Scenes / Beats tab bar + conditionally rendered panel
+
+**Tab bar:**
+- `marginLeft: "20px"`, `width: "492px"`, `gap: "6px"`, `padding: "0 0 5px"`
+- Active tab: `backgroundColor: "#316AC5"`, white text
+- Inactive tab: `backgroundColor: "#f5f5f5"`, `color: "#222"`
+- `fontWeight: "bold"`, `fontSize: "12px"`, `border: "1px solid #ccc"`, `borderRadius: "4px"`, `padding: "6px 12px"`
+- `activeSidePanelTab` state in `WritingScript`: `"scenes"` | `"beats"`, default `"scenes"`
+
+**WritingSceneList.jsx restyling:**
+- Outer: `marginLeft: "20px"`, `flex: 1`, `display: "flex"`, `flexDirection: "column"`, `minHeight: 0`
+- Panel: `width: "492px"`, `border: "2px inset #ccc"`, white bg, Century Gothic 12px
+- Row: `padding: "3px 8px"`, `borderBottom: "1px solid #f0f0f0"`, hover `#E3F2FD`
+- Scene number: `<strong style={{ fontSize: "13px" }}>`, `" – "`, heading text or Untitled italic
+- Page label: `fontSize: "10px"`, `color: "#888"`, right-aligned, `"Pg N"` format
+
+**WritingBeatsPanel.jsx restyling:**
+- Outer: `marginLeft: "20px"`, `flex: 1`, `display: "flex"`, `flexDirection: "column"`, `minHeight: 0`
+- Panel: `width: "492px"`, `border: "2px inset #ccc"`, white bg, Century Gothic 12px
+- Beat row: `padding: "10px"`, `borderBottom: "1px solid #eee"`
+- Beat number: `fontSize: "8px"`, `color: "#777"`, `fontVariantNumeric: "tabular-nums"`, `minWidth: "22px"`
+- Beat title: `fontSize: "11px"`, `fontWeight: "bold"`, `color: "#222"`, overflow ellipsis
+- Delete button: `width: "20px"`, `height: "20px"`, `backgroundColor: "#c62828"`, white, `fontSize: "10px"`
+- Add beat row embedded in the bottom of the panel; `+` button blue when title present
+- Expanded beat: inline edit with input + textarea + Done button + delete button
+
+**WritingScript.jsx toolbar restyling:**
+- `minHeight: "38px"` (was 40px fixed)
+- `padding: "5px 0 5px 12px"` (was `"0 12px"`)
+- `backgroundColor: "white"` (was `"#fafafa"`)
+- `borderBottom: "1px solid #eee"` (was `"1px solid #e0e0e0"`)
+- New Script button: `padding: "6px 14px"`, `fontSize: "13px"` (was 12px)
+- "Writing Editor" label (was "Element") with `color: "#607D8B"`, `fontSize: "11px"`, `fontWeight: "bold"`
+- Element selector: `padding: "5px 8px"`, `fontSize: "12px"` (was `"3px 5px"` / `"11px"`)
+- Save status: `width: "64px"`, `color: "#777"`, `textAlign: "left"` (was 68px / `"#999"` / right)
+
+**Production callback isolation confirmed:**
+- No production callbacks passed into WritingScript.
+- `database.js` not touched.
+- `saveScenesDatabase` not touched.
+- `Script.js` not edited (inspected patterns only).
+- Pre-Production and Production behavior unchanged.
+
+**Build result:** Compiled successfully.
+
+---
+
+### Phase 4O — Writing Scene List and Beats Panel
+
+**Date:** 2026-05-15
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingSceneList.jsx` — full implementation (was placeholder)
+- `src/components/modules/WritingScript/WritingBeatsPanel.jsx` — full implementation (was placeholder)
+- `src/components/modules/WritingScript/WritingScript.jsx` — three-column layout, scene derivation, stats fix
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Layout implemented:**
+Three-column row workspace below the toolbar:
+- Left 200px (fixed): `WritingSceneList`
+- Center (flex): `WritingScriptEditor` in scrollable wrapper
+- Right 200px (fixed): `WritingBeatsPanel`
+
+**Scene list behavior:**
+- Derives writing scenes from `writingDraftNodes` via `scenesFromDocumentNodes` (useMemo, writing-only — no production scenes read)
+- Displays scene number, heading text ("Untitled" if empty), page number from `writingScenePageStats` if available
+- Click-to-scroll via `sceneRefs` (calls `scrollIntoView` on the heading element ref)
+- Drag/reorder intentionally not implemented in Phase 4O — document as follow-up
+
+**Beat panel behavior:**
+- Self-contained beat state in `WritingBeatsPanel` (no shared production state)
+- localStorage key: `writingBeats:${projectId}` (separate from legacy `scriptBeats:${projectId}`)
+- Supports: add beat (type title + Enter or + button), click to expand and edit title/notes, delete
+- Beat-to-production-scene conversion intentionally not implemented
+
+**WritingScript.jsx changes:**
+- Added `useMemo` import
+- Added `scenesFromDocumentNodes` import
+- Fixed `writingScenePageStats` — was `const [, setWritingScenePageStats]` (discarded); now stores and passes to scene list
+- Added `projectId = selectedProject?.id || selectedProject?.name || null`
+- Added `writingScenes = useMemo(() => scenesFromDocumentNodes(writingDraftNodes), [writingDraftNodes])`
+- Replaced single editor `div` with three-column row
+
+**Body/action persistence bug:** Not fixed in Phase 4O. Likely cause: 650ms debounce + quick reload. Noted as highest-priority next fix.
+
+**Production callback isolation confirmed:**
+- No production callbacks passed into WritingScript.
+- `database.js` not touched.
+- `saveScenesDatabase` not touched.
+- `Script.js` not edited (inspected patterns only).
+- Pre-Production and Production behavior unchanged.
+
+**Build result:** Compiled successfully.
+
 ### Phase 4N — Writing Toolbar/Header
 
 **Date:** 2026-05-15

@@ -6,11 +6,15 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ## Current Known State
 
-## Claude Handoff — Workflow Split Through Phase 4M
+## Claude Handoff — Workflow Split Through Phase 4W
 
-### Last Completed Implementation Phase
+### Last Completed Phase
 
-Phase 4N: WritingScript Writing toolbar/header added.
+Architecture Audit (documentation-only): Full codebase audit and documentation created in `docs/`. Six documents cover app architecture, prop flow, module ownership, Writing/Production boundaries, data storage, and regression tests. No runtime code was changed. Key findings: WritingScript isolation confirmed. Mood overlay localStorage keys are unscoped (global) and WritingScript does not persist overlay changes back — this is the next known bug. `showBeatsTrack` is not persisted by WritingScript (unlike `showWritingTimeline`). See `docs/` for full details.
+
+### Previous Implementation Phase
+
+Phase 4Z: Full copy/adaptation of Script.js writing-mode implementation into WritingScript.jsx. All prior WritingScript.jsx internals replaced. WritingScript is now a self-contained writing-only module with full UI parity with Script.js writing mode. Production paths (saveScenesDatabase, setScenes, stripboard sync, tag callbacks) are removed. Beat Convert to Scene is disabled (`onConvertItem={null}`). Beats persist at `scriptBeats:${projectId}`. Draft persists at `scriptWritingDraft:${projectId}`. Build: clean (Compiled successfully, no warnings). Script.js was not modified.
 
 ### Architecture Goal
 
@@ -37,30 +41,61 @@ Phase 4N: WritingScript Writing toolbar/header added.
 - Phase 4L: isolated editor-only preview mode added.
 - Phase 4M: Writing workflow now routes to `WritingScript` editor-only mode.
 - Phase 4N: Writing toolbar/header added; element selector moved from fixed bottom-right into toolbar.
+- Phase 4O: Writing scene list and beats panel restored; three-column writing workspace layout.
+- Phase 4P: Writing workflow visual parity with Script Breakdown — Scenes/Beats tabbed right panel, `2px inset #ccc` bordered panels, restyled toolbar, matching row typography and delete buttons.
+- Phase 4Q: Writing module sidebar (120px, #FFE5B4, Script/Moodboard(disabled)/Characters(disabled)). WritingBeatsPanel parity — drag/drop, color markers, context menu, act grouping, beat detail modal, Add Beat/Add Act in tab bar.
+- Phase 4R: Writing layout geometry corrected — editor fixed to `flex: "0 0 8.5in"`, right panel within `calc(8.5in + 520px)` row, `alignSelf: "flex-start"`, excess padding removed.
+- Phase 4S: Writing scene list page fraction display restored (`formatScenePageLength`, eighths notation). New Script now creates only Scene Heading (Action node removed). `createEmptyWritingNode` import removed from WritingScript.
+- Phase 4T: WritingSceneList switched to read `timelinePageLength` (decimal fraction) instead of `pageLength` (integer whole pages). Correct field, but stats were still stale.
+- Phase 4U: Fixed stale stats root cause — `handleInput` now emits stats from live DOM nodes immediately after `emitNodesChange`. Stats update in real-time as user types.
+- Phase 4V: Fixed `transformEmptyNodeToNewSceneHeading` to use `createSceneId()` (UUID) instead of `makeTempNodeId()` for scene heading `sceneId`. Fixed new scenes only; existing localStorage data not migrated.
+- Phase 4W: Full writing page stats rewrite. New `writingPageStats.js` with `normalizeWritingDraftNodes` (repairs temp-node sceneIds to UUIDs, persists back to localStorage) and `calculateWritingPageStats` (standalone stats from normalized nodes, same algorithm as editor). WritingScript now computes both scenes and stats from `normalizedDraftNodes` via useMemo — no dependency on editor state. Existing bad drafts auto-repaired on load.
+- Phase 4Z: Full copy/adaptation of Script.js writing-mode implementation into WritingScript.jsx. Replaced all prior WritingScript.jsx internals. Copied: all beat helpers, BeatsList (Convert to Scene disabled — `onConvertItem={null}`), SceneList (writing-safe props), all writing state, full toolbar (Target button, element selector, save status, written/remaining/percent, New Script button, Settings button), WritingTimeline, beat import modal, beat detail modal, target page dialog, settings modal, all handlers (handleWritingDraftNodesChange, handleWritingSceneListReorder, handleTimelineSceneMove, handleStartNewScript simplified, all beat handlers), multi-key stats lookup via `stableSceneId` pattern. Removed all production paths: no saveScenesDatabase, no setScenes, no stripboard sync, no tag callbacks. Beats key: `scriptBeats:${projectId}`. Draft key: `scriptWritingDraft:${projectId}`. Build: clean.
 
-### Actual Manual Test Results After Phase 4N
+### Actual Manual Test Results After Phase 4Z
 
-- Writing tab shows the isolated `WritingScript` editor-only surface with a stable 40px toolbar/header.
-- Toolbar contains: New Script button (when no draft), element type selector (when draft exists), page count, and save status — all in the correct positions.
-- Element selector now lives in the Writing toolbar, not fixed bottom-right corner.
-- Element selector is disabled (greyed) when no node is focused; enables and shows active node type when focused.
-- Page count updates as content grows across pages.
-- Save status has fixed width and does not cause layout shift.
-- New Script button is gone once the draft is created; element selector takes its place stably.
-- Scene window, beats window, timeline, and settings/header controls are not present in Writing mode. This is intentional and incomplete.
-- Reload appears to preserve the scene heading, but not the body/action text. This is the highest-priority next bug.
-- Pre-Production still shows the existing module system.
-- Production still shows the existing module system.
-- Script Breakdown still opens through the production path and behaves as before.
-- Pre-Production Script Breakdown still contains old writing-mode branches from legacy `Script.js`. Expected; not yet cleaned up.
-- Possible brief flash/load of the old writing side of Script Breakdown when switching workflows. Track as future routing cleanup.
+Build: Compiled successfully, no warnings.
+
+Pending manual verification (test checklist from Phase 4Z):
+1. Writing workflow opens without errors.
+2. Writing draft persists across reload (`scriptWritingDraft:${projectId}`).
+3. Scene list shows scenes derived from draft nodes.
+4. Page stats (Pg N, page fraction) display correctly in scene list.
+5. Beats persist across reload (`scriptBeats:${projectId}`).
+6. Beat import parses and populates beats panel.
+7. Beat detail modal opens/closes correctly.
+8. Target page dialog opens from Target button.
+9. Settings modal opens from Settings button.
+10. WritingTimeline shows when enabled in settings.
+11. New Script clears draft and creates a blank scene heading.
+12. Scene list click scrolls editor to scene.
+13. Scene reorder updates editor draft nodes order.
+14. Beat Convert to Scene is disabled (button greyed, no crash).
+15. Pre-Production and Production routing unchanged (Script Breakdown still works).
+- Build clean (Compiled successfully, no warnings).
+
+**Recommended manual test:**
+1. Open Writing workflow with an existing project that has a saved draft.
+2. Scene list should immediately show correct page fractions (not all 1/8).
+3. Type more text in an action block — scene list fractions should update in real-time.
+4. Create a second scene (Tab key on Action → creates Scene Heading). Both scenes should show independent fractions.
+5. Type a long action block (20+ lines) under scene 1 — scene 1 should show 3/8 or larger.
+6. Scroll the scene list and verify clicking a scene scrolls the editor to that scene.
 
 ### Next Recommended Phase
 
-Diagnose and fix the WritingScript editor persistence/body text issue (reload drops body/action text but preserves scene heading). After persistence is reliable, continue with scene list, timeline, beats, or settings activation.
+Diagnose and fix the WritingScript editor persistence/body text issue (reload drops body/action text but preserves scene heading). The `handleWritingDraftNodesChange` debounce saves to localStorage after 650ms. Fix: add `beforeunload` immediate save in `useWritingDraftState.js`.
+
+### Next Recommended Phase
+
+Diagnose and fix the WritingScript editor persistence/body text issue (reload drops body/action text but preserves scene heading). The `handleWritingDraftNodesChange` debounce saves to localStorage after 650ms. Fix: add `beforeunload` immediate save in `useWritingDraftState.js`.
 
 ### Working
 
+- Phase 4R layout geometry correction is implemented: Writing main workspace row is now `width: "calc(8.5in + 520px)"`, `maxWidth: "calc(8.5in + 520px)"`, `alignSelf: "flex-start"`, `paddingTop: "5px"` (copied from Script.js line 5732). Editor column is `flex: "0 0 8.5in"`, `width: "8.5in"` (was `flex: 1`). Right panel is `flex: 1, overflow: "hidden"` with no extra padding (removed `padding: "8px 20px 12px 0"`). Tab bar has `flexShrink: 0`. App.js Writing wrapper changed from `overflow: "hidden"` to `overflow: "auto"`. No functional changes. No production callbacks. `database.js` and `saveScenesDatabase` not touched.
+- Phase 4Q Writing sidebar and beats parity is implemented: Writing workflow has a 120px `#FFE5B4` sidebar (Script/Moodboard(disabled)/Characters(disabled)). Writing content area starts at `left: "120px"`. `WritingBeatsPanel` is a full BeatsList clone — drag/drop, 7-color markers, right-click context menu, act grouping/collapse, beat detail modal (title + description, no Convert to Scene). Beats state is owned by `WritingScript`. Beats persist in `writingBeats:${projectId}`. Old `notes` field backward-compat-migrated to `description`. No production callbacks were passed into WritingScript. `database.js` and `saveScenesDatabase` were not touched. Pre-Production and Production behavior were not changed.
+- Phase 4P visual parity is implemented: Writing workflow now matches Script Breakdown's side panel visual language. `WritingScript` renders an editor (flex left) + tabbed right panel with Scenes/Beats tabs (blue active, grey inactive, `6px gap`, `492px width`). `WritingSceneList` and `WritingBeatsPanel` use `width: "492px"`, `border: "2px inset #ccc"`, white bg, Century Gothic 12px — same as Script Breakdown panels. Beat rows have 8px beat number, 11px bold title, 20×20 red delete button. Toolbar is white, `minHeight: "38px"`, `padding: "5px 0 5px 12px"`, matching Script Breakdown toolbar. No production callbacks were passed into WritingScript. `database.js` and `saveScenesDatabase` were not touched. Pre-Production and Production behavior were not changed.
+- Phase 4O Writing workspace beat/scene panels are implemented: scene list derives writing scenes from `writingDraftNodes` via `scenesFromDocumentNodes`; no production scenes are read. Beats panel uses `writingBeats:${projectId}` localStorage key (separate from `scriptBeats:${projectId}`). Clicking a scene scrolls to it via `sceneRefs`. `writingScenePageStats` is stored and passed to scene list for page number display. Beat-to-scene conversion intentionally not implemented. No production callbacks were passed into WritingScript. `database.js` and `saveScenesDatabase` were not touched. Pre-Production and Production behavior were not changed.
 - Phase 4N Writing toolbar/header is implemented: `WritingScript` now renders a stable 40px toolbar above the editor. Controls: New Script button (when no draft), element type selector (when draft exists, disabled when no node is focused), page count display (updates from `onPageCountChange` callback), and save status with fixed width. The floating bottom-right element selector inside `WritingScriptEditor` is suppressed via `showFloatingElementSelector={false}`. No production callbacks were passed into WritingScript. `database.js` and `saveScenesDatabase` were not touched. Pre-Production and Production behavior were not changed.
 - Phase 4M editor-only WritingScript activation is implemented: when `activeWorkflow === "writing"`, `App` renders `WritingScript` with `previewMode="editor"` instead of the existing production/pre-production module sidebar.
 - Pre-Production and Production still render the existing sidebar/module system unchanged, including Script Breakdown through the compatibility wrapper around legacy `Script.js`.
@@ -128,8 +163,9 @@ Diagnose and fix the WritingScript editor persistence/body text issue (reload dr
 
 ### Broken / Needs Work
 
-- Highest priority: WritingScript editor-only mode appears not to persist body/action text on reload. Scene heading seems to persist, but body/action text does not. Do not chase this broadly until isolated — the root cause is unknown.
-- Writing mode does not yet show the writing scene list, beats window, timeline, settings/header controls, or Writing Characters. This is intentional but incomplete for real workflow use.
+- Highest priority: WritingScript editor-only mode appears not to persist body/action text on reload. Scene heading seems to persist, but body/action text does not. Likely cause: 650ms save debounce — body text typed quickly then reload loses unsaved changes. Fix options: reduce delay in `useWritingDraftState.js` or add `beforeunload` save.
+- Writing mode does not yet have drag/reorder in the scene list (click-to-scroll only; add as follow-up).
+- Writing mode does not yet have a timeline, settings modal, or Writing Characters.
 - It is not yet clear from the UI whether Writing actions are fully isolated from production scenes. Verify while fixing persistence.
 - Script Breakdown still contains legacy writing-mode branches from `Script.js`. Do not remove them until WritingScript has stable editor persistence and the needed writing UI surfaces.
 - Possible brief flash/load of the old writing side of Script Breakdown when switching workflows. Track as future routing/loading cleanup.
