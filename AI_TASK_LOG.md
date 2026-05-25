@@ -3381,3 +3381,130 @@ Manual browser verification is still needed for independent zoom behavior, page-
 
 **Notes for Next Agent:**
 Beat markers are still positioned by outline order for now, but both scene and beat rulers represent screenplay page count. Do not reintroduce beat-index ruler labels unless explicitly requested.
+
+### 2026-05-25 — Codex — DOOD PDF Export and Shared Screenplay Pagination
+
+**Task:**
+Add PDF export to Day Out of Days and unify screenplay pagination/export math across Writing, Script Breakdown, Call Sheet sides, and Character sides.
+
+**Files Changed:**
+- src/utils/screenplayPagination.js
+- src/utils/exportScriptPagesToPdf.js
+- src/components/modules/WritingScript/WritingScriptEditor.jsx
+- src/components/modules/Script/Script.js
+- src/components/modules/CallSheet/CallSheet.js
+- src/components/modules/Characters/Characters.js
+- src/components/modules/DayOutOfDays/DayOutOfDays.jsx
+
+**Summary:**
+Added a shared screenplay pagination utility from Writing’s canonical page rules, routed Writing pagination through it, replaced Script Breakdown PDF internals with the model-based Writing PDF path, and moved Call Sheet/Character sides exports onto the shared page selection math. Added a jsPDF Day Out of Days matrix export using the current filtered report view.
+
+**Verification:**
+- Build: `npm run build` passed.
+- Tests: not run.
+- Manual testing: not run.
+
+**Remaining Issues:**
+Manual browser checks are still needed for generated PDF appearance, especially very wide Day Out of Days date ranges and long sides exports.
+
+### 2026-05-25 — Codex — Global Typography Guardrail
+
+**Task:**
+Investigate the unintended app-wide font change and add guardrails so global typography changes are never silent.
+
+**Files Changed:**
+- AGENTS.md
+- HANDOFF.md
+- AI_TASK_LOG.md
+- src/App.js
+
+**Summary:**
+Found that the current app-wide UI font is inherited from `src/App.js` workflow/content shell styles using `'Century Gothic', 'Futura', 'Arial', sans-serif`. The change was already committed in `db71256`, not introduced by the staged DOOD/pagination sprint, and the current staged PDF `setFont(...)` calls only affect generated PDFs. Documented the current font as the accepted baseline and added instructions requiring explicit user approval and summary disclosure for future global typography changes.
+
+**Verification:**
+- Build: `npm run build` passed.
+- Tests: not run.
+- Manual testing: not run.
+
+**Remaining Issues:**
+No font revert was performed. Build artifacts changed from the build and were intentionally left unstaged.
+
+### 2026-05-25 — Codex — Script Export Runtime Fix and Guardrails
+
+**Task:**
+Fix the Script Breakdown runtime crash from the undefined `scenesToRender` reference and reinforce typography/runtime guardrails.
+
+**Files Changed:**
+- AGENTS.md
+- HANDOFF.md
+- AI_TASK_LOG.md
+- src/components/modules/Script/Script.js
+
+**Summary:**
+Fixed `handleExportBreakdownPdf` in the parent `Script` component by replacing the out-of-scope `scenesToRender` reference with a correctly scoped `exportScenes` value derived from existing component state. Confirmed remaining `scenesToRender` references are scoped inside `ContinuousScript`. Reaffirmed the accepted app typography baseline as an accidental global change Joshua liked and now accepts: `'Century Gothic', 'Futura', 'Arial', sans-serif`. Added runtime identifier guardrails warning that CRA builds can pass despite render-time ReferenceErrors.
+
+**Verification:**
+- Build: `npm run build` passed.
+- Search: remaining `scenesToRender` references are in `ContinuousScript`, where it is declared.
+- Manual browser testing: not run in this environment.
+
+**Remaining Issues:**
+Build artifacts changed from the build and were intentionally left unstaged. Existing unstaged MoodBoard changes were not touched.
+
+### 2026-05-25 — Codex — Sides PDF Heading Formatting Fix
+
+**Task:**
+Fix Call Sheet sides and Character custom sides PDF formatting where scene headings rendered as repeated numbered fragments.
+
+**Files Changed:**
+- src/utils/exportScriptPagesToPdf.js
+- src/utils/screenplayPagination.js
+
+**Summary:**
+Kept the shared Writing-derived pagination/export architecture and fixed the sides renderer path. Scene headings converted from scene data now collapse embedded whitespace before pagination/rendering, and sides margin scene numbers render only on the first visual line of a wrapped scene heading instead of every wrapped segment.
+
+**Verification:**
+- Build: `npm run build` passed.
+- Tests: not run.
+- Manual browser export testing: pending/not available in this environment.
+
+**Remaining Issues:**
+Manual PDF export checks are still recommended for representative Call Sheet and Character sides.
+
+### 2026-05-25 — Codex — FDX Adjacent Text Node Import Fix
+
+**Task:**
+Fix Final Draft XML import compatibility for FDX paragraphs that split one screenplay paragraph across adjacent styled `<Text>` nodes.
+
+**Files Changed:**
+- src/utils/screenplayImport.js
+
+**Summary:**
+Added an explicit FDX paragraph text helper that joins direct `<Text>` children within a single `<Paragraph>` before existing whitespace normalization and screenplay block classification. This preserves styled/adorned text nodes such as `Horsa` inside the same Action or Scene Heading paragraph as plain text instead of relying on broad paragraph text extraction.
+
+**Verification:**
+- Build: `npm run build` passed.
+- Tests: not run.
+- FDX validation: `CD Draft2.fdx` was available at `/Users/joshuachiara/Downloads/CD Draft2.fdx`; parser-source validation confirmed `An Airspeed Horsa flies through the shroud of night and a TERRIBLE STORM.` imports as one Action block, `INT. AIRSPEED HORSA - SAME - NIGHT` imports as one Scene Heading, and no standalone `Horsa` or split fake heading blocks were produced.
+
+**Remaining Issues:**
+Manual browser re-import of `CD Draft2.fdx` is still recommended to verify the Airspeed Horsa examples in the full app flow. This fix preserves styled/adorned words as plain text only; bold/italic/underline/strikethrough import into editable/exportable rich-text runs remains a separate future sprint.
+
+### 2026-05-25 — Codex — Call Sheet Sides Target Selection Fix
+
+**Task:**
+Make Call Sheet sides export match Character sides behavior by exporting full screenplay pages for the selected shoot-day scenes and greying/striking non-day material on those pages.
+
+**Files Changed:**
+- src/components/modules/CallSheet/CallSheet.js
+
+**Summary:**
+Kept the shared `exportScreenplaySidesToPdf` renderer unchanged. Call Sheet sides already passed the full scene array, but it filtered scheduled scenes by heading/content before building the target scene set. Removed that extra screenplay-content filter so every real scheduled shoot-day scene becomes a target, while lunch/ADR/custom non-scene rows remain excluded.
+
+**Verification:**
+- Build: `npm run build` passed.
+- Tests: not run.
+- Manual browser export testing: pending/not available in this environment.
+
+**Remaining Issues:**
+Manual Call Sheet sides export verification is still recommended for a shoot day with multiple scenes sharing pages with non-day scenes.

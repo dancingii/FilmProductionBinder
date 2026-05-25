@@ -1582,6 +1582,21 @@ Confirm actual paths before editing. Likely areas include:
 4. All new tag/prop/makeup/PD instance IDs must embed `scene.id`, not a positional `sceneIndex`.
 5. New module lookups must follow the ShotList dual-key pattern: write to both UUID key and sceneNumber key; read UUID-first.
 
+### Global Typography Guardrail
+
+- Current accepted app UI typography baseline is inherited from the app/workflow shell in `src/App.js`: `'Century Gothic', 'Futura', 'Arial', sans-serif`.
+- Do not change global app fonts, root `font-family`, typography variables, shared button/input typography, or module-wide inherited font styling unless the user explicitly asks for typography changes.
+- PDF-only font changes must stay isolated to PDF export utilities and must not affect app rendering.
+- Any sprint touching global CSS, root layout styles, shared style constants, or theme variables must call out typography impact before staging.
+- Before staging style-related work, search for `font-family`, `fontFamily`, global selectors, and theme typography variables; summarize any changes in the final report.
+
+### Runtime Identifier Guardrail
+
+- Do not introduce new variable names into existing React components without verifying they are declared or imported in that exact component scope.
+- After changing callback dependency arrays, verify every referenced variable exists in scope.
+- Build passing is not enough for React runtime-sensitive changes: CRA can compile successfully while an undefined identifier crashes only when the affected module renders.
+- Before staging, search modified files for newly introduced identifiers used in JSX/callbacks and confirm they are declared/imported. Avoid placeholder names like `scenesToRender`, `filteredItems`, or `currentRows` unless they already exist in the same scope or are added in the patch.
+
 ### Module Status
 
 | Module | Scene Identity Model | Risk |
@@ -1611,6 +1626,7 @@ Migrate tagging instance IDs from positional `"si-bi-wi"` to `"${scene.id}-${bi}
 
 ## Current Known Issues / Next Tasks
 
+- DOOD PDF export and unified screenplay pagination/export wiring are implemented and build-passing. Call Sheet/Character sides heading formatting was corrected so scene numbers render once per heading and scene-heading whitespace is normalized. Call Sheet sides target selection now passes every real scheduled shoot-day scene into the shared full-page sides renderer, while lunch/ADR/custom rows stay excluded. FDX import now explicitly joins adjacent direct `<Text>` nodes inside each `<Paragraph>` so styled/adorned words remain in the same screenplay block as plain text. Parser-source validation against `/Users/joshuachiara/Downloads/CD Draft2.fdx` confirmed the Airspeed Horsa Action and Scene Heading cases no longer split. Manual browser verification is still recommended for generated PDFs across Writing, Script Breakdown, Call Sheet sides, Character sides, wide Day Out of Days matrices, and the full `CD Draft2.fdx` import flow. Rich-text run preservation for FDX styles is not implemented yet and should be handled in a separate future sprint.
 - Review beat marker placement/color menu visually and refine spacing/beat-track zoom UX if needed.
 - Finish regular scene timeline right-click actions and align them with the beat marker color menu pattern.
 - Refine Convert button state/color for converted beats.

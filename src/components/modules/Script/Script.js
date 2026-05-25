@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { exportBreakdownScriptToPdf } from "../../../utils/exportScriptPagesToPdf";
 import {
+  getEffectiveScreenplayPageBodyHeightLines,
+  getPageEntryLineEstimate,
+  paginateScreenplayNodes,
+  scenesToScreenplayNodes,
+} from "../../../utils/screenplayPagination";
+import {
   stemWord,
   formatElementText,
   calculateBlockLines,
@@ -209,62 +215,61 @@ const getSceneStatsKey = (scene, index) => (
 const calculateViewerPagination = (sceneList = []) => {
   const pageBreakKeys = new Set();
   const pageStatsBySceneId = {};
-  let pageIndex = 0;
-  let lineCursor = 0;
-  let previousType = null;
 
-  sceneList.forEach((scene, si) => {
-    const headingType = "Scene Heading";
-    const headingText = `${getSceneDisplayLabel(scene)}: ${scene?.heading || ""}`;
-    const headingLines = getScriptElementLineEstimate(headingType, headingText, previousType);
+  const nodes = scenesToScreenplayNodes(sceneList, {
+    includeSceneNumberInHeading: true,
+    getSceneLabel: getSceneDisplayLabel,
+  });
+  const pages = paginateScreenplayNodes(nodes);
+  const linesPerPage = getEffectiveScreenplayPageBodyHeightLines();
+  const sceneTimelineRanges = new Map();
 
-    if (lineCursor > 0 && lineCursor + headingLines > SCRIPT_PAGE_LAYOUT.pageBodyHeightLines) {
-      pageBreakKeys.add(`scene-${si}`);
-      pageIndex += 1;
-      lineCursor = 0;
-      previousType = null;
+  pages.forEach((pageEntries, pageIndex) => {
+    const firstEntry = pageEntries[0];
+    const firstNode = firstEntry?.node;
+
+    if (pageIndex > 0 && firstNode) {
+      if (firstNode.isSceneHeading) {
+        pageBreakKeys.add(`scene-${firstNode.sceneIndex}`);
+      } else if (Number.isInteger(firstNode.sceneIndex) && Number.isInteger(firstNode.blockIndex)) {
+        pageBreakKeys.add(`${firstNode.sceneIndex}-${firstNode.blockIndex}`);
+      }
     }
 
-    const timelineStartPage = pageIndex + (lineCursor / SCRIPT_PAGE_LAYOUT.pageBodyHeightLines);
-    const pageNumber = pageIndex + 1;
-    lineCursor += headingLines;
-    previousType = headingType;
+    let pageLineCursor = 0;
+    pageEntries.forEach((entry) => {
+      const node = entry.node;
+      const sceneIndex = node?.sceneIndex;
+      if (!Number.isInteger(sceneIndex)) return;
 
-    (scene.content || []).forEach((block, bi) => {
-      const blockType = block?.type || "Action";
-      const blockLines = getScriptElementLineEstimate(blockType, block?.text || "", previousType);
+      const lineCount = getPageEntryLineEstimate(nodes, entry);
+      const start = pageIndex + (pageLineCursor / linesPerPage);
+      const end = pageIndex + ((pageLineCursor + lineCount) / linesPerPage);
+      const existing = sceneTimelineRanges.get(sceneIndex);
 
-      let overflows = lineCursor > 0 && lineCursor + blockLines > SCRIPT_PAGE_LAYOUT.pageBodyHeightLines;
+      sceneTimelineRanges.set(sceneIndex, {
+        start: existing ? Math.min(existing.start, start) : start,
+        end: existing ? Math.max(existing.end, end) : end,
+        startPageIndex: existing ? Math.min(existing.startPageIndex, pageIndex) : pageIndex,
+        endPageIndex: existing ? Math.max(existing.endPageIndex, pageIndex) : pageIndex,
+      });
 
-      // Orphan prevention: never strand a lone Character cue at the bottom of a page.
-      if (!overflows && blockType === "Character" && lineCursor > 0) {
-        const nextBlock = scene.content[bi + 1];
-        const nextType = nextBlock?.type;
-        if (nextType === "Dialogue" || nextType === "Parenthetical") {
-          const nextLines = getScriptElementLineEstimate(nextType, nextBlock.text || "", blockType);
-          if (lineCursor + blockLines + nextLines > SCRIPT_PAGE_LAYOUT.pageBodyHeightLines) {
-            overflows = true;
-          }
-        }
-      }
-
-      if (overflows) {
-        pageBreakKeys.add(`${si}-${bi}`);
-        pageIndex += 1;
-        lineCursor = 0;
-        previousType = null;
-      }
-
-      lineCursor += blockLines;
-      previousType = blockType;
+      pageLineCursor += lineCount;
     });
+  });
 
-    const safeEndTimelinePage = pageIndex + (lineCursor / SCRIPT_PAGE_LAYOUT.pageBodyHeightLines);
+  sceneList.forEach((scene, si) => {
+    const range = sceneTimelineRanges.get(si);
+    if (!range) return;
+
+    const pageNumber = range.startPageIndex + 1;
+    const timelineStartPage = range.start;
+    const safeEndTimelinePage = Math.max(range.end, timelineStartPage);
     const timelinePageLength = Math.max(0.125, safeEndTimelinePage - timelineStartPage);
     const stats = {
       pageNumber,
       startPage: pageNumber,
-      pageLength: Math.max(1, Math.ceil(safeEndTimelinePage) - pageNumber + 1),
+      pageLength: Math.max(1, range.endPageIndex - range.startPageIndex + 1),
       timelineStartPage,
       timelinePageLength,
       measuredFromViewer: true,
@@ -2804,6 +2809,10 @@ function Script({
   const isProductionMode = true;
   const isScriptEditable = isEditMode;
   const targetPageCount = 90;
+  const exportScenes = useMemo(
+    () => (isScriptEditable ? editingScenes : normalizeCharacterContinuationMarkers(scenes)),
+    [editingScenes, isScriptEditable, scenes]
+  );
 
   const displayLabelMap = useMemo(() => buildSceneDisplayLabelMap(scenes), [scenes]);
 
@@ -2825,15 +2834,15 @@ function Script({
   }, []);
 
   const handleExportBreakdownPdf = useCallback(async () => {
-    if (!containerRef.current) return;
+    if (!exportScenes.length) return;
     setIsPdfExporting(true);
     try {
       const projectName = (selectedProject?.name || "Script").replace(/[^a-zA-Z0-9\-]/g, "_");
-      await exportBreakdownScriptToPdf(containerRef.current, `${projectName}-ScriptBreakdown.pdf`);
+      await exportBreakdownScriptToPdf(exportScenes, `${projectName}-ScriptBreakdown.pdf`);
     } finally {
       setIsPdfExporting(false);
     }
-  }, [selectedProject]);
+  }, [exportScenes, selectedProject]);
 
 	  const getProjectStorageKey = useCallback((key) => {
     const projectId = selectedProject?.id || selectedProject?.name || "default-project";

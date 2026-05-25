@@ -1,5 +1,9 @@
-import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import {
+  getScreenplayPageNumbersForSceneNumbers,
+  paginateScreenplayNodes,
+  scenesToScreenplayNodes,
+} from "./screenplayPagination";
 
 // ── Page geometry (matches PAGE_LAYOUT and DEFAULT_LAYOUT_TUNING) ─────────────
 const LETTER_WIDTH_PT   = 612;
@@ -151,6 +155,14 @@ function pdfFontStyle(bold, italic) {
   if (bold)   return "bold";
   if (italic) return "italic";
   return "normal";
+}
+
+function sanitizeFilenamePart(value, fallback = "script") {
+  const cleaned = String(value || fallback)
+    .trim()
+    .replace(/[^a-zA-Z0-9\-_.]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return cleaned || fallback;
 }
 
 // Render one visual line with optional per-run styling.
@@ -339,15 +351,192 @@ function drawTitlePage(pdf, titlePageSettings = {}) {
   }
 }
 
+function isCharacterSidesHighlighted(nodes, index, characterName) {
+  if (!characterName) return false;
+  const node = nodes[index];
+  const type = normalizeType(node?.type);
+  const targetName = String(characterName || "").trim().toUpperCase();
+  if (!targetName) return false;
+
+  if (type === "Character") {
+    return String(node?.text || "").trim().toUpperCase() === targetName;
+  }
+
+  if (type !== "Dialogue" && type !== "Parenthetical") return false;
+
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const candidateType = normalizeType(nodes[cursor]?.type);
+    if (candidateType === "Character") {
+      return String(nodes[cursor]?.text || "").trim().toUpperCase() === targetName;
+    }
+    if (candidateType !== "Dialogue" && candidateType !== "Parenthetical") {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+function drawPlainScriptLine(pdf, display, x, y, options = {}) {
+  const {
+    color = [0, 0, 0],
+    bold = false,
+    underline = false,
+    highlight = false,
+    align,
+  } = options;
+
+  pdf.setFont("Courier", bold ? "bold" : "normal");
+  pdf.setTextColor(color[0], color[1], color[2]);
+
+  if (highlight) {
+    const width = pdf.getTextWidth(display);
+    const highlightX = align === "right" ? x - width : x;
+    pdf.setFillColor(255, 255, 0);
+    pdf.rect(highlightX - 2, y - LINE_HEIGHT_PT + 1, width + 4, LINE_HEIGHT_PT, "F");
+    pdf.setTextColor(color[0], color[1], color[2]);
+  }
+
+  if (align) {
+    pdf.text(display, x, y, { align });
+  } else {
+    pdf.text(display, x, y);
+  }
+
+  if (underline) {
+    const width = pdf.getTextWidth(display);
+    const startX = align === "right" ? x - width : x;
+    pdf.setDrawColor(color[0], color[1], color[2]);
+    pdf.setLineWidth(0.5);
+    pdf.line(startX, y - 4, startX + width, y - 4);
+  }
+}
+
+function drawScriptPageNodes(pdf, pageNodes, nodes, options = {}) {
+  const {
+    pageIndex = 0,
+    showPageNumber = true,
+    targetSceneNumbers = null,
+    characterName = "",
+    showSceneNumbers = false,
+    title = "",
+    isFirstExportPage = false,
+  } = options;
+
+  const charWidthPt = pdf.getStringUnitWidth("M") * FONT_SIZE_PT;
+  const targetSet = targetSceneNumbers ? new Set(Array.from(targetSceneNumbers).map(String)) : null;
+
+  pdf.setFont("Courier", "normal");
+  pdf.setFontSize(FONT_SIZE_PT);
+
+  if (showPageNumber && options.forcePageNumber) {
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(`${pageIndex + 1}.`, LETTER_WIDTH_PT - PAGE_MARGIN_RIGHT_PT, PAGE_MARGIN_TOP_PT - 15);
+  } else if (showPageNumber && pageIndex >= 1) {
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(`${pageIndex + 1}.`, LETTER_WIDTH_PT - PAGE_MARGIN_RIGHT_PT, PAGE_MARGIN_TOP_PT);
+  }
+
+  if (isFirstExportPage && title) {
+    pdf.setFont("Courier", "bold");
+    pdf.setFontSize(11);
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(title, LETTER_WIDTH_PT / 2, PAGE_MARGIN_TOP_PT - 28, { align: "center" });
+    pdf.setFontSize(FONT_SIZE_PT);
+  }
+
+  let y = PAGE_MARGIN_TOP_PT;
+  const contdName = options.includeContinuationMarkers ? contdNameAtPageStart(nodes, pageNodes) : "";
+  let prevNode = null;
+
+  if (contdName) {
+    const contdX = PAGE_MARGIN_LEFT_PT + TYPE_LEFT_PT.Character;
+    pdf.setFont("Courier", "normal");
+    pdf.setFontSize(FONT_SIZE_PT);
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(`${contdName} (CONT'D)`, contdX, y);
+    y += LINE_HEIGHT_PT;
+    prevNode = { type: "Character" };
+  }
+
+  for (let i = 0; i < pageNodes.length; i += 1) {
+    const entry = pageNodes[i];
+    const node = entry.node;
+    const type = normalizeType(node.type);
+
+    if (i > 0) prevNode = pageNodes[i - 1].node;
+
+    y += spacingBeforeLines(node, prevNode) * LINE_HEIGHT_PT;
+
+    const leftX = PAGE_MARGIN_LEFT_PT + (TYPE_LEFT_PT[type] ?? 0);
+    const maxChars = TYPE_MAX_CHARS[type] ?? 61;
+    const isUpper = UPPERCASE_TYPES.has(type);
+    const text = type === "Scene Heading"
+      ? String(node.text || "").replace(/\s+/g, " ").trim()
+      : node.text || "";
+    const runRanges = computeRunRanges(node.runs || null);
+    const isTarget = !targetSet || targetSet.has(String(node.sceneNumber));
+    const isHighlighted = isTarget && isCharacterSidesHighlighted(nodes, entry.index, characterName);
+    const color = isTarget ? [0, 0, 0] : [150, 150, 150];
+    const segs = getWrappedLineSegments(text, maxChars);
+
+    pdf.setFont("Courier", "normal");
+    pdf.setFontSize(FONT_SIZE_PT);
+
+    for (let segIndex = 0; segIndex < segs.length; segIndex += 1) {
+      const seg = segs[segIndex];
+      if (seg.text === "\n") {
+        y += LINE_HEIGHT_PT;
+        continue;
+      }
+
+      const display = isUpper ? seg.text.toUpperCase() : seg.text;
+
+      if (type === "Transition") {
+        const rightX = PAGE_MARGIN_LEFT_PT + TYPE_LEFT_PT.Transition + 1.8 * 72;
+        drawPlainScriptLine(pdf, display.toUpperCase(), rightX, y, {
+          color,
+          underline: !isTarget,
+          highlight: isHighlighted,
+          align: "right",
+        });
+      } else if (runRanges && isTarget && !isHighlighted) {
+        pdf.setTextColor(0, 0, 0);
+        renderLine(pdf, seg.text, seg.start, seg.end, leftX, y, runRanges, isUpper, charWidthPt);
+      } else {
+        drawPlainScriptLine(pdf, display, leftX, y, {
+          color,
+          bold: isHighlighted,
+          underline: !isTarget,
+          highlight: isHighlighted,
+        });
+      }
+
+      if (showSceneNumbers && segIndex === 0 && type === "Scene Heading" && node.sceneNumber !== undefined && node.sceneNumber !== null) {
+        pdf.setTextColor(color[0], color[1], color[2]);
+        pdf.setFont("Courier", "normal");
+        pdf.text(String(node.sceneNumber), PAGE_MARGIN_LEFT_PT - 30, y);
+        pdf.text(String(node.sceneNumber), LETTER_WIDTH_PT - PAGE_MARGIN_RIGHT_PT + 5, y);
+      }
+
+      y += LINE_HEIGHT_PT;
+    }
+  }
+
+  if (options.includeContinuationMarkers && shouldShowMoreAfterPage(nodes, pageNodes)) {
+    pdf.setFont("Courier", "normal");
+    pdf.setFontSize(FONT_SIZE_PT);
+    pdf.setTextColor(0, 0, 0);
+    pdf.text("(MORE)", PAGE_MARGIN_LEFT_PT + TYPE_LEFT_PT.Character, LETTER_HEIGHT_PT - PAGE_MARGIN_BOTTOM_PT);
+  }
+}
+
 // ── Writing script PDF export (jsPDF text-based) ─────────────────────────────
 // model: { pages: paginatedPages, nodes } from WritingScriptEditor.getPdfExportModel()
 export async function exportWritingScriptToPdf({ pages, nodes, titlePageSettings }, fileName) {
   if (!pages?.length) return;
 
   const pdf = new jsPDF({ unit: "pt", format: "letter", orientation: "portrait" });
-  pdf.setFont("Courier", "normal");
-  pdf.setFontSize(FONT_SIZE_PT);
-  const charWidthPt = pdf.getStringUnitWidth("M") * FONT_SIZE_PT;
   const includeTitlePage = isTitlePageEnabled(titlePageSettings);
 
   if (includeTitlePage) {
@@ -356,163 +545,48 @@ export async function exportWritingScriptToPdf({ pages, nodes, titlePageSettings
 
   for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
     if (includeTitlePage || pageIndex > 0) pdf.addPage("letter", "portrait");
-    const pageNodes = pages[pageIndex];
-
-    if (pageIndex >= 1) {
-      pdf.setFont("Courier", "normal");
-      pdf.setFontSize(FONT_SIZE_PT);
-      pdf.text(`${pageIndex + 1}.`, LETTER_WIDTH_PT - PAGE_MARGIN_RIGHT_PT, PAGE_MARGIN_TOP_PT);
-    }
-
-    let y = PAGE_MARGIN_TOP_PT;
-
-    const contdName = contdNameAtPageStart(nodes, pageNodes);
-    let prevNode = null;
-
-    if (contdName) {
-      const contdX = PAGE_MARGIN_LEFT_PT + TYPE_LEFT_PT["Character"];
-      pdf.setFont("Courier", "normal");
-      pdf.setFontSize(FONT_SIZE_PT);
-      pdf.text(`${contdName} (CONT'D)`, contdX, y);
-      y += LINE_HEIGHT_PT;
-      prevNode = { type: "Character" };
-    }
-
-    for (let i = 0; i < pageNodes.length; i++) {
-      const entry = pageNodes[i];
-      const node  = entry.node;
-      const type  = normalizeType(node.type);
-
-      if (i > 0) prevNode = pageNodes[i - 1].node;
-
-      y += spacingBeforeLines(node, prevNode) * LINE_HEIGHT_PT;
-
-      const leftX    = PAGE_MARGIN_LEFT_PT + (TYPE_LEFT_PT[type] ?? 0);
-      const maxChars = TYPE_MAX_CHARS[type] ?? 61;
-      const isUpper  = UPPERCASE_TYPES.has(type);
-      const text     = node.text || "";
-      const runRanges = computeRunRanges(node.runs || null);
-
-      pdf.setFont("Courier", "normal");
-      pdf.setFontSize(FONT_SIZE_PT);
-
-      const segs = getWrappedLineSegments(text, maxChars);
-
-      for (const seg of segs) {
-        if (seg.text === "\n") { y += LINE_HEIGHT_PT; continue; }
-
-        if (type === "Transition") {
-          const rightX = PAGE_MARGIN_LEFT_PT + TYPE_LEFT_PT["Transition"] + 1.8 * 72;
-          pdf.setFont("Courier", "normal");
-          pdf.text(seg.text.toUpperCase(), rightX, y, { align: "right" });
-        } else {
-          renderLine(pdf, seg.text, seg.start, seg.end, leftX, y, runRanges, isUpper, charWidthPt);
-        }
-
-        y += LINE_HEIGHT_PT;
-      }
-    }
-
-    if (shouldShowMoreAfterPage(nodes, pageNodes)) {
-      pdf.setFont("Courier", "normal");
-      pdf.setFontSize(FONT_SIZE_PT);
-      pdf.text("(MORE)", PAGE_MARGIN_LEFT_PT + TYPE_LEFT_PT["Character"], LETTER_HEIGHT_PT - PAGE_MARGIN_BOTTOM_PT);
-    }
+    drawScriptPageNodes(pdf, pages[pageIndex], nodes, {
+      pageIndex,
+      includeContinuationMarkers: true,
+    });
   }
 
   pdf.save(fileName);
 }
 
 // ── Breakdown script PDF export ───────────────────────────────────────────────
-// Clones the container off-screen so the live DOM is never mutated.
-function createOffscreenWrapper(widthPx) {
-  const wrapper = document.createElement("div");
-  wrapper.style.cssText = [
-    "position:fixed",
-    "left:-99999px",
-    "top:0",
-    `width:${widthPx}px`,
-    "height:auto",
-    "overflow:visible",
-    "pointer-events:none",
-    "z-index:-9999",
-  ].join(";");
-  document.body.appendChild(wrapper);
-  return wrapper;
+export async function exportBreakdownScriptToPdf(scenes, fileName) {
+  const nodes = scenesToScreenplayNodes(scenes, { includeSceneNumberInHeading: true });
+  const pages = paginateScreenplayNodes(nodes);
+  await exportWritingScriptToPdf({ pages, nodes }, fileName);
 }
 
-function waitFrames(n = 2) {
-  return new Promise(resolve => {
-    let count = 0;
-    const tick = () => { if (++count >= n) resolve(); else requestAnimationFrame(tick); };
-    requestAnimationFrame(tick);
+export async function exportScreenplaySidesToPdf({
+  scenes,
+  targetSceneNumbers,
+  title,
+  fileName,
+  characterName,
+}) {
+  const targetSet = new Set(Array.from(targetSceneNumbers || []).map(String));
+  const { nodes, pages, pageIndexes } = getScreenplayPageNumbersForSceneNumbers(scenes, targetSet);
+
+  if (!pageIndexes.length) return false;
+
+  const pdf = new jsPDF({ unit: "pt", format: "letter", orientation: "portrait" });
+  pageIndexes.forEach((scriptPageIndex, exportPageIndex) => {
+    if (exportPageIndex > 0) pdf.addPage("letter", "portrait");
+    drawScriptPageNodes(pdf, pages[scriptPageIndex], nodes, {
+      pageIndex: scriptPageIndex,
+      forcePageNumber: true,
+      targetSceneNumbers: targetSet,
+      characterName,
+      showSceneNumbers: true,
+      title,
+      isFirstExportPage: exportPageIndex === 0,
+    });
   });
-}
 
-export async function exportBreakdownScriptToPdf(containerEl, fileName) {
-  if (!containerEl) return;
-  window.getSelection()?.removeAllRanges();
-
-  const origWidth = containerEl.offsetWidth || 816;
-
-  const clone = containerEl.cloneNode(true);
-  clone.style.overflowY = "visible";
-  clone.style.overflowX = "hidden";
-  clone.style.height = "auto";
-  clone.style.maxHeight = "none";
-  clone.style.width = origWidth + "px";
-
-  const wrapper = createOffscreenWrapper(origWidth);
-  wrapper.appendChild(clone);
-
-  await waitFrames(2);
-
-  try {
-    const fullHeight = clone.scrollHeight || clone.offsetHeight;
-    const elWidth = clone.offsetWidth || origWidth;
-
-    const pageHeightCss = Math.round(elWidth * (11 / 8.5));
-    const SCALE = 1.5;
-    const numPages = Math.ceil(fullHeight / pageHeightCss);
-
-    const pdf = new jsPDF({ unit: "pt", format: "letter", orientation: "portrait" });
-
-    for (let i = 0; i < numPages; i++) {
-      if (i > 0) pdf.addPage("letter", "portrait");
-
-      const yOffset = Math.round(i * pageHeightCss);
-      const sliceH = Math.min(pageHeightCss, fullHeight - yOffset);
-
-      const canvas = await html2canvas(clone, {
-        scale: SCALE,
-        x: 0,
-        y: yOffset,
-        width: elWidth,
-        height: sliceH,
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-      });
-
-      const targetW = Math.round(elWidth * SCALE);
-      const targetH = Math.round(pageHeightCss * SCALE);
-
-      if (canvas.height < targetH) {
-        const padded = document.createElement("canvas");
-        padded.width = targetW;
-        padded.height = targetH;
-        const ctx = padded.getContext("2d");
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, targetW, targetH);
-        ctx.drawImage(canvas, 0, 0);
-        pdf.addImage(padded.toDataURL("image/jpeg", 0.9), "JPEG", 0, 0, LETTER_WIDTH_PT, LETTER_HEIGHT_PT);
-      } else {
-        pdf.addImage(canvas.toDataURL("image/jpeg", 0.9), "JPEG", 0, 0, LETTER_WIDTH_PT, LETTER_HEIGHT_PT);
-      }
-    }
-
-    pdf.save(fileName);
-  } finally {
-    document.body.removeChild(wrapper);
-  }
+  pdf.save(fileName || `${sanitizeFilenamePart(title)}.pdf`);
+  return true;
 }

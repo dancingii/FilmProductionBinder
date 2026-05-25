@@ -4723,6 +4723,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
               overflow: "auto",
               boxSizing: "border-box",
               backgroundColor: "#f5f5f5",
+              // App-wide UI typography baseline. Do not change without an explicit user request.
               fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
               padding: (writingActiveModule === "Script" || writingActiveModule === "MoodBoard") ? "10px" : "0",
             }}
@@ -4960,6 +4961,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
               width: "calc(100vw - 120px)",
               maxWidth: "calc(100vw - 120px)",
               padding: (normalizeModuleName(activeModule) === SCRIPT_BREAKDOWN_MODULE || normalizeModuleName(activeModule) === "Dashboard" || normalizeModuleName(activeModule) === "Stripboard" || normalizeModuleName(activeModule) === "StripboardSchedule" || normalizeModuleName(activeModule) === "Calendar" || normalizeModuleName(activeModule) === "Day Out of Days" || normalizeModuleName(activeModule) === "CallSheet" || normalizeModuleName(activeModule) === "ShotList" || normalizeModuleName(activeModule) === "ToDoList" || normalizeModuleName(activeModule) === "Timeline" || normalizeModuleName(activeModule) === "MoodBoard" || normalizeModuleName(activeModule) === "Props" || normalizeModuleName(activeModule) === "Cast & Crew" || normalizeModuleName(activeModule) === "Characters" || normalizeModuleName(activeModule) === "Locations" || normalizeModuleName(activeModule) === "Wardrobe" || normalizeModuleName(activeModule) === "Cost Report" || normalizeModuleName(activeModule) === "Reports" || normalizeModuleName(activeModule) === "Budget") ? "10px" : "0",
+              // App-wide UI typography baseline. Do not change without an explicit user request.
               fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
               boxSizing: "border-box",
               position: "fixed",

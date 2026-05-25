@@ -1,4 +1,5 @@
 import React from "react";
+import jsPDF from "jspdf";
 import EditableInput from "../../shared/EditableInput";
 
 // Import DOOD core functions
@@ -406,11 +407,132 @@ function DayOutOfDaysModule({
     selectedProject,
     effectiveStartDate,
     effectiveEndDate,
-    calendarDays,
-    castMembers,
+    filteredCalendarDays,
+    filteredCastMembers,
     doodMatrix,
     doodTotals,
   ]);
+
+  const handleExportPdf = React.useCallback(() => {
+    if (!reportView?.rows?.length) {
+      alert("No Day Out of Days data to export.");
+      return;
+    }
+
+    const pdf = new jsPDF({ unit: "pt", format: "letter", orientation: "landscape" });
+    const pageWidth = 792;
+    const pageHeight = 612;
+    const margin = 28;
+    const titleHeight = 52;
+    const headerHeight = 44;
+    const rowHeight = 28;
+    const castColWidth = 160;
+    const totalColWidth = 44;
+    const minDateColWidth = 34;
+    const availableDateWidth = pageWidth - margin * 2 - castColWidth - totalColWidth;
+    const datesPerPage = Math.max(1, Math.floor(availableDateWidth / minDateColWidth));
+    const dateColWidth = Math.max(
+      minDateColWidth,
+      availableDateWidth / Math.min(datesPerPage, reportView.dates.length || datesPerPage)
+    );
+    const rowsPerPage = Math.max(1, Math.floor((pageHeight - margin - titleHeight - headerHeight - 24) / rowHeight));
+    const title = reportView.production?.title || selectedProject?.name || "Production";
+    const dateRange = `${formatDate(reportView.production?.startDate || effectiveStartDate)} - ${formatDate(reportView.production?.endDate || effectiveEndDate)}`;
+    let hasAddedPage = false;
+
+    for (let dateStart = 0; dateStart < reportView.dates.length; dateStart += datesPerPage) {
+      const dateChunk = reportView.dates.slice(dateStart, dateStart + datesPerPage);
+      for (let rowStart = 0; rowStart < reportView.rows.length; rowStart += rowsPerPage) {
+        if (hasAddedPage) pdf.addPage("letter", "landscape");
+        hasAddedPage = true;
+
+        const rowChunk = reportView.rows.slice(rowStart, rowStart + rowsPerPage);
+        let y = margin;
+
+        pdf.setFont("Helvetica", "bold");
+        pdf.setFontSize(14);
+        pdf.setTextColor(0, 0, 0);
+        pdf.text("Day Out of Days", margin, y);
+        pdf.setFont("Helvetica", "normal");
+        pdf.setFontSize(10);
+        pdf.text(title, margin, y + 16);
+        pdf.text(dateRange, margin, y + 31);
+
+        if (reportView.dates.length > datesPerPage || reportView.rows.length > rowsPerPage) {
+          pdf.text(`Dates ${dateStart + 1}-${dateStart + dateChunk.length} of ${reportView.dates.length}`, pageWidth - margin, y + 16, { align: "right" });
+          pdf.text(`Cast ${rowStart + 1}-${rowStart + rowChunk.length} of ${reportView.rows.length}`, pageWidth - margin, y + 31, { align: "right" });
+        }
+
+        y += titleHeight;
+        const tableLeft = margin;
+        const tableTop = y;
+
+        pdf.setDrawColor(170, 170, 170);
+        pdf.setLineWidth(0.5);
+        pdf.setFillColor(245, 245, 245);
+        pdf.rect(tableLeft, tableTop, castColWidth, headerHeight, "FD");
+        pdf.setFont("Helvetica", "bold");
+        pdf.setFontSize(7);
+        pdf.text("Cast / Character", tableLeft + 5, tableTop + 18);
+
+        dateChunk.forEach((date, index) => {
+          const x = tableLeft + castColWidth + index * dateColWidth;
+          const parts = formatDate(date).split(" ");
+          pdf.setFillColor(245, 245, 245);
+          pdf.rect(x, tableTop, dateColWidth, headerHeight, "FD");
+          pdf.setFont("Helvetica", "bold");
+          pdf.setFontSize(7);
+          pdf.text(parts[1] || "", x + dateColWidth / 2, tableTop + 15, { align: "center" });
+          pdf.setFont("Helvetica", "normal");
+          pdf.setFontSize(6);
+          pdf.text(parts[0] || "", x + dateColWidth / 2, tableTop + 28, { align: "center" });
+        });
+
+        const totalX = tableLeft + castColWidth + dateChunk.length * dateColWidth;
+        pdf.setFillColor(245, 245, 245);
+        pdf.rect(totalX, tableTop, totalColWidth, headerHeight, "FD");
+        pdf.setFont("Helvetica", "bold");
+        pdf.setFontSize(7);
+        pdf.text("Total", totalX + totalColWidth / 2, tableTop + 24, { align: "center" });
+
+        y = tableTop + headerHeight;
+        rowChunk.forEach((row) => {
+          pdf.setFillColor(255, 255, 255);
+          pdf.rect(tableLeft, y, castColWidth, rowHeight, "FD");
+          pdf.setFont("Helvetica", "bold");
+          pdf.setFontSize(7);
+          pdf.setTextColor(0, 0, 0);
+          pdf.text(String(row.characterName || ""), tableLeft + 5, y + 11, { maxWidth: castColWidth - 10 });
+          pdf.setFont("Helvetica", "normal");
+          pdf.setFontSize(6);
+          pdf.setTextColor(90, 90, 90);
+          pdf.text(String(row.performerName || ""), tableLeft + 5, y + 22, { maxWidth: castColWidth - 10 });
+
+          dateChunk.forEach((date, index) => {
+            const cell = row.cells.find((candidate) => candidate.date === date);
+            const x = tableLeft + castColWidth + index * dateColWidth;
+            const rgb = hexToRgbArray(getDayCodeColor(cell?.code || ""));
+            pdf.setFillColor(rgb[0], rgb[1], rgb[2]);
+            pdf.rect(x, y, dateColWidth, rowHeight, "FD");
+            pdf.setFont("Helvetica", "bold");
+            pdf.setFontSize(7);
+            pdf.setTextColor(0, 0, 0);
+            pdf.text(String(cell?.code || ""), x + dateColWidth / 2, y + 17, { align: "center" });
+          });
+
+          pdf.setFillColor(255, 255, 255);
+          pdf.rect(totalX, y, totalColWidth, rowHeight, "FD");
+          pdf.setFont("Helvetica", "bold");
+          pdf.setFontSize(7);
+          pdf.setTextColor(0, 0, 0);
+          pdf.text(String(row.totals?.totalEngagedDays || 0), totalX + totalColWidth / 2, y + 17, { align: "center" });
+          y += rowHeight;
+        });
+      }
+    }
+
+    pdf.save(`day-out-of-days-${sanitizePdfFilename(title)}.pdf`);
+  }, [effectiveEndDate, effectiveStartDate, reportView, selectedProject?.name]);
 
   // ============================================================================
   // EVENT HANDLERS
@@ -1856,6 +1978,7 @@ function DayOutOfDaysModule({
           <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
             <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>DAY OUT OF DAYS</h2>
             <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+              <button onClick={handleExportPdf} disabled={!reportView?.rows?.length} style={{ padding: "5px 12px", backgroundColor: !reportView?.rows?.length ? "#ccc" : "#9C27B0", color: "white", border: "none", borderRadius: "4px", cursor: !reportView?.rows?.length ? "not-allowed" : "pointer", fontSize: "13px" }}>Export PDF</button>
               {canEdit && (
                 <>
                   <button onClick={handleAddEvent} disabled={isViewOnly || !hasProductionDates} style={{ padding: "5px 12px", backgroundColor: isViewOnly || !hasProductionDates ? "#ccc" : "#007bff", color: "white", border: "none", borderRadius: "4px", cursor: isViewOnly || !hasProductionDates ? "not-allowed" : "pointer", fontSize: "13px", fontWeight: "bold" }}>+ Add Manual Event</button>
@@ -2328,6 +2451,23 @@ function getDayCodeColor(code) {
     D: "#fafafa",
   };
   return colors[code] || "transparent";
+}
+
+function hexToRgbArray(color) {
+  const hex = String(color || "").trim().replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return [255, 255, 255];
+  return [
+    parseInt(hex.slice(0, 2), 16),
+    parseInt(hex.slice(2, 4), 16),
+    parseInt(hex.slice(4, 6), 16),
+  ];
+}
+
+function sanitizePdfFilename(value) {
+  return String(value || "production")
+    .trim()
+    .replace(/[^a-zA-Z0-9\-_.]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "production";
 }
 
 export default DayOutOfDaysModule;

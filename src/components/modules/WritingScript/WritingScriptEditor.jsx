@@ -7,6 +7,7 @@ import {
 } from "./writingDraftModel";
 import { createSceneId } from "../../../utils/sceneIdentity";
 import { APP_TAB_BLUE } from "../../../utils/scenePresentation";
+import { paginateScreenplayNodes } from "../../../utils/screenplayPagination";
 
 const NODE_TYPE_LABELS = {
   "Scene Heading": "S",
@@ -488,67 +489,7 @@ const buildPaginationUnits = (nodes = [], layoutTuning = DEFAULT_LAYOUT_TUNING) 
 };
 
 const paginateNodesForScreen = (nodes = [], layoutTuning = DEFAULT_LAYOUT_TUNING) => {
-  const sourceNodes = Array.isArray(nodes) ? nodes : [];
-  const units = buildPaginationUnits(sourceNodes, layoutTuning);
-  const pages = [];
-  let currentPage = [];
-  let currentLineCount = 0;
-  const linesPerPage = getEffectivePageBodyHeightLines(layoutTuning);
-
-  const finalizeCurrentPage = () => {
-    if (!currentPage.length) return;
-    pages.push(currentPage);
-    currentPage = [];
-    currentLineCount = 0;
-  };
-
-  units.forEach((unit) => {
-    const firstEntry = unit.entries[0];
-    const node = firstEntry?.node;
-    const index = firstEntry?.index ?? -1;
-    const remainingLines = linesPerPage - currentLineCount;
-
-    let needsNewPage =
-      currentPage.length > 0 &&
-      currentLineCount + unit.placementLineCount > linesPerPage;
-
-    if (
-      !needsNewPage &&
-      unit.type === "SceneHeadingUnit" &&
-      unit.meta.hasFollowingMeaningfulContent &&
-      currentPage.length > 0 &&
-      remainingLines - (unit.meta.headingSpacingLines || 0) <= 3
-    ) {
-      needsNewPage = true;
-    }
-
-    debugWritingPagination("place unit", {
-      index,
-      unitType: unit.type,
-      text: String(node?.text || "").slice(0, 80),
-      currentLineCount,
-      linesPerPage,
-      remainingLines,
-      unitLineCount: unit.lineCount,
-      placementLineCount: unit.placementLineCount,
-      entryCount: unit.entries.length,
-      meta: unit.meta,
-      forcedPageBreak: needsNewPage,
-    });
-
-    if (needsNewPage) {
-      finalizeCurrentPage();
-    }
-
-    currentPage.push(...unit.entries);
-    currentLineCount += unit.lineCount;
-  });
-
-  if (currentPage.length > 0) {
-    pages.push(currentPage);
-  }
-
-  return pages;
+  return paginateScreenplayNodes(nodes, layoutTuning);
 };
 
 const normalizeNodeType = (type) => {

@@ -16,6 +16,13 @@ The user makes product decisions. ChatGPT acts as the central technical lead and
 - Do not rename files, props, state fields, or data structures unless required.
 - Do not silently "clean up" unrelated code.
 - Do not make broad styling changes unless requested.
+- Do not change global app typography, root `font-family`, typography variables, shared button/input typography, or module-wide font styling unless the user explicitly asks for typography changes.
+- Keep PDF-only fonts isolated to PDF export utilities; `pdf.setFont(...)` and PDF layout choices must not leak into app UI styling.
+- Before staging any sprint that touches global CSS, root layout styles, shared style constants, or theme variables, search for and summarize changes to `font-family`, `fontFamily`, global selectors, and theme typography variables.
+- If a font or typography change is intentional, list it in the final summary as an intentional user-facing visual change.
+- Do not introduce new variable names into existing React components without verifying they are declared or imported in that exact component scope.
+- After changing a callback dependency array, verify every referenced variable is defined in scope; CRA builds can pass while runtime ReferenceErrors still crash the app.
+- Before staging React runtime-sensitive changes, search modified files for newly introduced identifiers used in JSX/callbacks and confirm they are declared or imported. Avoid placeholder names like `scenesToRender`, `filteredItems`, or `currentRows` unless they already exist in that scope or are explicitly defined in the patch.
 - If something is unclear, inspect first and explain your assumption before editing.
 
 ## Required Workflow

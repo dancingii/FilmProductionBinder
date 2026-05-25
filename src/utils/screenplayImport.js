@@ -276,6 +276,19 @@ const createScene = (headingText, sceneNumber) => {
   };
 };
 
+const getFdxParagraphText = (paragraphElement) => {
+  if (!paragraphElement) return "";
+
+  const textElements = Array.from(paragraphElement.childNodes || [])
+    .filter((child) => child?.nodeType === 1 && String(child.localName || child.nodeName || "").toLowerCase() === "text");
+
+  if (textElements.length > 0) {
+    return normalizeWhitespace(textElements.map((textElement) => textElement.textContent || "").join(""));
+  }
+
+  return normalizeWhitespace(paragraphElement.textContent || "");
+};
+
 export const parseFinalDraftXmlToScenes = (text = "") => {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(text, "text/xml");
@@ -287,7 +300,7 @@ export const parseFinalDraftXmlToScenes = (text = "") => {
 
   paragraphs.forEach((para) => {
     const type = para.getAttribute("Type");
-    let content = normalizeWhitespace(para.textContent || "");
+    let content = getFdxParagraphText(para);
 
     if (!content || TITLE_PAGE_TYPES.has(type)) return;
 
