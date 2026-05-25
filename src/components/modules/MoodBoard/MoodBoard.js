@@ -162,6 +162,18 @@ function getSourceLabel(type) {
   return "Link";
 }
 
+function isStoredImageUrl(url) {
+  if (!url) return false;
+  if (url.startsWith("data:") || url.startsWith("blob:")) return true;
+  try {
+    const parsed = new URL(url);
+    return parsed.origin === window.location.origin ||
+      parsed.hostname === "bjxgrfmrjkkxzkhciitp.supabase.co";
+  } catch {
+    return false;
+  }
+}
+
 function getPresetByKey(key) {
   return CANVAS_PRESETS.find((preset) => preset.key === key) || CANVAS_PRESETS[0];
 }
@@ -306,6 +318,12 @@ function RollImage({ image, canEdit, isViewOnly, onDragStart, onDragEnd, onDragO
           <div style={{ color: "white", fontSize: "10px", fontWeight: "bold" }}>Saving…</div>
         </div>
       )}
+      {!isStoredImageUrl(image.url) && !image.uploading && (
+        <div
+          title="External URL — open lightbox and click Convert to Storage"
+          style={{ position: "absolute", top: "3px", left: "3px", width: "8px", height: "8px", backgroundColor: "#FF9800", borderRadius: "50%", zIndex: 3, boxShadow: "0 1px 3px rgba(0,0,0,0.5)" }}
+        />
+      )}
       <img src={image.url} alt={image.title || "Reference"} draggable={false} onDoubleClick={(e) => { e.stopPropagation(); onLightbox?.(); }} style={{ width: "100%", height: "auto", display: "block" }} />
 
       {/* Bottom label — always visible over image */}
@@ -434,6 +452,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   const [presentPageIndex, setPresentPageIndex] = useState(0);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [lightboxImageId, setLightboxImageId] = useState(null);
+  const [convertingImageId, setConvertingImageId] = useState(null);
   const pageExportRefs = useRef({});
   const [editingTextId, setEditingTextId] = useState(null);
   const [textEditDraft, setTextEditDraft] = useState(null);
@@ -992,31 +1011,77 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     const title = `Image URL ${images.length + 1}`;
     const tempId = makeId("img");
 
-    // Detect natural dimensions before adding (best-effort; falls back to 900×600)
-    const dims = await getImageDimensions(url);
-
+    // Add a placeholder so the user sees something is happening
     setImages(prev => [...prev, {
       id: tempId,
       sourceLinkId: null,
       title,
-      url,
+      url: null,
       originalUrl: url,
-      width: dims.width,
-      height: dims.height,
-      naturalWidth: dims.width,
-      naturalHeight: dims.height,
+      width: 900,
+      height: 600,
+      naturalWidth: null,
+      naturalHeight: null,
       source: "image-url",
       uploading: true,
     }]);
 
-    // Try to download via proxy and store in Supabase
-    const { supabaseUrl } = await uploadImageFromUrl(url, title);
+    // Fetch and store in Supabase — external URL is NEVER used as the render source
+    const { supabaseUrl, errorMsg } = await uploadImageFromUrl(url, title);
+
+    if (!supabaseUrl) {
+      // Upload failed — remove placeholder so no broken/external image lives in the Roll
+      setImages(prev => prev.filter(img => img.id !== tempId));
+      setStatusMessage(errorMsg || "Could not import image — the server may block direct downloads. Upload the file instead.");
+      return;
+    }
+
+    // Get dimensions from the stored URL (same-origin, safe)
+    const dims = await getImageDimensions(supabaseUrl);
+
     setImages(prev => prev.map(img =>
       img.id === tempId
-        ? { ...img, url: supabaseUrl || url, uploading: false }
+        ? { ...img, url: supabaseUrl, width: dims.width, height: dims.height, naturalWidth: dims.width, naturalHeight: dims.height, uploading: false }
         : img
     ));
-    setStatusMessage(supabaseUrl ? "Image saved to storage." : "Image added (original URL).");
+    setStatusMessage("Image added to Roll.");
+  };
+
+  const convertImageToStorage = async (imageId) => {
+    const image = images.find(img => img.id === imageId);
+    if (!image) return;
+    // Already stored — nothing to do
+    if (isStoredImageUrl(image.url)) return;
+    // Prefer the original external URL; fall back to current url
+    const externalUrl = image.originalUrl || image.url;
+    if (!externalUrl) return;
+
+    setConvertingImageId(imageId);
+    setStatusMessage("Converting image to storage…");
+    const { supabaseUrl, errorMsg } = await uploadImageFromUrl(externalUrl, image.title);
+    if (!supabaseUrl) {
+      setConvertingImageId(null);
+      setStatusMessage(errorMsg || "Could not convert image. Try re-importing the URL.");
+      return;
+    }
+    const dims = await getImageDimensions(supabaseUrl);
+    setImages(prev => prev.map(img =>
+      img.id === imageId
+        ? {
+            ...img,
+            url: supabaseUrl,
+            originalUrl: img.originalUrl || externalUrl,
+            source: "converted-url",
+            width: dims.width || img.width,
+            height: dims.height || img.height,
+            naturalWidth: dims.width || img.naturalWidth,
+            naturalHeight: dims.height || img.naturalHeight,
+            uploading: false,
+          }
+        : img
+    ));
+    setConvertingImageId(null);
+    setStatusMessage("Image converted to storage.");
   };
 
   const addLocalFiles = async (event) => {
@@ -1281,6 +1346,12 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   const proxyImageToBase64 = async (url) => {
     try {
       const res = await fetch(`/.netlify/functions/image-proxy?url=${encodeURIComponent(url)}`);
+      const ct = res.headers.get("content-type") || "";
+      if (!res.ok || !ct.includes("application/json")) {
+        const preview = await res.text();
+        console.error(`Image proxy non-JSON (${res.status}, ${ct}): ${preview.slice(0, 120)}`);
+        return null;
+      }
       const data = await res.json();
       return data.dataUrl || null;
     } catch { return null; }
@@ -1289,40 +1360,64 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   const uploadImageFromUrl = async (originalUrl, title = "") => {
     try {
       setStatusMessage("Downloading image...");
-      // Fetch via proxy
-      const proxyRes = await fetch(`/.netlify/functions/image-proxy?url=${encodeURIComponent(originalUrl)}`);
-      const proxyData = await proxyRes.json();
-      if (!proxyData.dataUrl) throw new Error("Proxy returned no data");
 
-      // Convert base64 dataUrl to blob
-      const [meta, b64] = proxyData.dataUrl.split(",");
-      const mime = meta.match(/:(.*?);/)[1];
-      const byteString = atob(b64);
-      const ab = new ArrayBuffer(byteString.length);
-      const ia = new Uint8Array(ab);
-      for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
-      const blob = new Blob([ab], { type: mime });
+      let blob = null;
+      let mime = "image/jpeg";
 
-      // Upload to Supabase Storage
-      const ext = mime.split("/")[1] || "jpg";
+      // Attempt 1: direct browser fetch (succeeds when server sends CORS headers)
+      try {
+        const directRes = await fetch(originalUrl, { mode: "cors" });
+        if (directRes.ok) {
+          blob = await directRes.blob();
+          mime = blob.type && blob.type !== "application/octet-stream" ? blob.type : "image/jpeg";
+        }
+      } catch (_) {
+        // CORS-blocked or network error — fall through to proxy
+      }
+
+      // Attempt 2: server-side proxy (bypasses browser CORS restriction)
+      // Requires `netlify dev` locally (npm start alone does not serve functions).
+      if (!blob) {
+        const proxyRes = await fetch(`/.netlify/functions/image-proxy?url=${encodeURIComponent(originalUrl)}`);
+        const proxyContentType = proxyRes.headers.get("content-type") || "";
+        if (!proxyRes.ok || !proxyContentType.includes("application/json")) {
+          const preview = await proxyRes.text();
+          console.error(`Image proxy non-JSON response (status ${proxyRes.status}, type: ${proxyContentType}): ${preview.slice(0, 120)}`);
+          throw new Error(
+            proxyContentType.includes("text/html") || proxyRes.status === 404
+              ? "Image proxy unavailable — run `netlify dev` instead of `npm start` for URL import in local development"
+              : `Image proxy returned unexpected response (${proxyRes.status})`
+          );
+        }
+        const proxyData = await proxyRes.json();
+        if (!proxyData.dataUrl) throw new Error("Image could not be fetched via proxy");
+        const [meta, b64] = proxyData.dataUrl.split(",");
+        mime = meta.match(/:(.*?);/)[1];
+        const byteString = atob(b64);
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+        blob = new Blob([ab], { type: mime });
+      }
+
+      // Upload blob to Supabase Storage
+      const ext = mime.split("/")[1]?.replace("jpeg", "jpg") || "jpg";
       const filename = `${selectedProject?.id || "shared"}/${makeId("img")}.${ext}`;
-      const { data: uploadData, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from("moodboard-images")
         .upload(filename, blob, { contentType: mime, upsert: false });
 
       if (error) throw error;
 
-      // Get public URL
       const { data: urlData } = supabase.storage
         .from("moodboard-images")
         .getPublicUrl(filename);
 
-      setStatusMessage("Image saved to storage.");
       return { supabaseUrl: urlData.publicUrl, originalUrl };
     } catch (err) {
       console.error("uploadImageFromUrl error:", err);
-      setStatusMessage("Could not download image — using original URL.");
-      return { supabaseUrl: null, originalUrl };
+      // Return failure — caller must NOT fall back to the external URL
+      return { supabaseUrl: null, originalUrl, errorMsg: "Could not download or store image: " + err.message };
     }
   };
 
@@ -1371,10 +1466,24 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
 
       // Load all images as HTMLImageElement objects upfront
       setStatusMessage("Loading images...");
+
       const loadedImgMap = {};
       const allImageItems = canvasItems.filter(item =>
         item.boardId === activeBoard.id && item.type === "image" && !item.hidden
       );
+
+      const externalItems = allImageItems.filter(item => {
+        const imgData = images.find(img => img.id === item.imageId);
+        return imgData?.url && !isStoredImageUrl(imgData.url);
+      });
+      if (externalItems.length > 0) {
+        setExportingPdf(false);
+        setStatusMessage(
+          `PDF export blocked: ${externalItems.length} image(s) use external URLs. Open each image in the Roll lightbox and click "Convert to Storage", then export again.`
+        );
+        return;
+      }
+
       await Promise.all(allImageItems.map(item => {
         const imgData = images.find(img => img.id === item.imageId);
         if (!imgData?.url || loadedImgMap[imgData.url]) return;
@@ -1382,13 +1491,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           const el = new Image();
           el.crossOrigin = "anonymous";
           el.onload = () => { loadedImgMap[imgData.url] = el; res(); };
-          el.onerror = () => {
-            // Retry without crossOrigin for non-CORS sources
-            const el2 = new Image();
-            el2.onload = () => { loadedImgMap[imgData.url] = el2; res(); };
-            el2.onerror = () => res(); // skip if truly broken
-            el2.src = imgData.url;
-          };
+          el.onerror = () => res(); // skip broken images — no no-CORS retry (would taint canvas)
           el.src = imgData.url;
         });
       }));
@@ -1677,7 +1780,6 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     const page = boardPages.find(p => p.id === item.pageId);
     // Snapshot other items for guide calculation (frozen at drag start)
     const otherItems = canvasItems.filter(ci => ci.boardId === activeBoard?.id && ci.pageId === item.pageId && !dragIds.includes(ci.id) && !ci.hidden);
-    const pageMaxZ = canvasItems.filter(ci => ci.pageId === item.pageId).reduce((m, ci) => Math.max(m, ci.zIndex || 0), 0);
     const pageRect = pageExportRefs.current[item.pageId]?.getBoundingClientRect();
     const itemLeft = pageRect ? pageRect.left + item.x * zoomRef.current : e.clientX;
     const itemTop = pageRect ? pageRect.top + item.y * zoomRef.current : e.clientY;
@@ -1728,13 +1830,6 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     } else {
       setTextDragPreview(null);
     }
-
-    // Temporarily elevate dragged items above everything else on the source page so they render on top during drag
-    setCanvasItems(prev => prev.map(ci => {
-      const zPos = dragIds.indexOf(ci.id);
-      if (zPos < 0) return ci;
-      return { ...ci, zIndex: pageMaxZ + 1000 + zPos };
-    }));
 
     const calcGuides = (rawX, rawY, iW, iH, pg, others) => {
       const xCandidates = [0, pg.width / 2, pg.width];
@@ -3503,6 +3598,15 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
               <img src={lbImage.url} alt={lbImage.title} style={{ maxWidth: "92vw", maxHeight: "88vh", objectFit: "contain", display: "block", boxShadow: "0 12px 60px rgba(0,0,0,0.8)" }} />
               {lbImage.title && <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.6)", color: "white", padding: "8px 12px", fontSize: "13px", textAlign: "center" }}>{lbImage.title}</div>}
               <button onClick={() => setLightboxImageId(null)} style={{ position: "absolute", top: "-14px", right: "-14px", backgroundColor: "#333", color: "white", border: "none", borderRadius: "50%", width: "30px", height: "30px", fontSize: "16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              {!isStoredImageUrl(lbImage.url) && canEdit && !isViewOnly && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); convertImageToStorage(lbImage.id); }}
+                  disabled={convertingImageId === lbImage.id}
+                  style={{ position: "absolute", top: "-14px", left: "0", backgroundColor: convertingImageId === lbImage.id ? "#888" : "#FF9800", color: "white", border: "none", borderRadius: "4px", padding: "4px 10px", fontSize: "11px", fontWeight: "bold", cursor: convertingImageId === lbImage.id ? "not-allowed" : "pointer", whiteSpace: "nowrap", zIndex: 1 }}
+                >
+                  {convertingImageId === lbImage.id ? "Converting…" : "Convert to Storage"}
+                </button>
+              )}
               {images.length > 1 && (
                 <div style={{ position: "absolute", bottom: "-26px", left: 0, right: 0, textAlign: "center", color: "rgba(255,255,255,0.45)", fontSize: "12px", pointerEvents: "none" }}>
                   {lbIdx + 1} / {images.length} · ← → to navigate
