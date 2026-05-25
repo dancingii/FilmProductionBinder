@@ -21,6 +21,7 @@ import {
   searchScript as searchScriptUtil,
   resolveInstanceSceneIndex,
 } from "./utils/scriptSearch";
+import { parseScriptFile } from "./utils/screenplayImport";
 import ToDoListModule from "./components/modules/ToDoList";
 import BudgetModule from "./components/modules/Budget/Budget";
 import ShotListModule from "./components/modules/ShotList/ShotList";
@@ -75,6 +76,7 @@ import WardrobeModule from "./components/modules/Wardrobe/Wardrobe";
 import StripboardScheduleModule from "./components/modules/StripboardSchedule/StripboardSchedule";
 import CastCrewModule from "./components/modules/CastCrew/CastCrew";
 import ScriptBreakdownModule from "./components/modules/ScriptBreakdown";
+import WritingScript from "./components/modules/WritingScript";
 import MakeupModule from "./components/modules/Makeup/Makeup";
 import ProductionDesignModule from "./components/modules/ProductionDesign/ProductionDesign";
 import ReportsModule from "./components/modules/Reports/Reports";
@@ -93,6 +95,12 @@ const normalizeModuleName = (name) =>
 
 const normalizeModuleList = (modules = []) =>
   Array.from(new Set((Array.isArray(modules) ? modules : []).map(normalizeModuleName)));
+
+const NAV_DISPLAY_LABELS = {
+  StripboardSchedule: "Stripboard Schedule",
+  ToDoList: "To Do List",
+};
+const getNavLabel = (mod) => NAV_DISPLAY_LABELS[mod] || mod;
 
 const ALL_MODULES = [
   SCRIPT_BREAKDOWN_MODULE, "Stripboard", "StripboardSchedule", "Calendar", "Day Out of Days",
@@ -154,6 +162,8 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   });
 
   const initialLoadComplete = useRef(false);
+  const pendingBudgetSyncRef = useRef(null);
+  const budgetLockReleaseTimer = useRef(null);
 
   // Clear scroll position flags on page load/refresh
   useEffect(() => {
@@ -828,6 +838,10 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
         },
         (payload) => {
           console.log("🔴 REALTIME: Cost categories changed");
+          if (syncLocks.current.budget) {
+            console.log("⏭️ SKIPPING cost categories reload - budget sync lock active");
+            return;
+          }
           database.loadCostCategoriesFromDatabase(
             selectedProject,
             setCostCategories
@@ -1435,6 +1449,20 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   };
 
   const syncBudgetDataToDatabase = async (updatedBudgetData) => {
+    // If a sync is already in flight, queue this data and return — the in-flight
+    // sync will pick it up after it finishes.
+    if (syncLocks.current.budget) {
+      pendingBudgetSyncRef.current = updatedBudgetData;
+      console.log("🔒 Budget sync already active, queued for after current sync");
+      return;
+    }
+
+    // Cancel any pending lock-release timer from a previous sync cycle
+    if (budgetLockReleaseTimer.current) {
+      clearTimeout(budgetLockReleaseTimer.current);
+      budgetLockReleaseTimer.current = null;
+    }
+
     syncLocks.current.budget = true;
     console.log("🔒 Budget sync lock ENABLED");
 
@@ -1454,8 +1482,18 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
         updatedCostCats
       );
     } finally {
-      syncLocks.current.budget = false;
-      console.log("🔓 Budget sync lock RELEASED");
+      // Delay release so realtime echoes from our own writes are still suppressed
+      budgetLockReleaseTimer.current = setTimeout(() => {
+        syncLocks.current.budget = false;
+        budgetLockReleaseTimer.current = null;
+        console.log("🔓 Budget sync lock RELEASED");
+        // If data arrived while we were syncing, save it now
+        if (pendingBudgetSyncRef.current) {
+          const pending = pendingBudgetSyncRef.current;
+          pendingBudgetSyncRef.current = null;
+          syncBudgetDataToDatabase(pending);
+        }
+      }, 2000);
     }
   };
 
@@ -1652,7 +1690,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
       });
     }
 
-    alert(
+    showAlert(
       `Local state has ${shootingDays.length} shooting days. Check console for details.`
     );
   };
@@ -1667,12 +1705,9 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
 
   // Shooting days sync removed - will be implemented properly with existing database pattern
 
-  const syncImportedDataToDatabase = async (projectData) => {
-    await database.syncImportedDataToDatabase(selectedProject, projectData);
-  };
-
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeModule, setActiveModule] = useState("Dashboard");
+  const [writingActiveModule, setWritingActiveModule] = useState("Script");
   const [callSheetInitialDay, setCallSheetInitialDay] = useState(null);
   // Expose to child modules that can't receive it as a prop
   React.useEffect(() => {
@@ -1763,6 +1798,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
     filmTitle: "",
     producer: "",
     director: "",
+    executiveProducer: "",
   });
   const [costCategories, setCostCategories] = useState([
     {
@@ -2586,184 +2622,99 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
     console.log("✅ AI scene summarization complete — descriptions loaded");
   };
 
-  const handleFileUpload = (event) => {
+  const handleFileUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target.result;
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(text, "text/xml");
-        const paragraphs = Array.from(xmlDoc.getElementsByTagName("Paragraph"));
+    try {
+      const parsedScenes = await parseScriptFile(file);
 
-        const parsedScenes = [];
-        let currentScene = null;
-        let sceneNumber = 1;
-
-        paragraphs.forEach((para) => {
-          const type = para.getAttribute("Type");
-          let content = para.textContent.trim();
-
-          if (!content) return;
-
-          // Debug: Log ALL paragraph types to find title page
-          console.log(
-            "Paragraph type:",
-            type,
-            "| Content:",
-            content.substring(0, 40)
+      // Calculate page data for all scenes
+      const scenesWithPageData = parsedScenes.map((scene, index) => {
+        try {
+          const sceneStats = calculateScenePageStats(
+            index,
+            parsedScenes,
+            107
           );
-
-          // Filter out title page elements (including null types)
-          const titlePageTypes = [
-            "Title",
-            "Credit",
-            "Author",
-            "Contact",
-            "Copyright",
-            "Draft date",
-            "More Title",
-            null, // Add null to catch title page elements with no type
-          ];
-          if (titlePageTypes.includes(type)) {
-            console.log("🚫 FILTERED OUT:", type, content.substring(0, 40));
-            return; // Skip title page elements
-          }
-
-          const formatting = {};
-          const textElements = para.getElementsByTagName("Text");
-          if (textElements.length > 0) {
-            const textElement = textElements[0];
-            if (textElement.getAttribute("Style")) {
-              const style = textElement.getAttribute("Style");
-              formatting.bold = style.includes("Bold");
-              formatting.italic = style.includes("Italic");
-              formatting.underline = style.includes("Underline");
-            }
-          }
-
-          if (type === "Scene Heading") {
-            if (currentScene) {
-              currentScene.sceneNumber = sceneNumber++;
-              currentScene.metadata = {
-                ...(currentScene.metadata || {}),
-                originalSceneNumber: currentScene.sceneNumber,
-                originalScriptOrder: currentScene.sceneNumber - 1,
-              };
-              parsedScenes.push(currentScene);
-            }
-
-            const headingText = content.toUpperCase();
-            const metadata = parseSceneHeading(headingText);
-            currentScene = {
-              id: createSceneId(),
-              heading: headingText,
-              content: [],
-              metadata: metadata,
-              sceneNumber: sceneNumber,
-              estimatedDuration: "30 min",
-              status: "Not Scheduled",
-            };
-          } else if (currentScene) {
-            // Don't add null-type paragraphs to scene content (title page elements)
-            if (type === null) {
-              console.log(
-                "🚫 SKIPPING null-type content:",
-                content.substring(0, 40)
-              );
-              return;
-            }
-
-            if (type === "Character") {
-              content = content.toUpperCase();
-            }
-
-            currentScene.content.push({
-              type,
-              text: content,
-              formatting:
-                Object.keys(formatting).length > 0 ? formatting : null,
-            });
-          }
-        });
-
-        if (currentScene) {
-          currentScene.sceneNumber = sceneNumber;
-          currentScene.metadata = {
-            ...(currentScene.metadata || {}),
-            originalSceneNumber: currentScene.sceneNumber,
-            originalScriptOrder: currentScene.sceneNumber - 1,
+          return {
+            ...scene,
+            pageNumber: sceneStats.startPage,
+            pageLength: sceneStats.pageLength,
           };
-          parsedScenes.push(currentScene);
+        } catch (error) {
+          console.warn(
+            `Error calculating page stats for scene ${index}:`,
+            error
+          );
+          return {
+            ...scene,
+            pageNumber: 1,
+            pageLength: "1/8",
+          };
         }
+      });
 
-        // Calculate page data for all scenes
-        const scenesWithPageData = parsedScenes.map((scene, index) => {
-          try {
-            const sceneStats = calculateScenePageStats(
-              index,
-              parsedScenes,
-              107
-            );
-            return {
-              ...scene,
-              pageNumber: sceneStats.startPage,
-              pageLength: sceneStats.pageLength,
-            };
-          } catch (error) {
-            console.warn(
-              `Error calculating page stats for scene ${index}:`,
-              error
-            );
-            return {
-              ...scene,
-              pageNumber: 1,
-              pageLength: "1/8",
-            };
+      setScenes(scenesWithPageData);
+      setStripboardScenes([...scenesWithPageData]); // Initial setup with page data
+      saveScenesDatabase(scenesWithPageData);
+
+      const detectedLocations = extractLocationsHierarchical(parsedScenes);
+      setScriptLocations(detectedLocations);
+      syncScriptLocationsToDatabase(detectedLocations);
+      console.log(
+        `Auto-detected ${detectedLocations.length} locations on script upload`
+      );
+
+      // Auto-detect characters after loading scenes
+      const detectedCharacters = {};
+      let characterOrder = 1;
+
+      const cleanCharacterName = (rawName) => {
+        let cleaned = rawName.replace(/\s*\([^)]*\)/g, "");
+        cleaned = cleaned.replace(/[.,!?;:]$/, "");
+        cleaned = cleaned.trim().toUpperCase();
+        const excludeWords = ["FADE", "CUT", "SCENE", "TITLE", "END"];
+        if (cleaned.length < 1 || excludeWords.includes(cleaned)) {
+          return null;
+        }
+        return cleaned;
+      };
+
+      // PASS 1: Scan dialogue blocks
+      parsedScenes.forEach((scene) => {
+        scene.content.forEach((block) => {
+          if (block.type === "Character") {
+            const characterName = cleanCharacterName(block.text);
+            if (characterName) {
+              if (!detectedCharacters[characterName]) {
+                detectedCharacters[characterName] = {
+                  name: characterName,
+                  scenes: [],
+                  chronologicalNumber: characterOrder++,
+                };
+              }
+              if (
+                !detectedCharacters[characterName].scenes.includes(
+                  scene.sceneNumber
+                )
+              ) {
+                detectedCharacters[characterName].scenes.push(
+                  scene.sceneNumber
+                );
+              }
+            }
           }
         });
+      });
 
-        setScenes(scenesWithPageData);
-        setStripboardScenes([...scenesWithPageData]); // Initial setup with page data
-        saveScenesDatabase(scenesWithPageData);
-
-        const detectedLocations = extractLocationsHierarchical(parsedScenes);
-        setScriptLocations(detectedLocations);
-        syncScriptLocationsToDatabase(detectedLocations);
-        console.log(
-          `Auto-detected ${detectedLocations.length} locations on script upload`
-        );
-
-        // Auto-detect characters after loading scenes
-        const detectedCharacters = {};
-        let characterOrder = 1;
-
-        const cleanCharacterName = (rawName) => {
-          let cleaned = rawName.replace(/\s*\([^)]*\)/g, "");
-          cleaned = cleaned.replace(/[.,!?;:]$/, "");
-          cleaned = cleaned.trim().toUpperCase();
-          const excludeWords = ["FADE", "CUT", "SCENE", "TITLE", "END"];
-          if (cleaned.length < 1 || excludeWords.includes(cleaned)) {
-            return null;
-          }
-          return cleaned;
-        };
-
-        // PASS 1: Scan dialogue blocks
-        parsedScenes.forEach((scene) => {
-          scene.content.forEach((block) => {
-            if (block.type === "Character") {
-              const characterName = cleanCharacterName(block.text);
-              if (characterName) {
-                if (!detectedCharacters[characterName]) {
-                  detectedCharacters[characterName] = {
-                    name: characterName,
-                    scenes: [],
-                    chronologicalNumber: characterOrder++,
-                  };
-                }
+      // PASS 2: Scan action lines
+      parsedScenes.forEach((scene) => {
+        scene.content.forEach((block) => {
+          if (block.type === "Action") {
+            Object.keys(detectedCharacters).forEach((characterName) => {
+              const regex = new RegExp(`\\b${characterName}\\b`, "i");
+              if (regex.test(block.text)) {
                 if (
                   !detectedCharacters[characterName].scenes.includes(
                     scene.sceneNumber
@@ -2774,66 +2725,47 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
                   );
                 }
               }
-            }
-          });
+            });
+          }
         });
+      });
 
-        // PASS 2: Scan action lines
-        parsedScenes.forEach((scene) => {
-          scene.content.forEach((block) => {
-            if (block.type === "Action") {
-              Object.keys(detectedCharacters).forEach((characterName) => {
-                const regex = new RegExp(`\\b${characterName}\\b`, "i");
-                if (regex.test(block.text)) {
-                  if (
-                    !detectedCharacters[characterName].scenes.includes(
-                      scene.sceneNumber
-                    )
-                  ) {
-                    detectedCharacters[characterName].scenes.push(
-                      scene.sceneNumber
-                    );
-                  }
-                }
-              });
-            }
-          });
-        });
+      setCharacters(detectedCharacters);
+      syncCharactersToDatabase(detectedCharacters);
+      console.log(
+        `Auto-detected ${
+          Object.keys(detectedCharacters).length
+        } characters on script upload`
+      );
 
-        setCharacters(detectedCharacters);
-        syncCharactersToDatabase(detectedCharacters);
-        console.log(
-          `Auto-detected ${
-            Object.keys(detectedCharacters).length
-          } characters on script upload`
-        );
+      setCurrentIndex(0);
 
-        setCurrentIndex(0);
-
-        // Offer AI summarization
-        const confirmed = window.confirm(
-          `Script imported successfully — ${
-            scenesWithPageData.length
-          } scenes loaded.\n\nWould you like Claude to automatically summarize each scene and populate the description column?\n\nThis runs in the background and takes about ${Math.ceil(
-            (scenesWithPageData.length * 1.5) / 60
-          )} minute(s). You can keep using the app while it runs.`
-        );
-        if (confirmed) {
-          setTimeout(() => {
-            summarizeScenesWithAI(scenesWithPageData);
-          }, 50);
-        }
-      } catch (err) {
-        alert("Failed to parse .fdx file. Please check the file format.");
+      // Offer AI summarization
+      const confirmed = await showConfirm(
+        `Script imported successfully — ${
+          scenesWithPageData.length
+        } scenes loaded.\n\nWould you like Claude to automatically summarize each scene and populate the description column?\n\nThis runs in the background and takes about ${Math.ceil(
+          (scenesWithPageData.length * 1.5) / 60
+        )} minute(s). You can keep using the app while it runs.`,
+        "Summarize",
+        "Skip"
+      );
+      if (confirmed) {
+        setTimeout(() => {
+          summarizeScenesWithAI(scenesWithPageData);
+        }, 50);
       }
-    };
-
-    reader.readAsText(file);
+    } catch (err) {
+      console.error("Script import failed:", err);
+      await showAlert("Failed to parse script file. Please use a Final Draft .fdx file or a selectable-text screenplay PDF.");
+    } finally {
+      event.target.value = "";
+    }
   };
 
   const handleSingleSceneUpload = (file) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const text = e.target.result;
         const parser = new DOMParser();
@@ -2998,14 +2930,14 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
             "Scene replacement completed for scene:",
             newScene.sceneNumber
           );
-          alert(
+          await showAlert(
             `Scene ${newScene.sceneNumber} replaced successfully!\nOriginal: ${originalScene.content.length} blocks\nNew: ${newScene.content.length} blocks`
           );
         } else {
-          alert("Error: The uploaded file must contain exactly one scene.");
+          await showAlert("Error: The uploaded file must contain exactly one scene.");
         }
       } catch (err) {
-        alert("Failed to parse .fdx file. Please check the file format.");
+        await showAlert("Failed to parse .fdx file. Please check the file format.");
       }
     };
 
@@ -3082,206 +3014,10 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
     console.log("Characters auto-detected:", detectedCharacters);
   };
 
-  // ADD THESE FUNCTIONS RIGHT HERE (after line 2615):
-  const exportProject = () => {
-    const appData = {
-      scenes,
-      taggedItems,
-      stripboardScenes,
-      scheduledScenes,
-      shootingDays,
-      scriptLocations,
-      actualLocations,
-      currentIndex,
-      castCrew,
-      characters,
-      shotListData,
-      sceneNotes,
-      projectSettings,
-      costCategories,
-      costVendors,
-      callSheetData,
-      wardrobeItems,
-      garmentInventory,
-      garmentCategories,
-      todoItems,
-      todoCategories,
-      timelineData,
-      continuityElements,
-      budgetData,
-      exportInfo: {
-        exportDate: new Date().toISOString(),
-        version: "1.0",
-        appName: "Film Production Binder",
-      },
-    };
-
-    // Generate timestamp filename (e.g., "sep-7-25-850pm")
-    const now = new Date();
-    const monthNames = [
-      "jan",
-      "feb",
-      "mar",
-      "apr",
-      "may",
-      "jun",
-      "jul",
-      "aug",
-      "sep",
-      "oct",
-      "nov",
-      "dec",
-    ];
-    const month = monthNames[now.getMonth()];
-    const day = now.getDate();
-    const year = now.getFullYear().toString().slice(-2);
-    let hours = now.getHours();
-    const minutes = now.getMinutes().toString().padStart(2, "0");
-    const ampm = hours >= 12 ? "pm" : "am";
-    hours = hours % 12;
-    hours = hours ? hours : 12; // 12 hour format
-
-    const timestamp = `${month}-${day}-${year}-${hours}${minutes}${ampm}`;
-    const filename = `film-project-${timestamp}.json`;
-
-    const dataStr = JSON.stringify(appData, null, 2);
-    const blob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-
-    // Create a download link with the timestamped filename
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-
-    // For modern browsers, this should trigger the save dialog
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    URL.revokeObjectURL(url);
-
-    // Show confirmation with the filename
-    alert(`Project exported as: ${filename}`);
-  };
-
-  const importProject = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const projectData = JSON.parse(e.target.result);
-
-        // Validate the data structure
-        if (
-          !projectData.exportInfo ||
-          projectData.exportInfo.appName !== "Film Production Binder"
-        ) {
-          alert("Invalid project file format");
-          return;
-        }
-
-        // Restore all state
-        if (projectData.scenes) {
-          setScenes(projectData.scenes);
-        }
-
-        // Restore stripboard scenes with their status data
-        if (projectData.stripboardScenes) {
-          console.log(
-            "📋 Stripboard scene statuses in import:",
-            projectData.stripboardScenes
-              .slice(0, 5)
-              .map((s) => `Scene ${s.sceneNumber}: ${s.status}`)
-          );
-          // Use stripboard scenes directly - they contain the correct status information
-          setStripboardScenes(projectData.stripboardScenes);
-          console.log(
-            "✅ Restored stripboard scenes with statuses:",
-            projectData.stripboardScenes
-              .filter((s) => s.status !== "Not Scheduled")
-              .slice(0, 5)
-              .map((s) => `Scene ${s.sceneNumber}: ${s.status}`)
-          );
-        } else if (projectData.scenes) {
-          // Fallback: create stripboard scenes from main scenes if no stripboard data exists
-          setStripboardScenes([...projectData.scenes]);
-          console.log(
-            "⚠️ No stripboard scenes found, using main scenes as fallback"
-          );
-        }
-        if (projectData.taggedItems) setTaggedItems(projectData.taggedItems);
-        if (projectData.scheduledScenes)
-          setScheduledScenes(projectData.scheduledScenes);
-        if (projectData.shootingDays) setShootingDays(projectData.shootingDays);
-        if (projectData.scriptLocations)
-          setScriptLocations(projectData.scriptLocations);
-        if (projectData.castCrew) setCastCrew(projectData.castCrew);
-        if (projectData.currentIndex !== undefined)
-          setCurrentIndex(projectData.currentIndex);
-        if (projectData.actualLocations)
-          setActualLocations(projectData.actualLocations);
-        if (projectData.characters) setCharacters(projectData.characters);
-        if (projectData.shotListData) setShotListData(projectData.shotListData);
-        if (projectData.sceneNotes) setSceneNotes(projectData.sceneNotes);
-        if (projectData.projectSettings)
-          setProjectSettings(projectData.projectSettings);
-        if (projectData.costCategories)
-          setCostCategories(projectData.costCategories);
-        if (projectData.costVendors) setCostVendors(projectData.costVendors);
-        if (projectData.wardrobeItems)
-          setWardrobeItems(projectData.wardrobeItems);
-        if (projectData.garmentInventory)
-          setGarmentInventory(projectData.garmentInventory);
-        if (projectData.garmentCategories)
-          setGarmentCategories(projectData.garmentCategories);
-        if (projectData.todoItems) setTodoItems(projectData.todoItems);
-        if (projectData.todoCategories)
-          setTodoCategories(projectData.todoCategories);
-        if (projectData.timelineData) setTimelineData(projectData.timelineData);
-        if (projectData.continuityElements)
-          setContinuityElements(projectData.continuityElements);
-        if (projectData.budgetData) setBudgetData(projectData.budgetData);
-        if (projectData.callSheetData)
-          setCallSheetData(projectData.callSheetData);
-
-        // Sync imported data to database
-        try {
-          console.log("🔄 Starting database sync for imported data...");
-          await database.syncImportedDataToDatabase(
-            selectedProject,
-            projectData
-          );
-          console.log("✅ Database sync completed successfully");
-        } catch (syncError) {
-          console.error("❌ Database sync failed:", syncError);
-          alert(
-            `Import completed but database sync failed: ${syncError.message}`
-          );
-          return;
-        }
-
-        alert(
-          `Project imported successfully!\nExported: ${new Date(
-            projectData.exportInfo.exportDate
-          ).toLocaleDateString()}\nData synced to cloud database.`
-        );
-      } catch (error) {
-        alert("Failed to import project file. Please check the file format.");
-        console.error("Import error:", error);
-      }
-    };
-
-    reader.readAsText(file);
-
-    // Clear the input so the same file can be imported again
-    event.target.value = "";
-  };
 
   const repairScheduledScenesFromStripboard = async () => {
     if (!selectedProject || !stripboardScenes.length || !shootingDays.length) {
-      alert("Data not loaded yet. Please wait and try again.");
+      showAlert("Data not loaded yet. Please wait and try again.");
       return;
     }
 
@@ -3362,18 +3098,18 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
         console.log(
           `REPAIR COMPLETED: Rebuilt ${scheduledScenesData.length} scheduled scene mappings`
         );
-        alert(
+        showAlert(
           `Repair completed! Found ${scheduledScenesData.length} scheduled shooting days. Check Reports module now.`
         );
       } else {
         console.log("REPAIR: No scheduled scenes with dates found");
-        alert(
+        showAlert(
           "No scheduled scenes with dates found. Your scenes may need to be re-scheduled in StripboardSchedule module."
         );
       }
     } catch (error) {
       console.error("REPAIR ERROR:", error);
-      alert(`Repair failed: ${error.message}`);
+      showAlert(`Repair failed: ${error.message}`);
     }
   };
 
@@ -3459,7 +3195,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
               ),
             ]).catch((error) => {
               console.error("❌ Atomic scene status update failed:", error);
-              alert("⚠️ Failed to save scene status. Please try again.");
+              showAlert("⚠️ Failed to save scene status. Please try again.");
             });
           } else if (field === "manualTimeOfDay") {
             database
@@ -3469,7 +3205,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
                   "❌ Atomic scene time of day update failed:",
                   error
                 );
-                alert("⚠️ Failed to save time of day. Please try again.");
+                showAlert("⚠️ Failed to save time of day. Please try again.");
               });
           } else if (field === "description") {
             database
@@ -3479,14 +3215,14 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
                   "❌ Atomic scene description update failed:",
                   error
                 );
-                alert("⚠️ Failed to save description. Please try again.");
+                showAlert("⚠️ Failed to save description. Please try again.");
               });
           } else if (field === "notes") {
             database
               .updateSceneNotes(selectedProject, sceneNumber, value)
               .catch((error) => {
                 console.error("❌ Atomic scene notes update failed:", error);
-                alert("⚠️ Failed to save notes. Please try again.");
+                showAlert("⚠️ Failed to save notes. Please try again.");
               });
           } else if (field === "heading") {
             const intExt = value.intExt || "";
@@ -3517,7 +3253,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
               )
               .catch((error) => {
                 console.error("❌ Atomic scene heading update failed:", error);
-                alert("⚠️ Failed to save heading. Please try again.");
+                showAlert("⚠️ Failed to save heading. Please try again.");
               });
           }
 
@@ -4315,6 +4051,19 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
     return () => document.removeEventListener("keydown", handleEsc);
   }, []);
 
+  const renderSharedMoodBoardModule = () => (
+    <MoodBoard
+      selectedProject={selectedProject}
+      userRole={userRole}
+      canEdit={canEdit(userRole)}
+      isViewOnly={isViewOnly(userRole)}
+      user={user}
+      onMoodboardDataChange={({ images }) => {
+        setScriptMoodImages(images || []);
+      }}
+    />
+  );
+
   const renderModule = () => {
     const accessible = getAccessibleModules(userRole, modulePermissions);
     const normalizedActiveModule = normalizeModuleName(activeModule);
@@ -4842,18 +4591,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
           />
         );
         case "MoodBoard":
-          return (
-            <MoodBoard
-              selectedProject={selectedProject}
-              userRole={userRole}
-              canEdit={canEdit(userRole)}
-              isViewOnly={isViewOnly(userRole)}
-              user={user}
-              onMoodboardDataChange={({ images }) => {
-                setScriptMoodImages(images || []);
-              }}
-            />
-          );
+          return renderSharedMoodBoardModule();
       case "Budget":
         return (
           <BudgetModule
@@ -4870,6 +4608,8 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
     }
   };
 
+  const isWritingWorkflow = activeWorkflow === "writing";
+
   return (
     <div
       style={{
@@ -4885,150 +4625,215 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
       }}
     >
       <WorkflowWorkspace activeWorkflow={activeWorkflow}>
-      <div
-        style={{
-          width: "120px",
-          backgroundColor: "#FFE5B4",
-          paddingTop: "10px",
-          fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          position: "fixed",
-          left: 0,
-          top: "44px",
-          bottom: 0,
-          zIndex: 1000,
-          overflowY: "auto",
-        }}
-      >
-        {/* Export/Import Section */}
-        {canEdit(userRole) && (
+      {isWritingWorkflow ? (
+        <>
+          {/* Writing module sidebar — same width/styling as production sidebar */}
           <div
             style={{
-              marginBottom: "10px",
-              borderBottom: "1px solid #ccc",
-              paddingBottom: "10px",
+              width: "120px",
+              backgroundColor: "#FFE5B4",
+              paddingTop: "10px",
+              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              position: "fixed",
+              left: 0,
+              top: "44px",
+              bottom: 0,
+              zIndex: 1000,
+              overflowY: "auto",
             }}
           >
+            <div style={{ marginBottom: "10px" }}>
+              <strong>Modules:</strong>
+            </div>
             <button
-              onClick={exportProject}
+              onClick={() => setWritingActiveModule("Script")}
               style={{
-                margin: "2px 0",
-                padding: "6px 4px",
-                backgroundColor: "#4CAF50",
-                color: "white",
-                border: "1px solid #45a049",
+                margin: "5px 0",
+                padding: "8px 4px",
+                backgroundColor: writingActiveModule === "Script" ? "#ddd" : "transparent",
+                border: "1px solid #ccc",
                 cursor: "pointer",
-                fontSize: "10px",
+                fontWeight: "normal",
+                fontSize: "11px",
                 width: "100px",
-                fontWeight: "bold",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
-              Export
+              <span style={{ fontWeight: writingActiveModule === "Script" ? "bold" : "normal" }}>
+                Script
+              </span>
             </button>
+            <button
+              onClick={() => setWritingActiveModule("MoodBoard")}
+              style={{
+                margin: "5px 0",
+                padding: "8px 4px",
+                backgroundColor: writingActiveModule === "MoodBoard" ? "#ddd" : "transparent",
+                border: "1px solid #ccc",
+                cursor: "pointer",
+                fontWeight: "normal",
+                fontSize: "11px",
+                width: "100px",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              <span style={{ fontWeight: writingActiveModule === "MoodBoard" ? "bold" : "normal" }}>
+                Mood Board
+              </span>
+            </button>
+            <button
+              disabled
+              title="Coming soon"
+              style={{
+                margin: "5px 0",
+                padding: "8px 4px",
+                backgroundColor: "transparent",
+                border: "1px solid #ccc",
+                cursor: "not-allowed",
+                fontWeight: "normal",
+                fontSize: "11px",
+                width: "100px",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                opacity: 0.45,
+              }}
+            >
+              Characters
+            </button>
+          </div>
 
-            <label style={{ display: "block" }}>
-              <input
-                type="file"
-                accept=".json"
-                onChange={importProject}
-                style={{ display: "none" }}
+          {/* Writing content area — matches production content area positioning */}
+          <div
+            style={{
+              position: "fixed",
+              top: "44px",
+              left: "120px",
+              right: 0,
+              bottom: 0,
+              minWidth: 0,
+              minHeight: 0,
+              overflow: "auto",
+              boxSizing: "border-box",
+              backgroundColor: "#f5f5f5",
+              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+              padding: (writingActiveModule === "Script" || writingActiveModule === "MoodBoard") ? "10px" : "0",
+            }}
+          >
+            {writingActiveModule === "MoodBoard" ? (
+              renderSharedMoodBoardModule()
+            ) : (
+              <WritingScript
+                previewMode="editor"
+                selectedProject={selectedProject}
+                user={user}
+                userRole={userRole}
+                onAlert={showAlert}
               />
-              <div
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div
+            style={{
+              width: "120px",
+              backgroundColor: "#FFE5B4",
+              paddingTop: "10px",
+              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              position: "fixed",
+              left: 0,
+              top: "44px",
+              bottom: 0,
+              zIndex: 1000,
+              overflowY: "auto",
+            }}
+          >
+
+            {/* Maintenance & Debug Buttons - Commented out for production */}
+            {/* DEBUG & MAINTENANCE BUTTONS - Hidden in production but preserved for emergency use */}
+            {/* Uncomment buttons below for debugging or maintenance operations */}
+            {/*
+              <button
+                onClick={cleanupDuplicateShootingDays}
                 style={{
                   margin: "2px 0",
                   padding: "6px 4px",
-                  backgroundColor: "#2196F3",
+                  backgroundColor: "#9C27B0",
                   color: "white",
-                  border: "1px solid #1976D2",
+                  border: "1px solid #7B1FA2",
                   cursor: "pointer",
                   fontSize: "10px",
                   width: "100px",
                   fontWeight: "bold",
-                  textAlign: "center",
                 }}
               >
-                Import
-              </div>
-            </label>
-          </div>
-        )}
+                Cleanup Days
+              </button>
 
-        {/* Maintenance & Debug Buttons - Commented out for production */}
-        {/* DEBUG & MAINTENANCE BUTTONS - Hidden in production but preserved for emergency use */}
-        {/* Uncomment buttons below for debugging or maintenance operations */}
-        {/*
-          <button
-            onClick={cleanupDuplicateShootingDays}
-            style={{
-              margin: "2px 0",
-              padding: "6px 4px",
-              backgroundColor: "#9C27B0",
-              color: "white",
-              border: "1px solid #7B1FA2",
-              cursor: "pointer",
-              fontSize: "10px",
-              width: "100px",
-              fontWeight: "bold",
-            }}
-          >
-            Cleanup Days
-          </button>
+              <button
+                onClick={debugShootingDaysState}
+                style={{
+                  margin: "2px 0",
+                  padding: "6px 4px",
+                  backgroundColor: "#FF5722",
+                  color: "white",
+                  border: "1px solid #D84315",
+                  cursor: "pointer",
+                  fontSize: "10px",
+                  width: "100px",
+                  fontWeight: "bold",
+                }}
+              >
+                Debug Days
+              </button>
 
-          <button
-            onClick={debugShootingDaysState}
-            style={{
-              margin: "2px 0",
-              padding: "6px 4px",
-              backgroundColor: "#FF5722",
-              color: "white",
-              border: "1px solid #D84315",
-              cursor: "pointer",
-              fontSize: "10px",
-              width: "100px",
-              fontWeight: "bold",
-            }}
-          >
-            Debug Days
-          </button>
+              <button
+                onClick={auditAllDatabaseTables}
+                style={{
+                  margin: "2px 0",
+                  padding: "6px 4px",
+                  backgroundColor: "#FF5722",
+                  color: "white",
+                  border: "1px solid #D84315",
+                  cursor: "pointer",
+                  fontSize: "10px",
+                  width: "100px",
+                  fontWeight: "bold",
+                }}
+              >
+                Audit DB
+              </button>
 
-          <button
-            onClick={auditAllDatabaseTables}
-            style={{
-              margin: "2px 0",
-              padding: "6px 4px",
-              backgroundColor: "#FF5722",
-              color: "white",
-              border: "1px solid #D84315",
-              cursor: "pointer",
-              fontSize: "10px",
-              width: "100px",
-              fontWeight: "bold",
-            }}
-          >
-            Audit DB
-          </button>
+              <button
+                onClick={emergencyDatabaseCleanup}
+                style={{
+                  margin: "2px 0",
+                  padding: "6px 4px",
+                  backgroundColor: "#F44336",
+                  color: "white",
+                  border: "1px solid #D32F2F",
+                  cursor: "pointer",
+                  fontSize: "10px",
+                  width: "100px",
+                  fontWeight: "bold",
+                }}
+              >
+                Emergency Cleanup
+              </button>
+              */}
 
-          <button
-            onClick={emergencyDatabaseCleanup}
-            style={{
-              margin: "2px 0",
-              padding: "6px 4px",
-              backgroundColor: "#F44336",
-              color: "white",
-              border: "1px solid #D32F2F",
-              cursor: "pointer",
-              fontSize: "10px",
-              width: "100px",
-              fontWeight: "bold",
-            }}
-          >
-            Emergency Cleanup
-          </button>
-          */}
-
-        {/*
+            {/*
 <button
   onClick={repairScheduledScenesFromStripboard}
   style={{
@@ -5068,7 +4873,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
     })));
     
     setTaggedItems(itemsWithCategoryNumbers);
-    alert("Category numbers recalculated! Check console for details.");
+    showAlert("Category numbers recalculated! Check console for details.");
   }}
   style={{
     margin: "2px 0",
@@ -5086,82 +4891,88 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
 </button>
 */}
 
-        <div style={{ marginBottom: "10px" }}>
-          <strong>Modules:</strong>
-        </div>
+            <div style={{ marginBottom: "10px" }}>
+              <strong>Modules:</strong>
+            </div>
 
-        <div
-          style={{
-            fontSize: "9px",
-            color: "#666",
-            marginBottom: "8px",
-            textAlign: "center",
-          }}
-        >
-          v
-          {localStorage.getItem("appVersion")
-            ? new Date(
-                parseInt(localStorage.getItem("appVersion"))
-              ).toLocaleDateString()
-            : "loading..."}
-        </div>
 
-        <button
-          onClick={() => setActiveModule("Dashboard")}
-          style={{
-            margin: "5px 0",
-            padding: "8px 4px",
-            backgroundColor:
-              activeModule === "Dashboard" ? "#ddd" : "transparent",
-            border: "1px solid #ccc",
-            cursor: "pointer",
-            fontWeight: activeModule === "Dashboard" ? "bold" : "normal",
-            fontSize: "11px",
-            width: "100px",
-          }}
-        >
-          🏠 Home
-        </button>
-
-        {ALL_MODULES
-          .filter((mod) => getAccessibleModules(userRole, modulePermissions).includes(mod))
-          .map((mod) => (
             <button
-              key={mod}
-              onClick={() => setActiveModule(mod)}
+              onClick={() => setActiveModule("Dashboard")}
               style={{
                 margin: "5px 0",
                 padding: "8px 4px",
-                backgroundColor: normalizeModuleName(activeModule) === mod ? "#ddd" : "transparent",
+                backgroundColor:
+                  activeModule === "Dashboard" ? "#ddd" : "transparent",
                 border: "1px solid #ccc",
                 cursor: "pointer",
-                fontWeight: normalizeModuleName(activeModule) === mod ? "bold" : "normal",
+                fontWeight: "normal",
                 fontSize: "11px",
                 width: "100px",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
-              {mod}
+              <span style={{ fontWeight: activeModule === "Dashboard" ? "bold" : "normal" }}>
+                🏠 Home
+              </span>
             </button>
-          ))}
-      </div>
 
-      <div
-        style={{
-          marginLeft: "120px",
-          width: "calc(100vw - 120px)",
-          maxWidth: "calc(100vw - 120px)",
-          padding: normalizeModuleName(activeModule) === SCRIPT_BREAKDOWN_MODULE ? "10px" : "0",
-          fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
-          boxSizing: "border-box",
-          position: "fixed",
-          top: "44px",
-	          right: "0",
-	          bottom: "0",
-	          overflow: "auto",
-	        }}
-      >
-        {renderModule()}
-      </div>
+            {ALL_MODULES
+              .filter((mod) => getAccessibleModules(userRole, modulePermissions).includes(mod))
+              .map((mod) => {
+                const isActive = normalizeModuleName(activeModule) === mod;
+                const isStripboardSchedule = mod === "StripboardSchedule";
+                const isLongLabel = ["Script Breakdown", "Production Design"].includes(mod);
+                const fontSize = isStripboardSchedule ? "9px" : isLongLabel ? "10px" : "11px";
+                return (
+                  <button
+                    key={mod}
+                    onClick={() => setActiveModule(mod)}
+                    style={{
+                      margin: "5px 0",
+                      padding: "8px 4px",
+                      backgroundColor: isActive ? "#ddd" : "transparent",
+                      border: "1px solid #ccc",
+                      cursor: "pointer",
+                      fontWeight: "normal",
+                      fontSize,
+                      width: "100px",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: isStripboardSchedule ? "clip" : "ellipsis",
+                    }}
+                  >
+                    <span style={{
+                      fontWeight: isActive ? "bold" : "normal",
+                      letterSpacing: isStripboardSchedule ? "-0.3px" : undefined,
+                    }}>
+                      {getNavLabel(mod)}
+                    </span>
+                  </button>
+                );
+              })}
+          </div>
+
+          <div
+            style={{
+              marginLeft: "120px",
+              width: "calc(100vw - 120px)",
+              maxWidth: "calc(100vw - 120px)",
+              padding: (normalizeModuleName(activeModule) === SCRIPT_BREAKDOWN_MODULE || normalizeModuleName(activeModule) === "Dashboard" || normalizeModuleName(activeModule) === "Stripboard" || normalizeModuleName(activeModule) === "StripboardSchedule" || normalizeModuleName(activeModule) === "Calendar" || normalizeModuleName(activeModule) === "Day Out of Days" || normalizeModuleName(activeModule) === "CallSheet" || normalizeModuleName(activeModule) === "ShotList" || normalizeModuleName(activeModule) === "ToDoList" || normalizeModuleName(activeModule) === "Timeline" || normalizeModuleName(activeModule) === "MoodBoard" || normalizeModuleName(activeModule) === "Props" || normalizeModuleName(activeModule) === "Cast & Crew" || normalizeModuleName(activeModule) === "Characters" || normalizeModuleName(activeModule) === "Locations" || normalizeModuleName(activeModule) === "Wardrobe" || normalizeModuleName(activeModule) === "Cost Report" || normalizeModuleName(activeModule) === "Reports" || normalizeModuleName(activeModule) === "Budget") ? "10px" : "0",
+              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+              boxSizing: "border-box",
+              position: "fixed",
+              top: "44px",
+              right: "0",
+              bottom: "0",
+              overflow: "auto",
+            }}
+          >
+            {renderModule()}
+          </div>
+        </>
+      )}
       </WorkflowWorkspace>
 
       {/* Centered Alert/Confirm Modal */}

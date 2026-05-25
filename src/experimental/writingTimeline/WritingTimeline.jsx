@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   DEFAULT_TARGET_PAGES,
   getSceneTimelineData,
@@ -6,6 +7,20 @@ import {
   getTotalWrittenPages,
 } from "./writingTimelineUtils";
 import { buildSceneDisplayLabelMap, getSceneDisplayLabel } from "../../utils/sceneDisplayLabel";
+import { APP_TAB_BLUE } from "../../utils/scenePresentation";
+
+const WRITING_TIMELINE_LAYOUT = {
+  sceneSectionTopPadding: 4,
+  sceneSectionBottomPadding: 3,
+  sceneLabelToRulerGap: 4,
+  sceneTimelineHeight: 47,
+  beatsSectionTopPadding: 4,
+  beatsSectionBottomPadding: 3,
+  beatsLabelToRulerGap: 0,
+  beatsTimelineHeight: 64,
+  tickRulerBottomSpacing: 0,
+  scrollbarGutter: 0,
+};
 
 function WritingTimeline({
   scenes = [],
@@ -13,6 +28,7 @@ function WritingTimeline({
   showSceneTrack = true,
   showBeatsTrack = false,
   beatTrackZoom = 1,
+  sceneTimelineZoom = 1,
   currentSceneNumber,
   setCurrentIndex,
   sceneRefs,
@@ -21,11 +37,15 @@ function WritingTimeline({
   onSceneOpen,
   onBeatOpen,
   onBeatColorChange,
-  onBeatTrackZoomChange,
+  onBeatTimelineReorder,
+  onSceneColorChange,
+  sceneTimelineControls = null,
+  beatsTimelineControls = null,
 }) {
     const timelineBarRef = useRef(null);
     const timelineScrollRef = useRef(null);
     const beatScrollRef = useRef(null);
+    const beatTrackRef = useRef(null);
     const [draggingSceneKey, setDraggingSceneKey] = useState(null);
     const [dragPreview, setDragPreview] = useState(null);
     const [snapIndicatorPage, setSnapIndicatorPage] = useState(null);
@@ -33,26 +53,40 @@ function WritingTimeline({
     const [timelineZoom, setTimelineZoom] = useState(1);
     const [contextMenu, setContextMenu] = useState(null);
     const [beatColorMenu, setBeatColorMenu] = useState(null);
+    const [sceneColorMenu, setSceneColorMenu] = useState(null);
+    const [beatDragPreview, setBeatDragPreview] = useState(null);
+    const [beatTooltip, setBeatTooltip] = useState(null);
+    const [sceneTooltip, setSceneTooltip] = useState(null);
     const dragOffsetRef = useRef(0);
+    const beatDragSuppressClickRef = useRef(null);
     const ZOOM_FACTOR = 10;
     const ZOOM_LENS_WIDTH_PERCENT = 40;
     const DRAG_START_THRESHOLD_PX = 4;
     const MIN_TIMELINE_ZOOM = 1;
     const MAX_TIMELINE_ZOOM = 6;
-    const TIMELINE_ZOOM_STEP = 0.5;
     const hasVisibleBeatsTrack = showBeatsTrack;
     const hasBeats = Array.isArray(beats) && beats.length > 0;
     const safeBeatTrackZoom = Math.min(3, Math.max(1, Number(beatTrackZoom) || 1));
+    const isSceneOnlyTrack = showSceneTrack;
+    const sectionTopPadding = isSceneOnlyTrack ? WRITING_TIMELINE_LAYOUT.sceneSectionTopPadding : WRITING_TIMELINE_LAYOUT.beatsSectionTopPadding;
+    const sectionBottomPadding = isSceneOnlyTrack ? WRITING_TIMELINE_LAYOUT.sceneSectionBottomPadding : WRITING_TIMELINE_LAYOUT.beatsSectionBottomPadding;
+    const labelToRulerGap = isSceneOnlyTrack ? WRITING_TIMELINE_LAYOUT.sceneLabelToRulerGap : WRITING_TIMELINE_LAYOUT.beatsLabelToRulerGap;
     const SCENE_TRACK_HEIGHT_PX = 34;
     const ZOOM_LENS_HEIGHT_PX = 58;
     const BEAT_TRACK_HEIGHT_PX = 32;
-    const SCENE_RULER_TOP_PX = SCENE_TRACK_HEIGHT_PX + 2;
-    const SCENE_LAYER_HEIGHT = 42;
+    const SCENE_RULER_TOP_PX = SCENE_TRACK_HEIGHT_PX + 2 + WRITING_TIMELINE_LAYOUT.tickRulerBottomSpacing;
+    const SCENE_LAYER_HEIGHT = WRITING_TIMELINE_LAYOUT.sceneTimelineHeight;
     const BEAT_MARKER_OVERHANG_PX = 18;
-    const BEAT_LAYER_HEIGHT = BEAT_MARKER_OVERHANG_PX + BEAT_TRACK_HEIGHT_PX + 2 + 12;
-    const SCROLLBAR_GUTTER_PX = 0;
+    const BEAT_LAYER_HEIGHT = WRITING_TIMELINE_LAYOUT.beatsTimelineHeight;
+    const SCROLLBAR_GUTTER_PX = WRITING_TIMELINE_LAYOUT.scrollbarGutter;
+    const SCENE_SCROLLBAR_GUTTER_PX = WRITING_TIMELINE_LAYOUT.scrollbarGutter;
     const SCENE_LABEL_MIN_WIDTH_PX = 22;
     const lensDelayRef = useRef(null);
+
+    useEffect(() => {
+      const safeZoom = Math.min(MAX_TIMELINE_ZOOM, Math.max(MIN_TIMELINE_ZOOM, Number(sceneTimelineZoom) || 1));
+      setTimelineZoom(safeZoom);
+    }, [sceneTimelineZoom]);
 
     function getSceneKey(scene, index) {
       return `${scene?.id || scene?.sceneId || scene?.sceneNumber || "scene"}-${index}`;
@@ -183,7 +217,7 @@ function WritingTimeline({
 
   const getSceneTimelineColor = (scene, isCurrent, isInserted) => {
     const custom = sceneTimelineColors[scene?.metadata?.color];
-    if (isCurrent) return { fill: "#316AC5", text: "white" };
+    if (isCurrent) return { fill: APP_TAB_BLUE, text: "white" };
     if (custom) return { fill: custom.fill, text: custom.text };
     if (isInserted) return { fill: "#fdba74", text: "#92400e" };
     return { fill: "#b8b8b8", text: "#333" };
@@ -207,6 +241,7 @@ function WritingTimeline({
     });
 
     const count = Math.max(1, orderedItems.length);
+    const beatCount = orderedItems.filter(item => item.type !== "act").length;
     let beatNumber = 0;
 
     return orderedItems.map((item, index) => {
@@ -228,16 +263,35 @@ function WritingTimeline({
         ? orderedItems.slice(index + 1, groupEndIndex).filter(candidate => candidate.type !== "act").length
         : 0;
 
+      const previewTimelinePosition =
+        beatDragPreview?.beatId === item.id
+          ? beatDragPreview.timelinePosition
+          : null;
+      const hasPreviewTimelinePosition =
+        !isAct &&
+        previewTimelinePosition !== null &&
+        previewTimelinePosition !== undefined &&
+        previewTimelinePosition !== "" &&
+        Number.isFinite(Number(previewTimelinePosition));
+      const fallbackBeatLeftPercent =
+        !isAct && currentBeatNumber && beatCount > 0
+          ? (currentBeatNumber / (beatCount + 1)) * 100
+          : startPercent + ((endPercent - startPercent) / 2);
+      const rawBeatLeftPercent = hasPreviewTimelinePosition
+        ? Math.max(0, Math.min(100, Number(previewTimelinePosition) * 100))
+        : fallbackBeatLeftPercent;
+      const beatLeftPercent = Math.max(0, Math.min(100, rawBeatLeftPercent));
+
       return {
         item,
         beatNumber: currentBeatNumber,
         containedBeatCount,
-        leftPercent: startPercent + ((endPercent - startPercent) / 2),
+        leftPercent: beatLeftPercent,
         startPercent,
         endPercent,
       };
     });
-  }, [beats]);
+  }, [beatDragPreview, beats]);
 
   const getPageTicksForZoom = (zoomLevel, pageCount = targetPages) => {
     const safeTargetPages = Math.max(1, Math.round(Number(pageCount) || DEFAULT_TARGET_PAGES));
@@ -331,6 +385,53 @@ function WritingTimeline({
     };
   }, [beatColorMenu]);
 
+  useEffect(() => {
+    if (!sceneColorMenu) return;
+
+    const closeSceneColorMenu = () => setSceneColorMenu(null);
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") closeSceneColorMenu();
+    };
+
+    window.addEventListener("mousedown", closeSceneColorMenu);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("scroll", closeSceneColorMenu, true);
+
+    return () => {
+      window.removeEventListener("mousedown", closeSceneColorMenu);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("scroll", closeSceneColorMenu, true);
+    };
+  }, [sceneColorMenu]);
+
+  useEffect(() => {
+    if (!beatTooltip) return;
+
+    const clearBeatTooltip = () => setBeatTooltip(null);
+
+    window.addEventListener("scroll", clearBeatTooltip, true);
+    window.addEventListener("resize", clearBeatTooltip);
+
+    return () => {
+      window.removeEventListener("scroll", clearBeatTooltip, true);
+      window.removeEventListener("resize", clearBeatTooltip);
+    };
+  }, [beatTooltip]);
+
+  useEffect(() => {
+    if (!sceneTooltip) return;
+
+    const clearSceneTooltip = () => setSceneTooltip(null);
+
+    window.addEventListener("scroll", clearSceneTooltip, true);
+    window.addEventListener("resize", clearSceneTooltip);
+
+    return () => {
+      window.removeEventListener("scroll", clearSceneTooltip, true);
+      window.removeEventListener("resize", clearSceneTooltip);
+    };
+  }, [sceneTooltip]);
+
   const getTimelineGaps = () => {
     const sortedItems = [...renderTimelineData].sort((a, b) => {
       if (a.startPage !== b.startPage) return a.startPage - b.startPage;
@@ -413,40 +514,95 @@ function WritingTimeline({
     });
   };
 
-  const updateTimelineZoom = (direction) => {
-    const scrollEl = timelineScrollRef.current;
-    const currentScrollWidth = scrollEl?.scrollWidth || 0;
-    const currentClientWidth = scrollEl?.clientWidth || 0;
-    const currentCenterPercent =
-      currentScrollWidth > 0
-        ? (scrollEl.scrollLeft + currentClientWidth / 2) / currentScrollWidth
-        : 0.5;
+  const getBeatTimelinePositionFromPointer = (clientX) => {
+    const rect = beatTrackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return 0;
+    const localX = Math.min(Math.max(clientX - rect.left, 0), rect.width);
+    return Math.max(0, Math.min(1, localX / rect.width));
+  };
 
-    const nextZoom = Math.min(
-      MAX_TIMELINE_ZOOM,
-      Math.max(
-        MIN_TIMELINE_ZOOM,
-        timelineZoom + direction * TIMELINE_ZOOM_STEP
-      )
-    );
+  const getBeatTargetInsertionIndexFromPointer = (clientX) => {
+    const beatCount = outlineTimelineData.filter(({ item }) => item?.type !== "act").length;
+    if (beatCount <= 1) return 0;
+    const timelinePosition = getBeatTimelinePositionFromPointer(clientX);
+    const centers = Array.from({ length: beatCount }, (_, index) => (index + 1) / (beatCount + 1));
+    const insertionIndex = centers.findIndex(center => timelinePosition < center);
+    return insertionIndex === -1 ? beatCount : insertionIndex;
+  };
 
-    if (nextZoom === timelineZoom) return;
+  const handleBeatMarkerPointerDown = (event, item) => {
+    if (!onBeatTimelineReorder || item?.type === "act" || event.button !== 0) return;
 
-    setTimelineZoom(nextZoom);
+    event.preventDefault();
+    event.stopPropagation();
+    setBeatColorMenu(null);
+    setBeatTooltip(null);
+    const pointerTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    try {
+      pointerTarget.setPointerCapture?.(pointerId);
+    } catch {
+      // Pointer capture is best-effort; document listeners still handle the drag.
+    }
 
-    window.requestAnimationFrame(() => {
-      const nextScrollEl = timelineScrollRef.current;
-      if (!nextScrollEl) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let hasDragged = false;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
 
-      const nextScrollLeft =
-        currentCenterPercent * nextScrollEl.scrollWidth -
-        nextScrollEl.clientWidth / 2;
+    document.body.style.cursor = "grabbing";
+    document.body.style.userSelect = "none";
 
-      nextScrollEl.scrollLeft = Math.min(
-        Math.max(0, nextScrollLeft),
-        Math.max(0, nextScrollEl.scrollWidth - nextScrollEl.clientWidth)
-      );
-    });
+    const cleanup = () => {
+      document.removeEventListener("pointermove", handleMove);
+      document.removeEventListener("pointerup", handleUp);
+      document.removeEventListener("pointercancel", handleUp);
+      try {
+        pointerTarget.releasePointerCapture?.(pointerId);
+      } catch {
+        // Ignore stale pointer-capture releases after document-level pointerup.
+      }
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+    };
+
+    const handleMove = (moveEvent) => {
+      const distance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
+      if (!hasDragged && distance < DRAG_START_THRESHOLD_PX) return;
+
+      hasDragged = true;
+      moveEvent.preventDefault();
+      const timelinePosition = getBeatTimelinePositionFromPointer(moveEvent.clientX);
+      setBeatDragPreview({ beatId: item.id, timelinePosition });
+    };
+
+    const handleUp = (upEvent) => {
+      cleanup();
+
+      const releaseDistance = Math.hypot(upEvent.clientX - startX, upEvent.clientY - startY);
+      const shouldCommit = hasDragged || releaseDistance >= DRAG_START_THRESHOLD_PX;
+      const targetInsertionIndex = getBeatTargetInsertionIndexFromPointer(upEvent.clientX);
+      if (shouldCommit) {
+        upEvent.preventDefault();
+        upEvent.stopPropagation();
+        beatDragSuppressClickRef.current = item.id;
+        setBeatDragPreview(null);
+        onBeatTimelineReorder(item.id, targetInsertionIndex);
+        window.setTimeout(() => {
+          if (beatDragSuppressClickRef.current === item.id) {
+            beatDragSuppressClickRef.current = null;
+          }
+        }, 0);
+        return;
+      }
+
+      setBeatDragPreview(null);
+    };
+
+    document.addEventListener("pointermove", handleMove);
+    document.addEventListener("pointerup", handleUp);
+    document.addEventListener("pointercancel", handleUp);
   };
 
   const getPageFromPointer = (clientX, zoomRange = null) => {
@@ -582,6 +738,7 @@ function WritingTimeline({
     e.preventDefault();
     e.stopPropagation();
     setContextMenu(null);
+    setSceneTooltip(null);
 
     if (e.detail >= 2) {
       onSceneOpen?.(item);
@@ -685,14 +842,27 @@ function WritingTimeline({
   const hasAnythingToShow = (showSceneTrack && scenes.length > 0) || showBeatsTrack;
   if (!hasAnythingToShow) return null;
 
+  const handleTimelineWheel = (event) => {
+    if (!event.shiftKey) return;
+    const scrollContainer = event.currentTarget;
+    if (!scrollContainer || typeof scrollContainer.scrollLeft !== "number") return;
+    const horizontalDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      ? event.deltaX
+      : event.deltaY;
+    if (!horizontalDelta) return;
+    scrollContainer.scrollLeft += horizontalDelta;
+    event.preventDefault();
+  };
+
   return (
     <div
+      className="writing-timeline-root"
       style={{
         flexShrink: 0,
         backgroundColor: "white",
         borderBottom: "1px solid #e5e5e5",
         color: "#222",
-        padding: "8px 0 6px 16px",
+        padding: `${sectionTopPadding}px 16px ${sectionBottomPadding}px 16px`,
         boxSizing: "border-box",
         fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif",
       }}
@@ -703,99 +873,24 @@ function WritingTimeline({
           justifyContent: "space-between",
           alignItems: "center",
           fontSize: "11px",
-          marginBottom: "6px",
+          marginBottom: `${labelToRulerGap}px`,
           color: "#555",
+          gap: "16px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          {showSceneTrack && <strong style={{ color: "#222" }}>Scene Timeline</strong>}
-          {!showSceneTrack && showBeatsTrack && <strong style={{ color: "#222" }}>Beats Timeline</strong>}
-          <div style={{ display: "flex", alignItems: "flex-end", gap: "8px" }}>
-            {showSceneTrack && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-              <span style={{ fontSize: "9px", color: "#777", fontWeight: "bold", lineHeight: "10px" }}>Scenes Zoom</span>
-              <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
-                <button
-                  type="button"
-                  onClick={() => updateTimelineZoom(-1)}
-                  disabled={timelineZoom <= MIN_TIMELINE_ZOOM}
-                  style={{
-                    padding: "2px 7px",
-                    border: "1px solid #ccc",
-                    borderRadius: "3px",
-                    backgroundColor: timelineZoom <= MIN_TIMELINE_ZOOM ? "#eee" : "#f7f7f7",
-                    color: timelineZoom <= MIN_TIMELINE_ZOOM ? "#999" : "#333",
-                    cursor: timelineZoom <= MIN_TIMELINE_ZOOM ? "default" : "pointer",
-                    fontSize: "10px",
-                    fontWeight: "bold",
-                  }}
-                >
-                  -
-                </button>
-                <span style={{ minWidth: "28px", textAlign: "center", fontVariantNumeric: "tabular-nums", fontSize: "10px", color: "#555" }}>{timelineZoom.toFixed(2).replace(/\.00$/, "")}x</span>
-                <button
-                  type="button"
-                  onClick={() => updateTimelineZoom(1)}
-                  disabled={timelineZoom >= MAX_TIMELINE_ZOOM}
-                  style={{
-                    padding: "2px 7px",
-                    border: "1px solid #ccc",
-                    borderRadius: "3px",
-                    backgroundColor: timelineZoom >= MAX_TIMELINE_ZOOM ? "#eee" : "#f7f7f7",
-                    color: timelineZoom >= MAX_TIMELINE_ZOOM ? "#999" : "#333",
-                    cursor: timelineZoom >= MAX_TIMELINE_ZOOM ? "default" : "pointer",
-                    fontSize: "10px",
-                    fontWeight: "bold",
-                  }}
-                >
-                  +
-                </button>
-              </div>
-            </div>
-            )}
-            {hasVisibleBeatsTrack && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                <span style={{ fontSize: "9px", color: "#777", fontWeight: "bold", lineHeight: "10px" }}>Beat Zoom</span>
-                <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
-                  <button
-                    type="button"
-                    onClick={() => onBeatTrackZoomChange?.(Math.max(1, Number((safeBeatTrackZoom - 0.25).toFixed(2))))}
-                    disabled={safeBeatTrackZoom <= 1 || !onBeatTrackZoomChange}
-                    style={{
-                      padding: "2px 7px",
-                      border: "1px solid #ccc",
-                      borderRadius: "3px",
-                      backgroundColor: safeBeatTrackZoom <= 1 || !onBeatTrackZoomChange ? "#eee" : "#f7f7f7",
-                      color: safeBeatTrackZoom <= 1 || !onBeatTrackZoomChange ? "#999" : "#333",
-                      cursor: safeBeatTrackZoom <= 1 || !onBeatTrackZoomChange ? "default" : "pointer",
-                      fontSize: "10px",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    -
-                  </button>
-                  <span style={{ minWidth: "28px", textAlign: "center", fontVariantNumeric: "tabular-nums", fontSize: "10px", color: "#555" }}>{safeBeatTrackZoom.toFixed(2).replace(/\.00$/, "")}x</span>
-                  <button
-                    type="button"
-                    onClick={() => onBeatTrackZoomChange?.(Math.min(3, Number((safeBeatTrackZoom + 0.25).toFixed(2))))}
-                    disabled={safeBeatTrackZoom >= 3 || !onBeatTrackZoomChange}
-                    style={{
-                      padding: "2px 7px",
-                      border: "1px solid #ccc",
-                      borderRadius: "3px",
-                      backgroundColor: safeBeatTrackZoom >= 3 || !onBeatTrackZoomChange ? "#eee" : "#f7f7f7",
-                      color: safeBeatTrackZoom >= 3 || !onBeatTrackZoomChange ? "#999" : "#333",
-                      cursor: safeBeatTrackZoom >= 3 || !onBeatTrackZoomChange ? "default" : "pointer",
-                      fontSize: "10px",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+          {showSceneTrack && (
+            <>
+              <strong style={{ color: "#222" }}>Scene Timeline</strong>
+              {sceneTimelineControls}
+            </>
+          )}
+          {!showSceneTrack && showBeatsTrack && (
+            <>
+              <strong style={{ color: "#222" }}>Beats Timeline</strong>
+              {beatsTimelineControls}
+            </>
+          )}
         </div>
 
         <div style={{ fontVariantNumeric: "tabular-nums", color: "#666" }}>
@@ -805,14 +900,17 @@ function WritingTimeline({
 
       {showSceneTrack && <div
         ref={timelineScrollRef}
-        className="fpb-auto-scrollbar"
+        className="writing-timeline-scrollbar-hidden"
+        onWheel={handleTimelineWheel}
         style={{
           width: "100%",
-          height: `${SCENE_LAYER_HEIGHT + 4}px`,
+          height: `${SCENE_LAYER_HEIGHT + SCENE_SCROLLBAR_GUTTER_PX}px`,
           overflowX: timelineZoom > MIN_TIMELINE_ZOOM ? "auto" : "hidden",
           overflowY: "hidden",
-          paddingBottom: "4px",
+          paddingBottom: 0,
           boxSizing: "border-box",
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
         }}
       >
       <div
@@ -1020,6 +1118,10 @@ function WritingTimeline({
           const isDragging = draggingSceneKey === sceneKey;
           const isInserted = Boolean(scene.metadata?.replacementLetter);
           const sceneColor = getSceneTimelineColor(scene, isCurrent, isInserted);
+          const sceneDisplayLabel = getSceneDisplayLabel(scene, displayLabelMap);
+          const sceneHeadingDisplayText = scene.metadata?.writingDraft
+            ? String(scene.heading || "").toUpperCase()
+            : scene.heading || "Untitled";
 
           const previewStartPage = startPage;
 
@@ -1034,6 +1136,22 @@ function WritingTimeline({
             <button
               key={sceneKey}
               type="button"
+              onPointerEnter={(event) => {
+                if (draggingSceneKey) return;
+                const rect = event.currentTarget.getBoundingClientRect();
+                const placeBelow = rect.top < 56;
+                setSceneTooltip({
+                  sceneKey,
+                  text: `Scene ${sceneDisplayLabel}: ${sceneHeadingDisplayText}`,
+                  detail: `Page ${startPage.toFixed(1)} · ${label}`,
+                  left: rect.left + rect.width / 2,
+                  top: placeBelow ? rect.bottom + 8 : rect.top - 8,
+                  placement: placeBelow ? "below" : "above",
+                });
+              }}
+              onPointerLeave={() => {
+                setSceneTooltip(prev => prev?.sceneKey === sceneKey ? null : prev);
+              }}
               onMouseDown={(e) => startDrag(e, item)}
               onContextMenu={(e) => handleSceneContextMenu(e, item)}
               onDoubleClick={(e) => {
@@ -1041,7 +1159,7 @@ function WritingTimeline({
                 e.stopPropagation();
                 onSceneOpen?.(item);
               }}
-              title={`Scene ${getSceneDisplayLabel(scene, displayLabelMap)}: ${scene.heading || "Untitled"} | Starts Page ${startPage.toFixed(
+              title={`Scene ${sceneDisplayLabel}: ${sceneHeadingDisplayText} | Starts Page ${startPage.toFixed(
                 1
               )} | Length ${label}`}
               style={{
@@ -1084,7 +1202,7 @@ function WritingTimeline({
                     zIndex: 30,
                   }}
                 >
-                  {getSceneDisplayLabel(scene, displayLabelMap)}
+                  {sceneDisplayLabel}
                 </span>
               )}
             </button>
@@ -1096,15 +1214,18 @@ function WritingTimeline({
       {hasVisibleBeatsTrack && (
         <div
           ref={beatScrollRef}
-          className="fpb-auto-scrollbar"
+          className="writing-timeline-scrollbar-hidden"
+          onWheel={handleTimelineWheel}
           style={{
             marginTop: "0px",
             width: "100%",
-            height: `${BEAT_LAYER_HEIGHT}px`,
+            height: `${BEAT_LAYER_HEIGHT + SCROLLBAR_GUTTER_PX}px`,
             overflowX: safeBeatTrackZoom > 1 ? "auto" : "hidden",
             overflowY: "hidden",
             paddingBottom: 0,
             boxSizing: "border-box",
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
           }}
         >
           <div
@@ -1117,6 +1238,7 @@ function WritingTimeline({
             }}
           >
             <div
+              ref={beatTrackRef}
               style={{
                 position: "absolute",
                 top: `${BEAT_MARKER_OVERHANG_PX}px`,
@@ -1142,6 +1264,7 @@ function WritingTimeline({
                 const isAct = item.type === "act";
                 const isConverted = item.status === "converted" || item.convertedSceneId;
                 const markerColor = getBeatMarkerColor(item, isConverted);
+                const isDraggingBeat = beatDragPreview?.beatId === item.id;
 
                 if (isAct) {
                   return (
@@ -1185,7 +1308,31 @@ function WritingTimeline({
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => onBeatOpen?.(item.id)}
+                    onPointerEnter={(event) => {
+                      if (beatDragPreview) return;
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      const placeBelow = rect.top < 52;
+                      setBeatTooltip({
+                        id: item.id,
+                        text: `Beat ${beatNumber}: ${item.title || "Untitled Beat"}`,
+                        left: rect.left + rect.width / 2,
+                        top: placeBelow ? rect.bottom + 8 : rect.top - 8,
+                        placement: placeBelow ? "below" : "above",
+                      });
+                    }}
+                    onPointerLeave={() => {
+                      setBeatTooltip(prev => prev?.id === item.id ? null : prev);
+                    }}
+                    onPointerDown={(event) => handleBeatMarkerPointerDown(event, item)}
+                    onClick={(event) => {
+                      if (beatDragSuppressClickRef.current === item.id) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        beatDragSuppressClickRef.current = null;
+                        return;
+                      }
+                      onBeatOpen?.(item.id);
+                    }}
                     onContextMenu={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -1199,8 +1346,8 @@ function WritingTimeline({
                       });
                     }}
                     title={[
+                      item.title || item.description || "Beat",
                       `Beat #${beatNumber}`,
-                      item.title || "Untitled Beat",
                       item.originalBeatNumber ? `Original imported beat #${item.originalBeatNumber}` : null,
                       isConverted ? "Converted" : null,
                       item.convertedSceneId ? `Linked scene: ${item.convertedSceneId}` : null,
@@ -1211,7 +1358,7 @@ function WritingTimeline({
                       top: beatNumber % 2 === 0 ? "-16px" : "-10px",
                       width: "24px",
                       height: "32px",
-                      transform: "translateX(-50%)",
+                      transform: isDraggingBeat ? "translateX(-50%) scale(1.08)" : "translateX(-50%) scale(1)",
                       border: "none",
                       backgroundColor: "transparent",
                       color: markerColor.text,
@@ -1220,8 +1367,12 @@ function WritingTimeline({
                       lineHeight: "8px",
                       padding: 0,
                       boxSizing: "border-box",
-                      cursor: onBeatOpen ? "pointer" : "default",
-                      zIndex: 5,
+                      cursor: isDraggingBeat ? "grabbing" : onBeatTimelineReorder ? "grab" : onBeatOpen ? "pointer" : "default",
+                      opacity: isDraggingBeat ? 0.96 : 1,
+                      transition: isDraggingBeat
+                        ? "transform 90ms ease, opacity 90ms ease"
+                        : "left 180ms ease, transform 140ms ease, opacity 140ms ease",
+                      zIndex: isDraggingBeat ? 35 : 5,
                     }}
                   >
                     <span style={{ position: "absolute", left: "50%", top: 0, transform: "translateX(-50%)", fontVariantNumeric: "tabular-nums" }}>{beatNumber}</span>
@@ -1237,8 +1388,11 @@ function WritingTimeline({
                         borderRadius: "7px 7px 4px 4px",
                         backgroundColor: markerColor.fill,
                         border: `1px solid ${markerColor.border}`,
-                        boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                        boxShadow: isDraggingBeat
+                          ? "0 4px 10px rgba(0,0,0,0.32)"
+                          : "0 1px 2px rgba(0,0,0,0.2)",
                         boxSizing: "border-box",
+                        transition: "box-shadow 140ms ease, transform 140ms ease",
                       }}
                     >
                       <span
@@ -1267,7 +1421,7 @@ function WritingTimeline({
                 position: "absolute",
                 left: 0,
                 right: 0,
-                top: `${BEAT_MARKER_OVERHANG_PX + BEAT_TRACK_HEIGHT_PX + 2}px`,
+                top: `${BEAT_MARKER_OVERHANG_PX + BEAT_TRACK_HEIGHT_PX + 2 + WRITING_TIMELINE_LAYOUT.tickRulerBottomSpacing}px`,
                 height: "12px",
                 overflow: "visible",
                 zIndex: 1,
@@ -1388,6 +1542,75 @@ function WritingTimeline({
           })}
         </div>
       )}
+      {sceneColorMenu && (
+        <div
+          onMouseDown={(event) => event.stopPropagation()}
+          style={{
+            position: "fixed",
+            left: `${sceneColorMenu.x}px`,
+            top: `${sceneColorMenu.y}px`,
+            minWidth: "142px",
+            backgroundColor: "white",
+            border: "1px solid #bbb",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.18)",
+            zIndex: 1001,
+            padding: "4px",
+            fontSize: "11px",
+            color: "#222",
+          }}
+        >
+          {[
+            { key: null, label: "Default grey", fill: "#b8b8b8", border: "#aaaaaa" },
+            { key: "red", label: "Red", fill: "#EF9A9A", border: "#C62828" },
+            { key: "orange", label: "Orange", fill: "#FFCC80", border: "#EF6C00" },
+            { key: "yellow", label: "Yellow", fill: "#FFE082", border: "#F9A825" },
+            { key: "green", label: "Green", fill: "#A5D6A7", border: "#2E7D32" },
+            { key: "blue", label: "Blue", fill: "#90CAF9", border: "#1565C0" },
+            { key: "purple", label: "Purple", fill: "#CE93D8", border: "#7B1FA2" },
+          ].map(({ key, label, fill, border }) => {
+            const isSelected = (sceneColorMenu.currentColor ?? null) === key;
+            return (
+              <button
+                key={String(key)}
+                type="button"
+                onClick={() => {
+                  onSceneColorChange?.(sceneColorMenu.sceneIndex, key);
+                  setSceneColorMenu(null);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "7px",
+                  width: "100%",
+                  padding: "5px 7px",
+                  border: "none",
+                  borderRadius: "3px",
+                  backgroundColor: isSelected ? "#ECEFF1" : "transparent",
+                  color: "#222",
+                  textAlign: "left",
+                  fontSize: "11px",
+                  fontFamily: "inherit",
+                  cursor: "pointer",
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: "10px",
+                    height: "10px",
+                    borderRadius: "50%",
+                    backgroundColor: fill,
+                    border: `1px solid ${border}`,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ flex: 1 }}>{label}</span>
+                {isSelected && <span style={{ color: "#607D8B", fontWeight: "bold" }}>Selected</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {contextMenu && (
         <div
           onMouseDown={(event) => event.stopPropagation()}
@@ -1424,14 +1647,24 @@ function WritingTimeline({
             },
             {
               label: "Change Scene Color",
-              enabled: contextMenu.targetType === "scene",
+              enabled: contextMenu.targetType === "scene" && Boolean(onSceneColorChange),
+              action: () => {
+                const scene = scenes[contextMenu.sceneIndex];
+                setSceneColorMenu({
+                  x: contextMenu.x,
+                  y: contextMenu.y,
+                  sceneIndex: contextMenu.sceneIndex,
+                  currentColor: scene?.metadata?.color ?? null,
+                });
+                setContextMenu(null);
+              },
             },
           ].map((item) => (
             <button
               key={item.label}
               type="button"
               disabled={!item.enabled}
-              onClick={() => setContextMenu(null)}
+              onClick={() => { item.action ? item.action() : setContextMenu(null); }}
               style={{
                 display: "block",
                 width: "100%",
@@ -1449,6 +1682,67 @@ function WritingTimeline({
             </button>
           ))}
         </div>
+      )}
+      {beatTooltip && !beatDragPreview && typeof document !== "undefined" && createPortal(
+        <div
+          style={{
+            position: "fixed",
+            left: `${beatTooltip.left}px`,
+            top: `${beatTooltip.top}px`,
+            transform: beatTooltip.placement === "below" ? "translateX(-50%)" : "translate(-50%, -100%)",
+            zIndex: 2147483647,
+            maxWidth: "min(320px, calc(100vw - 24px))",
+            padding: "6px 9px",
+            borderRadius: "4px",
+            backgroundColor: "#263238",
+            color: "white",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.32)",
+            fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif",
+            fontSize: "11px",
+            fontWeight: "bold",
+            lineHeight: "14px",
+            pointerEvents: "none",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {beatTooltip.text}
+        </div>,
+        document.body
+      )}
+      {sceneTooltip && !draggingSceneKey && typeof document !== "undefined" && createPortal(
+        <div
+          style={{
+            position: "fixed",
+            left: `${sceneTooltip.left}px`,
+            top: `${sceneTooltip.top}px`,
+            transform: sceneTooltip.placement === "below" ? "translateX(-50%)" : "translate(-50%, -100%)",
+            zIndex: 2147483647,
+            maxWidth: "min(360px, calc(100vw - 24px))",
+            padding: "7px 10px",
+            borderRadius: "4px",
+            backgroundColor: "#263238",
+            color: "white",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.32)",
+            fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif",
+            fontSize: "11px",
+            fontWeight: "bold",
+            lineHeight: "14px",
+            pointerEvents: "none",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          <div style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+            {sceneTooltip.text}
+          </div>
+          <div style={{ marginTop: "2px", color: "#CFD8DC", fontSize: "10px", fontWeight: "normal", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {sceneTooltip.detail}
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

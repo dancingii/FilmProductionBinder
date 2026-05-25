@@ -6,7 +6,6 @@ import {
   additionalCategories,
 } from "./stockCategories.js";
 import ContingencySettingsModal from "./ContingencySettingsModal.js";
-import ProjectSettingsModal from "./ProjectSettingsModal.js";
 
 // Budget Module Component
 function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
@@ -15,7 +14,6 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
   const [legalExpanded, setLegalExpanded] = React.useState(false);
   const [marketingExpanded, setMarketingExpanded] = React.useState(false);
   const [postExpanded, setPostExpanded] = React.useState(false);
-  const [showProjectSettings, setShowProjectSettings] = React.useState(false);
   const [showContingencySettings, setShowContingencySettings] =
     React.useState(false);
   const [editingItem, setEditingItem] = React.useState(null);
@@ -79,6 +77,17 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
       (sum, item) => sum + (item.budgetAmount || 0),
       0
     ) || 0;
+
+  // Prep total: sum of rate × prepDays for all non-flat personnel/cast items in ATL + BTL
+  const prepTotal = [
+    ...(budgetData.atlItems || []),
+    ...(budgetData.btlItems || []),
+  ].reduce((sum, item) => {
+    if (item.type === "non-personnel" || item.rateType === "Flat") return sum;
+    const rate = parseFloat(item.rate) || 0;
+    const prepDays = parseFloat(item.prepDays) || 0;
+    return sum + Math.round(rate * prepDays);
+  }, 0);
 
   // Calculate category totals
   const getCategoryTotal = (category, sectionType) => {
@@ -185,22 +194,9 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
       setBudgetData((prev) => ({
         ...prev,
         projectInfo: {
-          title: "",
-          directors: "",
-          producers: "",
-          executiveProducers: "",
-          productionCompany: "",
-          prepPeriod: 0,
           shootingDays: 0,
           pickupDays: "",
           postWeeks: 0,
-          format: "",
-          cameraType: "",
-          length: "",
-          shootingRatio: "",
-          distribution: "",
-          datePrepared: new Date().toISOString().split("T")[0],
-          lastUpdate: new Date().toISOString().split("T")[0],
         },
         atlItems: [],
         btlItems: [],
@@ -372,36 +368,43 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
     });
   };
 
-  // Debounced sync
-  const debouncedSyncRef = React.useRef(null);
+  // Track latest budgetData in a ref so debounced callbacks always read fresh state
+  const budgetDataRef = React.useRef(budgetData);
+  React.useEffect(() => {
+    budgetDataRef.current = budgetData;
+  }, [budgetData]);
 
-  // Debounced sync removed - prevents infinite realtime loops
-  // Sync only happens on explicit user actions (add, edit, delete, etc.)
+  // Debounce ref used for rapid deletes — coalesces burst into one save
+  const deleteDebounceRef = React.useRef(null);
 
-  // Manual sync handler for blur
+  const scheduleDebouncedSync = React.useCallback(() => {
+    if (deleteDebounceRef.current) clearTimeout(deleteDebounceRef.current);
+    deleteDebounceRef.current = setTimeout(() => {
+      if (onSyncBudgetData) onSyncBudgetData(budgetDataRef.current);
+      deleteDebounceRef.current = null;
+    }, 400);
+  }, [onSyncBudgetData]);
+
+  // Manual sync handler for blur — cancels any pending delete debounce first
   const handleBlur = () => {
-    // Clear debounce and sync immediately
-    if (debouncedSyncRef.current) {
-      clearTimeout(debouncedSyncRef.current);
+    if (deleteDebounceRef.current) {
+      clearTimeout(deleteDebounceRef.current);
+      deleteDebounceRef.current = null;
     }
     if (onSyncBudgetData) {
-      onSyncBudgetData(budgetData);
+      onSyncBudgetData(budgetDataRef.current);
     }
   };
 
-  // Delete budget item
+  // Delete budget item — uses functional update to avoid stale-closure data loss
+  // on rapid successive deletes, then debounces the DB write
   const deleteBudgetItem = (type, itemId) => {
     const itemsKey = `${type}Items`;
-    const updatedData = {
-      ...budgetData,
-      [itemsKey]: (budgetData[itemsKey] || []).filter(
-        (item) => item.id !== itemId
-      ),
-    };
-    setBudgetData(updatedData);
-    if (onSyncBudgetData) {
-      onSyncBudgetData(updatedData);
-    }
+    setBudgetData((prev) => ({
+      ...prev,
+      [itemsKey]: (prev[itemsKey] || []).filter((item) => item.id !== itemId),
+    }));
+    scheduleDebouncedSync();
   };
 
   // Drag and drop handlers
@@ -466,60 +469,17 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
 
     if (itemType === "cast") {
       gridColumns =
-        "80px 120px 120px 120px 80px 60px 80px 80px 65px 80px 60px 60px 120px 40px";
-      headerCells = [
-        "Code",
-        "Category",
-        "Character",
-        "Actor Name",
-        "Union",
-        "Days",
-        "Type",
-        "Rate",
-        "Budget",
-        "Paid",
-        "Unpaid",
-        "Contingency",
-        "Notes",
-        "Del",
-      ];
+        "60px 160px 100px 108px 80px 60px 80px 80px 60px 59px 220px 45px 30px";
+    } else if (type === "post" && itemType !== "cast") {
+      gridColumns =
+        "60px 216px 240px 60px 75px 70px 60px 59px 220px 45px 30px";
     } else if (itemType === "personnel") {
       gridColumns =
-        "80px 150px 160px 60px 70px 80px 80px 60px 65px 80px 60px 60px 120px 40px";
-      headerCells = [
-        "Code",
-        "Category",
-        "Name",
-        "Prep Days",
-        "Shoot Days",
-        "Type",
-        "Rate",
-        "Kit Fee",
-        "Budget",
-        "Paid",
-        "Unpaid",
-        "Contingency",
-        "Notes",
-        "Del",
-      ];
+        "60px 160px 222px 60px 70px 80px 80px 60px 59px 220px 45px 30px";
     } else {
       // non-personnel
       gridColumns =
-        "80px 160px 300px 60px 80px 80px 65px 80px 60px 60px 120px 40px";
-      headerCells = [
-        "Code",
-        "Category",
-        "Description",
-        "Qty",
-        "Type",
-        "Rate",
-        "Budget",
-        "Paid",
-        "Unpaid",
-        "Contingency",
-        "Notes",
-        "Del",
-      ];
+        "60px 216px 240px 60px 80px 80px 60px 59px 220px 45px 30px";
     }
 
     return (
@@ -658,7 +618,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
           />
         )}
 
-        {itemType === "personnel" && (
+        {itemType === "personnel" && type !== "post" && (
           <input
             type="number"
             value={item.prepDays || ""}
@@ -723,7 +683,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
               backgroundColor: item.isPaid ? "#f5f5f5" : "white",
               color: item.isPaid ? "#999" : "black",
             }}
-            placeholder={itemType === "personnel" ? "Shoot" : "Days"}
+            placeholder={itemType === "personnel" && type !== "post" ? "Shoot" : "Days"}
             disabled={item.isPaid}
           />
         )}
@@ -770,7 +730,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
           placeholder="Rate"
           disabled={item.isPaid}
         />
-        {itemType === "personnel" && (
+        {itemType === "personnel" && type !== "post" ? (
           <input
             type="number"
             value={item.kitFee || ""}
@@ -824,45 +784,12 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
               ].includes(item.category)
             }
           />
+        ) : (
+          <div />
         )}
-        <div style={{ textAlign: "left", fontWeight: "bold" }}>
+        <div style={{ textAlign: "center", fontWeight: "bold" }}>
           ${(item.budgetAmount || 0).toLocaleString()}
         </div>
-        <input
-          type="number"
-          value={item.paid || ""}
-          onChange={(e) =>
-            updateBudgetItem(type, item.id, "paid", e.target.value)
-          }
-          onBlur={handleBlur}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.target.blur();
-            }
-          }}
-          style={{ padding: "2px", fontSize: "10px", border: "1px solid #ccc" }}
-          placeholder="Paid"
-        />
-        <div style={{ textAlign: "left", fontWeight: "bold" }}>
-          ${((item.budgetAmount || 0) - (item.paid || 0)).toLocaleString()}
-        </div>
-        <input
-          type="checkbox"
-          checked={item.includeInContingency !== false}
-          onChange={(e) => {
-            updateBudgetItem(
-              type,
-              item.id,
-              "includeInContingency",
-              e.target.checked
-            );
-            handleBlur();
-          }}
-          style={{
-            transform: "scale(1.2)",
-            cursor: "pointer",
-          }}
-        />
         <input
           type="text"
           value={item.notes || ""}
@@ -883,6 +810,23 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
           }}
           placeholder="Notes"
         />
+        <input
+          type="checkbox"
+          checked={item.includeInContingency !== false}
+          onChange={(e) => {
+            updateBudgetItem(
+              type,
+              item.id,
+              "includeInContingency",
+              e.target.checked
+            );
+            handleBlur();
+          }}
+          style={{
+            transform: "scale(1.2)",
+            cursor: "pointer",
+          }}
+        />
         <button
           onClick={() => deleteBudgetItem(type, item.id)}
           style={{
@@ -897,6 +841,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            justifySelf: "end",
           }}
         >
           ×
@@ -1135,12 +1080,12 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
   };
 
   // Render column header based on item type
-  const renderColumnHeader = (itemType) => {
+  const renderColumnHeader = (itemType, sectionType = null) => {
     let gridColumns, headerLabels;
 
     if (itemType === "cast") {
       gridColumns =
-        "80px 120px 120px 120px 80px 60px 80px 80px 65px 80px 60px 60px 120px 40px";
+        "60px 160px 100px 108px 80px 60px 80px 80px 60px 59px 220px 45px 30px";
       headerLabels = [
         "Code",
         "Category",
@@ -1150,16 +1095,31 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
         "Days",
         "Type",
         "Rate",
+        "",
         "Budget",
-        "Paid",
-        "Unpaid",
-        "Contingency",
         "Notes",
+        "CONTINGENCY",
+        "",
+      ];
+    } else if (sectionType === "post" && itemType !== "cast") {
+      gridColumns =
+        "60px 216px 240px 60px 75px 70px 60px 59px 220px 45px 30px";
+      headerLabels = [
+        "Code",
+        "Category",
+        itemType === "non-personnel" ? "Description" : "Name",
+        itemType === "non-personnel" ? "Qty" : "Days",
+        "Type",
+        "Rate",
+        "",
+        "Budget",
+        "Notes",
+        "CONTINGENCY",
         "",
       ];
     } else if (itemType === "personnel") {
       gridColumns =
-        "80px 150px 160px 60px 70px 80px 80px 60px 65px 80px 60px 60px 120px 40px";
+        "60px 160px 222px 60px 70px 80px 80px 60px 59px 220px 45px 30px";
       headerLabels = [
         "Code",
         "Category",
@@ -1170,16 +1130,14 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
         "Rate",
         "Kit Fee",
         "Budget",
-        "Paid",
-        "Unpaid",
-        "Contingency",
         "Notes",
+        "CONTINGENCY",
         "",
       ];
     } else {
       // non-personnel
       gridColumns =
-        "80px 160px 300px 60px 80px 80px 65px 80px 60px 60px 120px 40px";
+        "60px 216px 240px 60px 80px 80px 60px 59px 220px 45px 30px";
       headerLabels = [
         "Code",
         "Category",
@@ -1187,11 +1145,10 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
         "Qty",
         "Type",
         "Rate",
+        "",
         "Budget",
-        "Paid",
-        "Unpaid",
-        "Contingency",
         "Notes",
+        "CONTINGENCY",
         "",
       ];
     }
@@ -1389,7 +1346,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
 
                   {Object.entries(itemsByType).map(([itemType, typeItems]) => (
                     <div key={itemType}>
-                      {renderColumnHeader(itemType)}
+                      {renderColumnHeader(itemType, type)}
                       {typeItems.map((item, index) =>
                         renderBudgetItem(item, index, type)
                       )}
@@ -1438,7 +1395,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
                     {Object.entries(itemsByType).map(
                       ([itemType, typeItems]) => (
                         <div key={itemType}>
-                          {renderColumnHeader(itemType)}
+                          {renderColumnHeader(itemType, type)}
                           {typeItems.map((item, index) =>
                             renderBudgetItem(item, index, type)
                           )}
@@ -1457,56 +1414,27 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
   };
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        fontFamily: "Arial, sans-serif",
-        height: "calc(100vh - 44px)",
-        overflowY: "auto",
-        boxSizing: "border-box",
-      }}
-    >
-      {/* Module Header */}
-      <div
-        style={{
-          backgroundColor: "#f5f5f5",
-          padding: "10px",
-          borderBottom: "2px solid #ddd",
-          position: "relative",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <h2 style={{ margin: 0, fontSize: "18px" }}>Budget Planning</h2>
-        <div
-          style={{
-            position: "absolute",
-            left: "50%",
-            transform: "translateX(-50%)",
-            fontSize: "22px",
-            fontWeight: "bold",
-          }}
-        >
-          Total Budget: ${grandTotal.toLocaleString()}
-        </div>
-        <div>
-          <button
-            onClick={() => setShowProjectSettings(true)}
-            style={{
-              padding: "8px 16px",
-              backgroundColor: "#2196F3",
-              color: "white",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontSize: "14px",
-            }}
-          >
-            Project Settings
-          </button>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+            {/* Left */}
+            <div style={{ flex: "0 0 auto" }}>
+              <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>BUDGET</h2>
+            </div>
+            {/* Center */}
+            <div style={{ flex: 1, textAlign: "center" }}>
+              <span style={{ fontSize: "14px", fontWeight: "bold" }}>
+                TOTAL: ${grandTotal.toLocaleString()}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
+      {/* ── Content area ── */}
+      <div style={{ flex: 1, overflowY: "auto", fontFamily: "Arial, sans-serif", padding: "20px" }}>
+
       {/* Budget Summary */}
       <div
         style={{
@@ -1544,9 +1472,6 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
             ⚙
           </button>
         </div>
-        <div style={{ paddingRight: "20px" }}>
-          <strong>Paid:</strong> ${paidTotal.toLocaleString()}
-        </div>
       </div>
 
       {/* Production Schedule Section */}
@@ -1576,36 +1501,20 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
                 color: "#333",
               }}
             >
-              Prep Period (weeks):
+              PREP TOTAL:
             </label>
-            <input
-              type="number"
-              min="0"
-              value={budgetData.projectInfo?.prepPeriod || 0}
-              onChange={(e) => {
-                setBudgetData((prev) => {
-                  const updatedData = {
-                    ...prev,
-                    projectInfo: {
-                      ...prev.projectInfo,
-                      prepPeriod: parseInt(e.target.value) || 0,
-                    },
-                  };
-                  if (onSyncBudgetData) {
-                    onSyncBudgetData(updatedData);
-                  }
-                  return updatedData;
-                });
-              }}
+            <div
               style={{
-                width: "100%",
                 padding: "6px",
-                border: "1px solid #ccc",
+                border: "1px solid #e0e0e0",
                 borderRadius: "3px",
                 fontSize: "14px",
-                boxSizing: "border-box",
+                backgroundColor: "#f5f5f5",
+                color: "#333",
               }}
-            />
+            >
+              ${prepTotal.toLocaleString()}
+            </div>
           </div>
 
           <div>
@@ -1752,7 +1661,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
           }}
         >
           <span>
-            {atlExpanded ? "▼" : "▶"} Above The Line (ATL) - $
+            {atlExpanded ? "▼" : "▶"} ABOVE THE LINE (ATL) - $
             {atlTotal.toLocaleString()}
           </span>
           <div>
@@ -1838,7 +1747,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
 
                   {Object.entries(itemsByType).map(([itemType, typeItems]) => (
                     <div key={itemType}>
-                      {renderColumnHeader(itemType)}
+                      {renderColumnHeader(itemType, "atl")}
                       {typeItems.map((item, index) =>
                         renderBudgetItem(item, index, "atl")
                       )}
@@ -1850,7 +1759,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
                     style={{
                       display: "grid",
                       gridTemplateColumns:
-                        "80px 120px 120px 120px 80px 60px 80px 80px 65px 80px 60px 60px 120px 40px",
+                        "60px 160px 100px 108px 80px 60px 80px 80px 60px 59px 220px 45px 30px",
                       gap: "4px",
                       padding: "6px 4px",
                       backgroundColor: "#e3f2fd",
@@ -1868,7 +1777,8 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
                     <div></div>
                     <div></div>
                     <div></div>
-                    <div style={{ textAlign: "left", fontWeight: "bold" }}>
+                    <div></div>
+                    <div style={{ textAlign: "center", fontWeight: "bold" }}>
                       $
                       {departmentItems
                         .reduce(
@@ -1877,8 +1787,6 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
                         )
                         .toLocaleString()}
                     </div>
-                    <div></div>
-                    <div></div>
                     <div></div>
                     <div></div>
                     <div></div>
@@ -1920,7 +1828,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
                             style={{
                               display: "grid",
                               gridTemplateColumns:
-                                "80px 120px 120px 120px 80px 60px 80px 80px 65px 80px 60px 60px 120px 40px",
+                                "60px 160px 100px 108px 80px 60px 80px 80px 60px 59px 220px 45px 30px",
                               gap: "4px",
                               padding: "3px 4px",
                               backgroundColor: "#d32f2f",
@@ -1954,19 +1862,18 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
                             >
                               {editableAgencyRate}%
                             </div>
-                            <div style={{ textAlign: "left" }}>
+                            <div></div>
+                            <div style={{ textAlign: "center" }}>
                               ${agencyFees.toLocaleString()}
                             </div>
-                            <div>$0</div>
-                            <div>☑</div>
-                            <div>Auto-calculated</div>
                             <div>-</div>
+                            <div>Auto-calculated</div>
                           </div>
                           <div
                             style={{
                               display: "grid",
                               gridTemplateColumns:
-                                "80px 120px 120px 120px 80px 60px 80px 80px 65px 80px 60px 60px 120px 40px",
+                                "60px 160px 100px 108px 80px 60px 80px 80px 60px 59px 220px 45px 30px",
                               gap: "4px",
                               padding: "3px 4px",
                               backgroundColor: "#d32f2f",
@@ -2010,13 +1917,12 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
                                 ? "40%"
                                 : "100%"}
                             </div>
-                            <div style={{ textAlign: "left" }}>
+                            <div></div>
+                            <div style={{ textAlign: "center" }}>
                               ${bondAmount.toLocaleString()}
                             </div>
-                            <div>$0</div>
-                            <div>☑</div>
-                            <div>Auto-calculated</div>
                             <div>-</div>
+                            <div>Auto-calculated</div>
                           </div>
                         </>
                       );
@@ -2048,7 +1954,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
                     {Object.entries(itemsByType).map(
                       ([itemType, typeItems]) => (
                         <div key={itemType}>
-                          {renderColumnHeader(itemType)}
+                          {renderColumnHeader(itemType, "atl")}
                           {typeItems.map((item, index) =>
                             renderBudgetItem(item, index, "atl")
                           )}
@@ -2080,7 +1986,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
           }}
         >
           <span>
-            {btlExpanded ? "▼" : "▶"} Below The Line (BTL) - $
+            {btlExpanded ? "▼" : "▶"} BELOW THE LINE (BTL) - $
             {btlTotal.toLocaleString()}
           </span>
           <div>
@@ -2147,7 +2053,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
 
                   {Object.entries(itemsByType).map(([itemType, typeItems]) => (
                     <div key={itemType}>
-                      {renderColumnHeader(itemType)}
+                      {renderColumnHeader(itemType, "btl")}
                       {typeItems.map((item, index) =>
                         renderBudgetItem(item, index, "btl")
                       )}
@@ -2194,7 +2100,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
                     {Object.entries(itemsByType).map(
                       ([itemType, typeItems]) => (
                         <div key={itemType}>
-                          {renderColumnHeader(itemType)}
+                          {renderColumnHeader(itemType, "btl")}
                           {typeItems.map((item, index) =>
                             renderBudgetItem(item, index, "btl")
                           )}
@@ -2212,7 +2118,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
 
       {/* Legal Section */}
       {renderAdditionalCategorySection(
-        "Legal",
+        "LEGAL",
         legalDepartments,
         legalTotal,
         legalExpanded,
@@ -2222,7 +2128,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
 
       {/* Marketing, EPK, & PR Section */}
       {renderAdditionalCategorySection(
-        "Marketing, EPK, & PR",
+        "MARKETING, EPK, & PR",
         additionalCategories["MARKETING, EPK, & PR"],
         marketingTotal,
         marketingExpanded,
@@ -2232,13 +2138,15 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
 
       {/* Post Production Section */}
       {renderAdditionalCategorySection(
-        "Post Production",
+        "POST-PRODUCTION",
         additionalCategories["POST PRODUCTION"],
         postTotal,
         postExpanded,
         setPostExpanded,
         "post"
       )}
+
+      </div>{/* end content area */}
 
       {/* Contingency Settings Modal */}
       {showContingencySettings && (
@@ -2254,14 +2162,6 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
         />
       )}
 
-      {/* Project Settings Modal - Complete Implementation */}
-      {showProjectSettings && (
-        <ProjectSettingsModal
-          budgetData={budgetData}
-          setBudgetData={setBudgetData}
-          onClose={() => setShowProjectSettings(false)}
-        />
-      )}
     </div>
   );
 }

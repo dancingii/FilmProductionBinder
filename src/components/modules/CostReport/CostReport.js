@@ -527,54 +527,31 @@ function CostReport({
   };
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        width: "100%",
-        height: "calc(100vh - 40px)",
-        overflowY: "auto",
-        boxSizing: "border-box",
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px",
-        }}
-      >
-        <h2>Cost Report</h2>
-        <div style={{ display: "flex", gap: "10px" }}>
-          <button
-            onClick={() => setShowAddCategory(true)}
-            style={{
-              backgroundColor: "#4CAF50",
-              color: "white",
-              padding: "8px 16px",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-            }}
-          >
-            + Add Category
-          </button>
-          <button
-            onClick={() => setShowAddVendor(true)}
-            style={{
-              backgroundColor: "#2196F3",
-              color: "white",
-              padding: "8px 16px",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-            }}
-          >
-            + Add Vendor
-          </button>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+            <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>COST REPORT</h2>
+            <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+              <button
+                onClick={() => setShowAddCategory(true)}
+                style={{ backgroundColor: "#4CAF50", color: "white", padding: "5px 12px", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "13px" }}
+              >
+                + ADD CATEGORY
+              </button>
+              <button
+                onClick={() => setShowAddVendor(true)}
+                style={{ backgroundColor: "#2196F3", color: "white", padding: "5px 12px", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "13px" }}
+              >
+                + ADD VENDOR
+              </button>
+            </div>
+          </div>
         </div>
       </div>
+      {/* ── Content area ── */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
 
       {/* Summary Totals */}
       <div
@@ -1384,6 +1361,8 @@ function CostReport({
           )}
         </div>
       ))}
+
+      </div>{/* end content area */}
 
       {/* Add Category Modal */}
       {showAddCategory && (

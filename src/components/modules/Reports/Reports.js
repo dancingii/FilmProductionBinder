@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { PDFExporter } from "../../../utils/pdfExport";
 import ImageViewer from "../../shared/ImageViewer";
+import { resolveInstanceSceneIndex } from "../../../utils/scriptSearch.js";
 
 function ReportsModule({
   shootingDays,
@@ -141,7 +142,7 @@ function ReportsModule({
             );
             const matchingInstances = (item.instances || []).filter((instance) => {
               if (typeof instance === "string") {
-                return parseInt(instance.split("-")[0]) === sceneArrayIndex;
+                return resolveInstanceSceneIndex(instance, scenes) === sceneArrayIndex;
               } else if (instance.sceneNumber) {
                 return (
                   parseInt(instance.sceneNumber) === parseInt(scene.sceneNumber) &&
@@ -190,7 +191,7 @@ function ReportsModule({
             );
             const matchingInstances = (item.instances || []).filter((instance) => {
               if (typeof instance === "string") {
-                return parseInt(instance.split("-")[0]) === sceneArrayIndex;
+                return resolveInstanceSceneIndex(instance, scenes) === sceneArrayIndex;
               } else if (instance.sceneNumber) {
                 return (
                   parseInt(instance.sceneNumber) === parseInt(scene.sceneNumber) &&
@@ -239,7 +240,7 @@ function ReportsModule({
             );
             const matchingInstances = (item.instances || []).filter((instance) => {
               if (typeof instance === "string") {
-                return parseInt(instance.split("-")[0]) === sceneArrayIndex;
+                return resolveInstanceSceneIndex(instance, scenes) === sceneArrayIndex;
               } else if (instance.sceneNumber) {
                 return (
                   parseInt(instance.sceneNumber) === parseInt(scene.sceneNumber) &&
@@ -520,24 +521,24 @@ function ReportsModule({
 
   if (availableDays.length === 0) {
     return (
-      <div style={{ padding: "20px", textAlign: "center" }}>
-        <h2>Production Reports</h2>
-        <p>No shooting days with scheduled scenes found.</p>
-        <p>Please schedule scenes in the Stripboard Schedule module first.</p>
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+        <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+          <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+            <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+              <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>REPORTS</h2>
+            </div>
+          </div>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", fontFamily: "Arial, sans-serif", padding: "20px", textAlign: "center" }}>
+          <p>No shooting days with scheduled scenes found.</p>
+          <p>Please schedule scenes in the Stripboard Schedule module first.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        fontFamily: "Arial, sans-serif",
-        height: "calc(100vh - 44px)",
-        overflowY: "auto",
-        boxSizing: "border-box",
-      }}
-    >
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
       {/* Local image viewer */}
       {showImageViewer && (
         <ImageViewer
@@ -548,7 +549,16 @@ function ReportsModule({
         />
       )}
 
-      <h2>Production Reports</h2>
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+            <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>REPORTS</h2>
+          </div>
+        </div>
+      </div>
+      {/* ── Content area ── */}
+      <div style={{ flex: 1, overflowY: "auto", fontFamily: "Arial, sans-serif", padding: "20px" }}>
 
       {/* Day Selection */}
       <div
@@ -1329,6 +1339,7 @@ function ReportsModule({
           </div>
         )}
       </div>
+      </div>{/* end content area */}
     </div>
   );
 }

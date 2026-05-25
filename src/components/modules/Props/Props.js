@@ -1,5 +1,14 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { getElementStyle } from "../../../utils.js";
+import { resolveInstanceSceneIndex, searchScript as searchScriptUtil } from "../../../utils/scriptSearch.js";
+import { buildSceneDisplayLabelMap, getSceneDisplayLabel } from "../../../utils/sceneDisplayLabel";
+import {
+  sceneMatchesPropSceneRef,
+  resolvePropSceneRef,
+  getPropSceneIds,
+  getPropSceneNumbersForDisplay,
+  normalizePropScenesOnAdd,
+} from "../../../utils/propSceneRefs";
 
 const EditablePropTitle = React.memo(
   ({ propWord, item, onTitleUpdate, onClick }) => {
@@ -125,6 +134,8 @@ function PropsModule({
   projectId,
   shootingDays,
 }) {
+  const displayLabelMap = useMemo(() => buildSceneDisplayLabelMap(scenes), [scenes]);
+
   const [showScenesWithoutProps, setShowScenesWithoutProps] = useState(false);
   const [selectedProp, setSelectedProp] = useState(null);
   const [showScenePreview, setShowScenePreview] = useState(false);
@@ -212,87 +223,13 @@ function PropsModule({
         setPropSearchResults(null);
         return;
       }
-      const queryWords = query
-        .trim()
-        .toLowerCase()
-        .split(/\s+/)
-        .filter(Boolean);
-      const isMultiWord = queryWords.length > 1;
-      const stemmedQueryWords = queryWords.map((w) =>
-        stemWord(w.replace(/[^\w]/g, ""))
+
+      const { instancesByScene, sceneIndices, matchGroups } = searchScriptUtil(
+        scenes,
+        query,
+        stemWord
       );
-      const instancesByScene = {}; // sceneIndex -> [instanceId (of first word in match), ...]
-
-      for (let si = 0; si < scenes.length; si++) {
-        const scene = scenes[si];
-        if (!scene.content) continue;
-        for (let bi = 0; bi < scene.content.length; bi++) {
-          const block = scene.content[bi];
-          const rawWords = block.text.split(/(\s+)/);
-          // Build index of non-whitespace words with their positions
-          const wordTokens = [];
-          for (let wi = 0; wi < rawWords.length; wi++) {
-            if (rawWords[wi].trim())
-              wordTokens.push({ wi, text: rawWords[wi] });
-          }
-
-          for (let ti = 0; ti < wordTokens.length; ti++) {
-            const token = wordTokens[ti];
-            const clean = token.text.toLowerCase().replace(/[^\w]/g, "");
-            const stemmed = stemWord(clean);
-
-            if (isMultiWord) {
-              // Check if this and the next N-1 tokens match the phrase
-              const firstStemmed = stemmedQueryWords[0];
-              if (!stemmed.startsWith(firstStemmed)) continue;
-              let matched = true;
-              for (let qi = 1; qi < stemmedQueryWords.length; qi++) {
-                const nextToken = wordTokens[ti + qi];
-                if (!nextToken) {
-                  matched = false;
-                  break;
-                }
-                const nextClean = nextToken.text
-                  .toLowerCase()
-                  .replace(/[^\w]/g, "");
-                const nextStemmed = stemWord(nextClean);
-                if (!nextStemmed.startsWith(stemmedQueryWords[qi])) {
-                  matched = false;
-                  break;
-                }
-              }
-              if (!matched) continue;
-              if (!instancesByScene[si]) instancesByScene[si] = [];
-              const groupIds = [];
-              for (let qi = 0; qi < stemmedQueryWords.length; qi++) {
-                const t = wordTokens[ti + qi];
-                groupIds.push(`${si}-${bi}-${t.wi}`);
-              }
-              const primaryId = groupIds[0];
-              instancesByScene[si].push(primaryId);
-              // Store all word positions under the primary ID so the viewer highlights all
-              instancesByScene[`_group_${primaryId}`] = groupIds;
-            } else {
-              // Single word prefix match
-              if (
-                stemmed.startsWith(stemmedQueryWords[0]) ||
-                clean.startsWith(queryWords[0])
-              ) {
-                const id = `${si}-${bi}-${token.wi}`;
-                if (!instancesByScene[si]) instancesByScene[si] = [];
-                instancesByScene[si].push(id);
-              }
-            }
-          }
-        }
-      }
-
-      const sceneIndices = Object.keys(instancesByScene)
-        .filter((k) => !k.startsWith("_group_"))
-        .map(Number)
-        .filter((n) => !isNaN(n))
-        .sort((a, b) => a - b);
-      setPropSearchResults({ instancesByScene, sceneIndices });
+      setPropSearchResults({ instancesByScene, sceneIndices, matchGroups });
     },
     [scenes, stemWord]
   );
@@ -319,15 +256,16 @@ function PropsModule({
     const { instancesByScene, sceneIndices } = propSearchResults;
 
     // For existing props, pre-mark instances as confirmed if their scene
-    // is already saved in the prop's scenes array
-    const savedScenes = selectedProp?.isNewCustomProp
+    // is already saved in the prop's scenes array. Use UUID comparison
+    // so both legacy sceneNumber refs and UUID refs resolve correctly.
+    const savedSceneIds = selectedProp?.isNewCustomProp
       ? []
-      : (selectedProp?.scenes || []).map(String);
+      : getPropSceneIds(selectedProp, scenes);
 
     const init = {};
     sceneIndices.forEach((si) => {
-      const sceneNum = String(scenes[si]?.sceneNumber);
-      const isAlreadySaved = savedScenes.includes(sceneNum);
+      const sceneId = scenes[si]?.id;
+      const isAlreadySaved = sceneId ? savedSceneIds.includes(sceneId) : false;
       (instancesByScene[si] || []).forEach((id) => {
         if (!instanceStatuses[id]) {
           init[id] = isAlreadySaved ? "confirmed" : "pending";
@@ -393,8 +331,8 @@ function PropsModule({
           (id) => instanceStatuses[id] === "confirmed"
         )
       )
-      .map((si) => scenes[si]?.sceneNumber)
-      .filter(Boolean);
+      .map((si) => ({ sceneNumber: scenes[si]?.sceneNumber, sceneId: scenes[si]?.id }))
+      .filter((s) => s.sceneNumber != null);
   };
 
   // Reset search state when popup closes
@@ -414,18 +352,28 @@ function PropsModule({
     setLastChosenChar(null);
   };
 
-  const getEarliestSceneNum = (prop) => {
-    const s = prop.scenes || [];
-    if (s.length === 0) return Infinity;
-    const nums = s.map((n) => parseFloat(n)).filter((n) => !isNaN(n));
-    return nums.length > 0 ? Math.min(...nums) : Infinity;
+  // Sort key: prefer metadata.scriptOrder; fall back to sceneNumber as a display-only tie-break.
+  // Uses resolvePropSceneRef so both UUID and legacy integer refs resolve correctly.
+  const getEarliestScriptOrder = (prop) => {
+    const refs = prop.scenes || [];
+    if (refs.length === 0) return Infinity;
+    const orders = refs
+      .map((ref) => resolvePropSceneRef(ref, scenes))
+      .filter(({ scene }) => scene != null)
+      .map(({ scene }) =>
+        scene.metadata?.scriptOrder != null
+          ? Number(scene.metadata.scriptOrder)
+          : Number(scene.sceneNumber)
+      )
+      .filter((n) => Number.isFinite(n));
+    return orders.length > 0 ? Math.min(...orders) : Infinity;
   };
 
   const propItems = Object.entries(taggedItems)
     .filter(([word, item]) => item.category === "Props")
     .sort((a, b) => {
-      const aMin = getEarliestSceneNum(a[1]);
-      const bMin = getEarliestSceneNum(b[1]);
+      const aMin = getEarliestScriptOrder(a[1]);
+      const bMin = getEarliestScriptOrder(b[1]);
       if (aMin !== bMin) return aMin - bMin;
       return (a[1].chronologicalNumber || 0) - (b[1].chronologicalNumber || 0);
     });
@@ -680,14 +628,14 @@ function PropsModule({
     const sceneProps = [];
 
     propItems.forEach(([word, prop]) => {
-      // First check scenes array (manually created props store scene numbers here)
+      // First check scenes array — handles both UUID refs and legacy sceneNumber integers
       const inScenesArray = (prop.scenes || []).some(
-        (s) => String(s) === String(sceneNumber)
+        (ref) => sceneMatchesPropSceneRef(scene, ref)
       );
 
-      // Also check instances array (script-tagged props)
+      // Also check instances array (script-tagged props) — UUID-first, legacy fallback
       const inInstances = (prop.instances || []).some((instance) => {
-        const instSceneIdx = parseInt(instance.split("-")[0]);
+        const instSceneIdx = resolveInstanceSceneIndex(instance, scenes);
         return instSceneIdx === sceneIndex && !instance.excluded;
       });
 
@@ -761,16 +709,93 @@ function PropsModule({
   return (
     <div
     style={{
-      padding: "20px",
-      height: "calc(100vh - 60px)",
       width: "100%",
+      height: "100%",
+      minHeight: 0,
       display: "flex",
-      gap: "15px",
-      maxWidth: "100%",
-      overflowX: "hidden",
+      flexDirection: "column",
+      overflow: "hidden",
       boxSizing: "border-box",
     }}
     >
+      {/* Header bar */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", gap: "15px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+            {/* Left section — constrains title + actions to Props list column */}
+            <div style={{ flex: "0 0 25%", maxWidth: "25%", display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+              <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>PROPS</h2>
+              <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+                <button
+                  onClick={() => setShowPrintQueue(true)}
+                  style={{
+                    backgroundColor: printQueue.length > 0 ? "#1976d2" : "#e0e0e0",
+                    color: printQueue.length > 0 ? "white" : "#555",
+                    border: "none", borderRadius: "4px",
+                    padding: "5px 12px", cursor: "pointer",
+                    fontSize: "13px", fontWeight: "bold",
+                  }}
+                >
+                  🖨{printQueue.length > 0 ? ` QUEUE (${printQueue.length})` : " QUEUE"}
+                </button>
+                <button
+                  onClick={() => {
+                    // Create a temporary prop object to open the popup
+                    const tempProp = {
+                      word: `custom_${Date.now()}`, // Temporary unique identifier
+                      displayName: "New Custom Prop",
+                      customTitle: "New Custom Prop",
+                      category: "Props",
+                      color:
+                        Object.values(taggedItems).find(
+                          (item) => item.category === "Props"
+                        )?.color || "#FF6B6B",
+                      chronologicalNumber: propItems.length + 1,
+                      scenes: [],
+                      contextScene: null,
+                      isNewCustomProp: true, // Flag to identify this as a new custom prop
+                      propSubcategory: "misc",
+                      propId: generatePropId("misc"),
+                    };
+                    setSelectedProp(tempProp);
+                  }}
+                  style={{
+                    backgroundColor: "#4CAF50",
+                    color: "white",
+                    padding: "5px 12px",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: "bold",
+                  }}
+                >
+                  + ADD CUSTOM PROP
+                </button>
+              </div>
+            </div>
+            {/* Right section — Scene Breakdown title, aligned over Scene Breakdown column */}
+            <div style={{ flex: 1, display: "flex", alignItems: "center" }}>
+              <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>SCENE BREAKDOWN</h2>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Content area */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          width: "100%",
+          display: "flex",
+          gap: "15px",
+          maxWidth: "100%",
+          overflowX: "hidden",
+          boxSizing: "border-box",
+          padding: "20px",
+        }}
+      >
       {/* Left Column - Props List */}
       <div
         style={{
@@ -781,63 +806,6 @@ function PropsModule({
           boxSizing: "border-box",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "20px",
-          }}
-        >
-          <h2 style={{ margin: 0 }}>Props</h2>
-          <button
-            onClick={() => setShowPrintQueue(true)}
-            style={{
-              backgroundColor: printQueue.length > 0 ? "#1976d2" : "#e0e0e0",
-              color: printQueue.length > 0 ? "white" : "#555",
-              border: "none", borderRadius: "4px",
-              padding: "8px 12px", cursor: "pointer",
-              fontSize: "12px", fontWeight: "bold",
-            }}
-          >
-            🖨{printQueue.length > 0 ? ` Queue (${printQueue.length})` : " Queue"}
-          </button>
-          <button
-            onClick={() => {
-              // Create a temporary prop object to open the popup
-              const tempProp = {
-                word: `custom_${Date.now()}`, // Temporary unique identifier
-                displayName: "New Custom Prop",
-                customTitle: "New Custom Prop",
-                category: "Props",
-                color:
-                  Object.values(taggedItems).find(
-                    (item) => item.category === "Props"
-                  )?.color || "#FF6B6B",
-                chronologicalNumber: propItems.length + 1,
-                scenes: [],
-                contextScene: null,
-                isNewCustomProp: true, // Flag to identify this as a new custom prop
-                propSubcategory: "misc",
-                propId: generatePropId("misc"),
-              };
-              setSelectedProp(tempProp);
-            }}
-            style={{
-              backgroundColor: "#4CAF50",
-              color: "white",
-              padding: "8px 16px",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontSize: "12px",
-              fontWeight: "bold",
-            }}
-          >
-            + Add Custom Prop
-          </button>
-        </div>
-
         {/* Combined filter dropdown */}
         {(() => {
           // Build scene → shoot day map
@@ -858,7 +826,7 @@ function PropsModule({
             .forEach(day => {
               const dayHasProp = Object.values(taggedItems).some(item => {
                 if (item.category !== "Props") return false;
-                return (item.scenes || []).some(sn => sceneShootDayMap[String(sn)]?.dayNumber === day.dayNumber);
+                return getPropSceneNumbersForDisplay(item, scenes).some(sn => sceneShootDayMap[String(sn)]?.dayNumber === day.dayNumber);
               });
               if (dayHasProp && !seenDays.has(day.dayNumber)) {
                 seenDays.add(day.dayNumber);
@@ -1077,7 +1045,7 @@ function PropsModule({
                     return (
                       (effectiveSub.length === 0 || effectiveSub.includes(item.propSubcategory || "misc")) &&
                       (effectiveChar.length === 0 || (item.assignedCharacters || []).some((c) => effectiveChar.includes(c))) &&
-                      (effectiveDay.length === 0 || (item.scenes || []).some(sn => effectiveDay.includes(sceneMap[String(sn)])))
+                      (effectiveDay.length === 0 || getPropSceneNumbersForDisplay(item, scenes).some(sn => effectiveDay.includes(sceneMap[String(sn)])))
                     );
                   }).length} shown)
                 </span>
@@ -1101,7 +1069,7 @@ function PropsModule({
               .filter(([, item]) =>
                 (effectiveSub.length === 0 || effectiveSub.includes(item.propSubcategory || "misc")) &&
                 (effectiveChar.length === 0 || (item.assignedCharacters || []).some((c) => effectiveChar.includes(c))) &&
-                (effectiveDay.length === 0 || (item.scenes || []).some(sn => effectiveDay.includes(sceneMap[String(sn)])))
+                (effectiveDay.length === 0 || getPropSceneNumbersForDisplay(item, scenes).some(sn => effectiveDay.includes(sceneMap[String(sn)])))
               )
               .map(([word, item]) => {
             // Convert hex color to more pastel version
@@ -1166,6 +1134,7 @@ function PropsModule({
                         alignSelf: "flex-start",
                         position: "relative",
                         top: "-4px",
+                        textTransform: "uppercase",
                       }}
                       onClick={() =>
                         setSelectedProp({ word, ...item, contextScene: null })
@@ -1324,23 +1293,15 @@ function PropsModule({
       <div
         style={{ flex: 1, height: "100%", overflowY: "auto" }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "20px",
-          }}
-        >
-          <h2>Scene Breakdown</h2>
-          <label style={{ fontSize: "14px" }}>
+        <div style={{ marginBottom: "8px" }}>
+          <label style={{ fontSize: "12px", color: "#666" }}>
             <input
               type="checkbox"
               checked={showScenesWithoutProps}
               onChange={(e) => setShowScenesWithoutProps(e.target.checked)}
-              style={{ marginRight: "8px" }}
+              style={{ marginRight: "6px" }}
             />
-            Show scenes without props
+            SHOW SCENES WITHOUT PROPS
           </label>
         </div>
 
@@ -1354,7 +1315,7 @@ function PropsModule({
                 key={sceneIndex}
                 style={{
                   border: "1px solid #ddd",
-                  margin: "10px 0",
+                  margin: "6px 0",
                   backgroundColor: "#fff",
                   borderRadius: "4px",
                 }}
@@ -1362,27 +1323,19 @@ function PropsModule({
                 <div
                   style={{
                     backgroundColor: "#f5f5f5",
-                    padding: "12px",
+                    padding: "5px 10px",
                     fontWeight: "bold",
-                    fontSize: "14px",
+                    fontSize: "12px",
+                    textTransform: "uppercase",
                     borderBottom:
                       sceneProps.length > 0 ? "1px solid #ddd" : "none",
                   }}
                 >
-                  Scene {scene.sceneNumber}: {scene.heading}
+                  Scene {getSceneDisplayLabel(scene, displayLabelMap)}: {scene.heading}
                 </div>
 
                 {sceneProps.length > 0 && (
-                  <div style={{ padding: "12px" }}>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#666",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      Props needed ({sceneProps.length}):
-                    </div>
+                  <div style={{ padding: "6px 10px" }}>
                     <div
                       style={{
                         display: "grid",
@@ -1435,8 +1388,9 @@ function PropsModule({
                             <div
                               style={{
                                 fontWeight: "bold",
-                                fontSize: "11px", // Back to original size
+                                fontSize: "11px",
                                 marginBottom: "2px",
+                                textTransform: "uppercase",
                               }}
                             >
                               {propNumberMap[prop.word] ??
@@ -1508,6 +1462,7 @@ function PropsModule({
             );
           })}
         </div>
+      </div>
       </div>
 
       {selectedProp && (
@@ -2168,7 +2123,8 @@ function PropsModule({
 
             {/* Shoot Dates */}
             {!selectedProp.isNewCustomProp && (() => {
-              const propScenes = taggedItems[selectedProp.word]?.scenes || selectedProp.scenes || [];
+              const livePropData = taggedItems[selectedProp.word] || selectedProp;
+              const propSceneNums = getPropSceneNumbersForDisplay(livePropData, scenes);
               const sceneShootDayMap = {};
               (shootingDays || []).forEach(day => {
                 (day.scheduleBlocks || []).forEach(block => {
@@ -2178,7 +2134,7 @@ function PropsModule({
                 });
               });
               const seen = new Set();
-              const badges = propScenes.map(sceneNum => {
+              const badges = propSceneNums.map(sceneNum => {
                 const entry = sceneShootDayMap[String(sceneNum)];
                 if (!entry || seen.has(entry.dayNumber)) return null;
                 seen.add(entry.dayNumber);
@@ -2259,7 +2215,7 @@ function PropsModule({
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
                     {scenes.map((scene, sceneIndex) => {
                       const liveProp = taggedItems[selectedProp.word];
-                      const isAssigned = (liveProp?.scenes || selectedProp.scenes || []).some((s) => String(s) === String(scene.sceneNumber));
+                      const isAssigned = (liveProp?.scenes || selectedProp.scenes || []).some((ref) => sceneMatchesPropSceneRef(scene, ref));
                       const isLocked = !!taggedItems[selectedProp.word]?.scenesLocked;
                       return (
                         <button
@@ -2284,7 +2240,7 @@ function PropsModule({
                             opacity: isLocked ? 0.8 : 1,
                           }}
                         >
-                          {scene.sceneNumber}
+                          {getSceneDisplayLabel(scene, displayLabelMap)}
                         </button>
                       );
                     })}
@@ -2444,6 +2400,7 @@ function PropsModule({
                               );
                               if (confirmedInst.length === 0) return;
                               const sceneNum = scenes[si]?.sceneNumber;
+                              const sceneId = scenes[si]?.id;
                               if (!sceneNum) return;
 
                               // Check if any instance in this scene has a character or variant
@@ -2457,7 +2414,7 @@ function PropsModule({
                               if (!char || char === primarySessionChar) {
                                 // No character or primary character → main prop
                                 // (variants for additional chars were already created live)
-                                mainPropScenes.push(sceneNum);
+                                mainPropScenes.push({ sceneNumber: sceneNum, sceneId });
                               }
                               // else: non-primary char — variant already handles this scene
                             });
@@ -2881,9 +2838,9 @@ function PropsModule({
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontWeight: "bold", fontSize: "13px" }}>
                         {showFullScriptViewer ? (
-                          <>Scene {scene.sceneNumber} ({fullScriptSceneIdx + 1}/{scenes.length})</>
+                          <>Scene {getSceneDisplayLabel(scene, displayLabelMap)} ({fullScriptSceneIdx + 1}/{scenes.length})</>
                         ) : (
-                          <>Scene {scene.sceneNumber} ({propViewerSceneIdx + 1}/{sceneIndices.length})</>
+                          <>Scene {getSceneDisplayLabel(scene, displayLabelMap)} ({propViewerSceneIdx + 1}/{sceneIndices.length})</>
                         )}
                       </div>
                       <div style={{ fontSize: "10px", opacity: 0.8 }}>
@@ -3137,7 +3094,7 @@ function PropsModule({
                       <div key={bi} style={getElementStyle(block.type)}>
                         {words.map((word, wi) => {
                           if (!word.trim()) return word;
-                          const instanceId = `${currentSceneIndex}-${bi}-${wi}`;
+                          const instanceId = scene?.id ? `${scene.id}-${bi}-${wi}` : `${currentSceneIndex}-${bi}-${wi}`;
                           const isInResults =
                             currentInstances.includes(instanceId) ||
                             currentInstances.some((id) =>
@@ -3276,7 +3233,7 @@ function PropsModule({
                                         marginBottom: "2px",
                                       }}
                                     >
-                                      "{word}" — {scene.sceneNumber}
+                                      "{word}" — {getSceneDisplayLabel(scene, displayLabelMap)}
                                     </div>
 
                                     {/* Confirm / Reject */}
@@ -3341,29 +3298,15 @@ function PropsModule({
                                                   existingWord &&
                                                   batchedItems[existingWord]
                                                 ) {
-                                                  // Reuse: add scene to existing variant
+                                                  // Reuse: add scene to existing variant — write UUID ref
                                                   const variantItem =
                                                     batchedItems[existingWord];
-                                                  const sceneNum =
-                                                    scene.sceneNumber;
                                                   const currentScenes =
                                                     variantItem.scenes || [];
-                                                  if (
-                                                    !currentScenes
-                                                      .map(String)
-                                                      .includes(
-                                                        String(sceneNum)
-                                                      )
-                                                  ) {
-                                                    batchedItems[existingWord] =
-                                                      {
-                                                        ...variantItem,
-                                                        scenes: [
-                                                          ...currentScenes,
-                                                          sceneNum,
-                                                        ],
-                                                      };
-                                                  }
+                                                  batchedItems[existingWord] = {
+                                                    ...variantItem,
+                                                    scenes: normalizePropScenesOnAdd(currentScenes, scene),
+                                                  };
                                                 } else {
                                                   // New variant — build inline so all
                                                   // chars share the same batchedItems base
@@ -3399,9 +3342,9 @@ function PropsModule({
                                                     chronologicalNumber:
                                                       nextNum++,
                                                     position: 0,
-                                                    scenes: [scene.sceneNumber],
+                                                    scenes: [scene.id],
                                                     instances: [
-                                                      `manual-${Date.now()}`,
+                                                      `${scene.id}-manual-${Date.now()}`,
                                                     ],
                                                     customTitle:
                                                       selectedProp.customTitle ||
@@ -3959,12 +3902,9 @@ function PropsModule({
                     sceneIndex = selectedProp.contextScene;
                     scene = scenes[sceneIndex];
                   } else {
-                    const viewingSceneNumber =
+                    const viewingRef =
                       selectedProp.viewingSceneNumber || selectedProp.scenes[0];
-                    sceneIndex = scenes.findIndex(
-                      (s) => s.sceneNumber === String(viewingSceneNumber)
-                    );
-                    scene = scenes[sceneIndex];
+                    ({ scene, index: sceneIndex } = resolvePropSceneRef(viewingRef, scenes));
                   }
 
                   if (!scene) {
@@ -4001,7 +3941,7 @@ function PropsModule({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {scene.sceneNumber}. {scene.heading}
+                          {getSceneDisplayLabel(scene, displayLabelMap)}. {scene.heading}
                         </div>
 
                         {/* Navigation controls for left panel context */}
@@ -4144,7 +4084,7 @@ function PropsModule({
                                   .replace(/[^\w]/g, "");
                                 const stemmedWord = stemWord(cleanWord);
 
-                                const instanceId = `${sceneIndex}-${blockIndex}-${wordIndex}`;
+                                const instanceId = scene?.id ? `${scene.id}-${blockIndex}-${wordIndex}` : `${sceneIndex}-${blockIndex}-${wordIndex}`;
                                 const primaryForThis = sceneInstances.find(
                                   (id) =>
                                     (
@@ -4158,11 +4098,11 @@ function PropsModule({
                                   sceneInstances.includes(instanceId);
 
                                 // In scene preview, highlight if the instance is in results
-                                // AND the scene is saved in this prop's scenes array
-                                const sceneNum = scene?.sceneNumber;
-                                const sceneIsSaved = (selectedProp.scenes || [])
-                                  .map(String)
-                                  .includes(String(sceneNum));
+                                // AND the scene is saved in this prop's scenes array.
+                                // Use sceneMatchesPropSceneRef to handle both UUID and legacy refs.
+                                const sceneIsSaved = scene
+                                  ? (selectedProp.scenes || []).some((ref) => sceneMatchesPropSceneRef(scene, ref))
+                                  : false;
                                 const isCurrentProp =
                                   isInResults && sceneIsSaved;
 

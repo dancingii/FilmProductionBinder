@@ -3,6 +3,56 @@
   text-align: center;
 }
 
+/* Thin scrollbar for timeline tracks */
+.fpb-auto-scrollbar::-webkit-scrollbar {
+  height: 6px;
+}
+.fpb-auto-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.fpb-auto-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+.fpb-auto-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+.fpb-auto-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.writing-timeline-scrollbar-hidden {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+  overflow: -moz-scrollbars-none;
+}
+.writing-timeline-scrollbar-hidden::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+.writing-timeline-scrollbar-hidden::-webkit-scrollbar-track,
+.writing-timeline-scrollbar-hidden::-webkit-scrollbar-thumb {
+  display: none !important;
+  background: transparent !important;
+}
+.writing-timeline-root .writing-timeline-scrollbar-hidden {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.writing-timeline-root .writing-timeline-scrollbar-hidden::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+.writing-timeline-root .writing-timeline-scrollbar-hidden::-webkit-scrollbar-track,
+.writing-timeline-root .writing-timeline-scrollbar-hidden::-webkit-scrollbar-thumb,
+.writing-timeline-root .writing-timeline-scrollbar-hidden::-webkit-scrollbar-corner {
+  display: none !important;
+  background: transparent !important;
+}
+
 /* Print styles for Call Sheet export */
 @media print {
   /* Hide everything except call sheet */

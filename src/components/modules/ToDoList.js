@@ -746,69 +746,58 @@ function ToDoListModule({
   return (
     <div
       style={{
+        display: "flex",
+        flexDirection: "column",
         width: "100%",
-        height: "calc(100vh - 40px)",
+        height: "100%",
+        minHeight: 0,
         boxSizing: "border-box",
-        position: "relative",
+        overflow: "hidden",
       }}
     >
-      {/* Fixed header */}
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: "white",
-          zIndex: 100,
-          padding: "20px 20px 15px 20px",
-          borderBottom: "1px solid #ddd",
-          boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "15px",
-          }}
-        >
-          <h2 style={{ margin: 0 }}>ToDo List</h2>
-          <div style={{ display: "flex", gap: "10px" }}>
-            <button
-              onClick={() => setShowCompleted(!showCompleted)}
-              style={{
-                backgroundColor: showCompleted ? "#4CAF50" : "#9E9E9E",
-                color: "white",
-                padding: "8px 16px",
-                border: "none",
-                borderRadius: "4px",
-                cursor: "pointer",
-                fontWeight: "bold",
-              }}
-            >
-              {showCompleted ? "Hide" : "Show"} Completed ({completedCount})
-            </button>
-            <button
-              onClick={addNewTask}
-              style={{
-                backgroundColor: "#2196F3",
-                color: "white",
-                padding: "8px 16px",
-                border: "none",
-                borderRadius: "4px",
-                cursor: "pointer",
-                fontWeight: "bold",
-              }}
-            >
-              + Add Task
-            </button>
-          </div>
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+            <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+              <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>TO DO LIST</h2>
+              <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+                <button
+                  onClick={() => setShowCompleted(!showCompleted)}
+                  style={{
+                    backgroundColor: showCompleted ? "#4CAF50" : "#9E9E9E",
+                    color: "white",
+                    padding: "5px 12px",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontWeight: "bold",
+                    fontSize: "13px",
+                  }}
+                >
+                  {showCompleted ? "HIDE" : "SHOW"} COMPLETED ({completedCount})
+                </button>
+                <button
+                  onClick={addNewTask}
+                  style={{
+                    backgroundColor: "#2196F3",
+                    color: "white",
+                    padding: "5px 12px",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontWeight: "bold",
+                    fontSize: "13px",
+                  }}
+                >
+                  + ADD TASK
+                </button>
+              </div>
+            </div>
         </div>
+      </div>
 
         {/* Filters */}
-        <div style={{ display: "flex", gap: "15px", alignItems: "center" }}>
+      <div style={{ flexShrink: 0, display: "flex", gap: "15px", alignItems: "center", padding: "12px 20px", borderBottom: "1px solid #eee", backgroundColor: "white" }}>
           <div>
             <label
               style={{
@@ -817,7 +806,7 @@ function ToDoListModule({
                 marginRight: "5px",
               }}
             >
-              Status:
+              STATUS:
             </label>
             <select
               value={selectedFilters.status}
@@ -834,9 +823,9 @@ function ToDoListModule({
                 borderRadius: "3px",
               }}
             >
-              <option value="all">All</option>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
+              <option value="all">ALL</option>
+              <option value="active">ACTIVE</option>
+              <option value="completed">COMPLETED</option>
             </select>
           </div>
 
@@ -848,7 +837,7 @@ function ToDoListModule({
                 marginRight: "5px",
               }}
             >
-              Assigned To:
+              ASSIGNED TO:
             </label>
             <select
               value={selectedFilters.assignedTo}
@@ -865,8 +854,8 @@ function ToDoListModule({
                 borderRadius: "3px",
               }}
             >
-              <option value="all">All</option>
-              <option value="unassigned">Unassigned</option>
+              <option value="all">ALL</option>
+              <option value="unassigned">UNASSIGNED</option>
               {crewMembers.map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.displayName}
@@ -883,7 +872,7 @@ function ToDoListModule({
                 marginRight: "5px",
               }}
             >
-              Category:
+              CATEGORY:
             </label>
             <select
               value={selectedFilters.category}
@@ -900,7 +889,7 @@ function ToDoListModule({
                 borderRadius: "3px",
               }}
             >
-              <option value="all">All</option>
+              <option value="all">ALL</option>
               {todoCategories.map((category) => (
                 <option key={category} value={category}>
                   {category}
@@ -908,14 +897,14 @@ function ToDoListModule({
               ))}
             </select>
           </div>
-        </div>
       </div>
 
       {/* Scrollable content */}
       <div
         style={{
+          flex: 1,
+          minHeight: 0,
           padding: "0 20px 20px 20px",
-          height: "calc(100% - 120px)",
           overflowY: "auto",
         }}
       >
@@ -935,15 +924,15 @@ function ToDoListModule({
           }}
         >
           <div>✓</div>
-          <div>Task</div>
-          <div>Description</div>
-          <div>Additional Details / Links</div>
-          <div>Assigned To</div>
-          <div>Due Date</div>
-          <div>Priority</div>
-          <div>Category</div>
-          <div>Recurring</div>
-          <div>Del</div>
+          <div>TASK</div>
+          <div>DESCRIPTION</div>
+          <div>ADDITIONAL DETAILS / LINKS</div>
+          <div>ASSIGNED TO</div>
+          <div>DUE DATE</div>
+          <div>PRIORITY</div>
+          <div>CATEGORY</div>
+          <div>RECURRING</div>
+          <div>DEL</div>
         </div>
 
         {/* Task Rows */}

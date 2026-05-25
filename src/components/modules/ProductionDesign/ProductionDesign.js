@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { resolveInstanceSceneIndex } from "../../../utils/scriptSearch.js";
 
 function ProductionDesignModule({
   taggedItems,
@@ -29,7 +30,7 @@ function ProductionDesignModule({
     const sceneNum = scenes[sceneIndex]?.sceneNumber;
     pdItems.forEach(([word, pdItem]) => {
       const inInstances = (pdItem.instances || []).some(
-        (instance) => parseInt(instance.split("-")[0]) === sceneIndex
+        (instance) => resolveInstanceSceneIndex(instance, scenes) === sceneIndex
       );
       const inScenes =
         sceneNum !== undefined &&
@@ -81,7 +82,7 @@ function ProductionDesignModule({
           boxSizing: "border-box",
         }}
       >
-        <h2>Production Design</h2>
+        <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>PRODUCTION DESIGN</h2>
         <p>
           No production design items have been tagged yet. Double-click words in
           the Script module to tag them as production design.
@@ -119,7 +120,7 @@ function ProductionDesignModule({
             marginBottom: "20px",
           }}
         >
-          <h2 style={{ margin: 0 }}>Production Design</h2>
+          <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>PRODUCTION DESIGN</h2>
           <button
             onClick={() =>
               setSelectedPDItem({
@@ -607,7 +608,7 @@ function ProductionDesignModule({
                         selectedPDItem.instances &&
                         selectedPDItem.instances.some(
                           (inst) =>
-                            parseInt(inst.split("-")[0]) ===
+                            resolveInstanceSceneIndex(inst, scenes) ===
                             scenes.indexOf(scene)
                         );
                       return (

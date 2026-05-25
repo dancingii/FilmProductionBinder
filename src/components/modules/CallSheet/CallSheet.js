@@ -2,6 +2,7 @@ import React from "react";
 import { getElementStyle, calculateBlockLines, LINES_PER_PAGE } from "../../../utils.js";
 import { PDFExporter } from "../../../utils/pdfExport";
 import * as database from "../../../services/database";
+import { resolveInstanceSceneIndex } from "../../../utils/scriptSearch.js";
 
 function CallSheetModule({
   scenes: callSheetScenes,
@@ -1194,7 +1195,7 @@ function CallSheetModule({
       if (item.category && item.category.toLowerCase() === "props") {
         const inScenesArray = (item.scenes || []).some((s) => String(s) === String(sceneNumber));
         const inInstances = sceneArrayIndex >= 0 && (item.instances || []).some((instance) => {
-          if (typeof instance === "string") return parseInt(instance.split("-")[0]) === sceneArrayIndex;
+          if (typeof instance === "string") return resolveInstanceSceneIndex(instance, callSheetScenes) === sceneArrayIndex;
           return false;
         });
         if (inScenesArray || inInstances) {
@@ -1379,46 +1380,65 @@ function CallSheetModule({
 
   if (shootingDays.length === 0) {
     return (
-      <div style={{ padding: "20px", width: "100%", height: "calc(100vh - 40px)", overflowY: "auto", boxSizing: "border-box" }}>
-        <h2>Call Sheet</h2>
-        <p>No shooting days scheduled. Please add shooting days in the Schedule module first.</p>
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+        {/* ── Header bar ── */}
+        <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+          <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+            <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+              <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>CALL SHEET</h2>
+            </div>
+          </div>
+        </div>
+        {/* ── Content area ── */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px", boxSizing: "border-box", fontFamily: "Arial, sans-serif" }}>
+          <p>No shooting days scheduled. Please add shooting days in the Schedule module first.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: "20px", height: "calc(100vh - 44px)", width: "100%", maxWidth: "100vw", overflowY: "auto", overflowX: "auto", fontFamily: "Arial, sans-serif", boxSizing: "border-box" }}>
-      {/* Controls */}
-      <div style={{ marginBottom: "20px", display: "flex", gap: "15px", alignItems: "center" }}>
-        <div>
-          <label style={{ fontWeight: "bold", marginRight: "8px" }}>Shooting Day:</label>
-          <select
-            value={selectedDay?.id || ""}
-            onChange={(e) => {
-              const dayId = e.target.value;
-              const day = shootingDays.find((d) => String(d.id) === String(dayId));
-              setSelectedDay(day);
-            }}
-            style={{ padding: "4px 8px", fontSize: "14px" }}
-          >
-            {shootingDays.map((day) => {
-              const date = new Date(day.date + "T00:00:00");
-              const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
-              const formattedDate = date.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" });
-              return (
-                <option key={day.id} value={day.id}>
-                  Day {day.dayNumber} {dayName} {formattedDate}
-                </option>
-              );
-            })}
-          </select>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+            <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>CALL SHEET</h2>
+            <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+              <div>
+                <label style={{ fontWeight: "bold", marginRight: "8px", fontSize: "13px" }}>SHOOTING DAY:</label>
+                <select
+                  value={selectedDay?.id || ""}
+                  onChange={(e) => {
+                    const dayId = e.target.value;
+                    const day = shootingDays.find((d) => String(d.id) === String(dayId));
+                    setSelectedDay(day);
+                  }}
+                  style={{ padding: "4px 8px", fontSize: "14px" }}
+                >
+                  {shootingDays.map((day) => {
+                    const date = new Date(day.date + "T00:00:00");
+                    const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
+                    const formattedDate = date.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" });
+                    return (
+                      <option key={day.id} value={day.id}>
+                        Day {day.dayNumber} {dayName} {formattedDate}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <button onClick={exportCallSheetPDF} style={{ backgroundColor: "#f44336", color: "white", padding: "5px 12px", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "13px" }}>Export Call Sheet</button>
+              <button onClick={exportSidesPDF} style={{ backgroundColor: "#9C27B0", color: "white", padding: "5px 12px", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "13px" }}>Export Sides</button>
+            </div>
+          </div>
         </div>
-        <button onClick={exportCallSheetPDF} style={{ backgroundColor: "#f44336", color: "white", padding: "6px 12px", border: "none", borderRadius: "4px", cursor: "pointer" }}>Export Call Sheet</button>
-        <button onClick={exportSidesPDF} style={{ backgroundColor: "#9C27B0", color: "white", padding: "6px 12px", border: "none", borderRadius: "4px", cursor: "pointer" }}>Export Sides</button>
       </div>
 
-      {/* Call Sheet */}
-      <div style={{ transform: "scale(1.3)", transformOrigin: "top center", marginBottom: "30%" }}>
+      {/* ── Content area ── */}
+      <div style={{ flex: 1, overflow: "auto", padding: "20px", fontFamily: "Arial, sans-serif", boxSizing: "border-box" }}>
+        {/* Call Sheet */}
+        <div style={{ transform: "scale(1.3)", transformOrigin: "top center", marginBottom: "30%" }}>
         <div data-call-sheet="true" style={{ backgroundColor: "white", border: "2px solid black", fontSize: "10px", width: "8.5in", minHeight: "11in", maxWidth: "8.5in", margin: "0 auto", boxSizing: "border-box", padding: "0.25in" }}>
           {/* Header */}
           <div style={{ display: "flex", borderBottom: "2px solid black" }}>
@@ -1782,6 +1802,7 @@ function CallSheetModule({
             })()}
           </div>
         </div>
+      </div>
       </div>
 
       {/* Crew Removal Modal */}

@@ -8,12 +8,16 @@ import {
   uploadPropImage,
   deleteMultipleImages,
 } from "../../utils/imageStorage";
+import {
+  buildSceneDisplayLabelMap,
+  getSceneDisplayLabel,
+} from "../../utils/sceneDisplayLabel";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MODULES = [
   { name: "Dashboard", active: true },
   { name: "Wardrobe", active: true },
-  { name: "Script", active: false },
+  { name: "Script", active: true },
   { name: "Stripboard", active: false },
   { name: "Shot List", active: false },
   { name: "Call Sheet", active: true },
@@ -36,12 +40,18 @@ const AUTO_LOCK_MS = 5 * 60 * 1000; // 5 minutes
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = {
   app: {
-    minHeight: "100vh",
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
     backgroundColor: "#ffffff",
     color: "#222222",
     fontFamily: "Arial, sans-serif",
-    maxWidth: "100vw",
-    overflowX: "hidden",
+    overscrollBehaviorY: "none",
   },
   header: {
     backgroundColor: "#2196F3",
@@ -49,8 +59,7 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    position: "sticky",
-    top: 0,
+    flexShrink: 0,
     zIndex: 100,
   },
   headerTitle: {
@@ -75,6 +84,11 @@ const styles = {
     cursor: "pointer",
   },
   content: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: "auto",
+    overflowX: "hidden",
+    WebkitOverflowScrolling: "touch",
     padding: "10px 14px",
     paddingBottom: "30px",
     backgroundColor: "#ffffff",
@@ -469,9 +483,6 @@ function MobileProjectSelector({ user, onSelectProject, onSignOut, initialProjec
           <div style={styles.headerTitle}>Production Binder</div>
           <div style={styles.headerProject}>{user.email}</div>
         </div>
-        <button onClick={onSignOut} style={styles.signOutBtn}>
-          Sign Out
-        </button>
       </div>
       <div style={styles.content}>
         <div
@@ -526,10 +537,1253 @@ function MobileProjectSelector({ user, onSelectProject, onSignOut, initialProjec
             </div>
           ))
         )}
+        <div style={{ marginTop: "32px", borderTop: "1px solid #eee", paddingTop: "20px" }}>
+          <button
+            onClick={onSignOut}
+            style={{
+              width: "100%",
+              backgroundColor: "transparent",
+              border: "1px solid #cccccc",
+              color: "#666666",
+              padding: "12px",
+              borderRadius: "6px",
+              fontSize: "13px",
+              cursor: "pointer",
+              fontFamily: "Arial, sans-serif",
+            }}
+          >
+            Sign Out
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+
+// ─── Mobile Script Reader ────────────────────────────────────────────────────
+const MOBILE_SCRIPT_PAGE_LAYOUT = {
+  pageWidth: "8.5in",
+  pageMarginTop: "0.75in",
+  pageMarginRight: "1in",
+  pageMarginBottom: "0.75in",
+  pageMarginLeft: "1.4in",
+};
+
+const MOBILE_PAGE_WIDTH_PX = 816; // 8.5in at 96 dpi
+const MOBILE_SCRIPT_BODY_LEFT_PX = 134.4; // 1.4in at 96 dpi
+const MOBILE_SCRIPT_PAGE_BOTTOM_PX = 72; // 0.75in at 96 dpi
+const MOBILE_SCRIPT_BOTTOM_BUFFER_PX = 16;
+const SCRIPT_VIEWER_FIXED_ZOOM = 1.32;
+// Screen-space side-to-side alignment for the readable script body during mobile tuning.
+const SCRIPT_VIEWER_BODY_X_OFFSET_PX = 9;
+
+const MOBILE_SCRIPT_ELEMENT_STYLE_BY_TYPE = {
+  "Scene Heading": {
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    marginTop: "12pt",
+    marginBottom: "12pt",
+    marginLeft: "0",
+    width: "100%",
+  },
+  Action: {
+    marginTop: "0",
+    marginBottom: "12pt",
+    marginLeft: "0",
+    width: "100%",
+  },
+  Character: {
+    textTransform: "uppercase",
+    marginTop: "12pt",
+    marginBottom: "0",
+    marginLeft: "2.62in",
+    width: "2.35in",
+    textAlign: "left",
+  },
+  Parenthetical: {
+    marginTop: "0",
+    marginBottom: "0",
+    marginLeft: "2.28in",
+    width: "2.35in",
+    fontStyle: "italic",
+  },
+  Dialogue: {
+    marginTop: "0",
+    marginBottom: "12pt",
+    marginLeft: "1.35in",
+    width: "3.65in",
+  },
+  Transition: {
+    textTransform: "uppercase",
+    marginTop: "12pt",
+    marginBottom: "12pt",
+    marginLeft: "4.6in",
+    width: "1.8in",
+    textAlign: "right",
+  },
+  Shot: {
+    textTransform: "uppercase",
+    marginTop: "12pt",
+    marginBottom: "12pt",
+    marginLeft: "0",
+    width: "100%",
+  },
+};
+
+const getMobileProductionElementStyle = (type, previousType = null, nextType = null) => {
+  const baseStyle = {
+    fontFamily: "\'Courier Prime\', Courier, \'Courier New\', monospace",
+    fontSize: "12pt",
+    lineHeight: "12pt",
+    color: "#000",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "break-word",
+    wordBreak: "normal",
+    boxSizing: "border-box",
+    WebkitTextSizeAdjust: "100%",
+    textSizeAdjust: "100%",
+  };
+  const style = {
+    ...baseStyle,
+    ...(MOBILE_SCRIPT_ELEMENT_STYLE_BY_TYPE[type] || MOBILE_SCRIPT_ELEMENT_STYLE_BY_TYPE.Action),
+  };
+
+  if (type === "Dialogue" && (previousType === "Character" || previousType === "Parenthetical" || previousType === "Dialogue")) {
+    style.marginTop = "0";
+  }
+  if (type === "Dialogue" && nextType === "Parenthetical") {
+    style.marginBottom = "0";
+  }
+  if (type === "Character" && nextType === "Dialogue") {
+    style.marginBottom = "0";
+  }
+  if (type === "Parenthetical") {
+    style.marginTop = "0";
+    style.marginBottom = "0";
+  }
+
+  return style;
+};
+
+const getMobileProductionSceneHeadingStyle = () => ({
+  marginBottom: 0,
+  fontSize: "12pt",
+  lineHeight: "12pt",
+  fontFamily: "Courier New, monospace",
+  fontWeight: "bold",
+  textTransform: "uppercase",
+  color: "#000",
+  display: "inline-block",
+  whiteSpace: "normal",
+  overflowWrap: "normal",
+  wordBreak: "normal",
+  boxSizing: "border-box",
+  WebkitTextSizeAdjust: "100%",
+  textSizeAdjust: "100%",
+});
+
+const normalizeMobileSceneHeadingText = (text) =>
+  String(text || "").replace(/\s+/g, " ").trim();
+
+// ─── Mobile Pagination ────────────────────────────────────────────────────────
+const MOBILE_PAGE_BODY_HEIGHT_LINES = 54;
+
+const MOBILE_CHARS_PER_LINE = {
+  "Scene Heading": 61,
+  Action: 61,
+  Character: 24,
+  Parenthetical: 26,
+  Dialogue: 36,
+  Transition: 18,
+  Shot: 61,
+};
+
+const mobileGetWrappedLineCount = (text, maxChars) => {
+  const source = String(text || "").replace(/\u00a0/g, " ").trimEnd();
+  if (!source) return 1;
+  return source.split(/\n+/).reduce((total, paragraph) => {
+    const words = String(paragraph || "").trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return total + 1;
+    let lineLength = 0;
+    let paragraphLines = 1;
+    words.forEach((word) => {
+      if (lineLength === 0) {
+        lineLength = word.length;
+      } else if (lineLength + 1 + word.length <= maxChars) {
+        lineLength += 1 + word.length;
+      } else {
+        paragraphLines += 1;
+        lineLength = word.length;
+      }
+    });
+    return total + paragraphLines;
+  }, 0);
+};
+
+const mobileGetSpacingLines = (type, previousType) => {
+  if (!previousType) return 0;
+  if (type === "Dialogue" && (previousType === "Character" || previousType === "Parenthetical" || previousType === "Dialogue")) return 0;
+  if (type === "Parenthetical" && (previousType === "Dialogue" || previousType === "Parenthetical")) return 0;
+  if (type === "Transition") return 0;
+  if (previousType === "Transition") return 1;
+  return 1;
+};
+
+const mobileGetElementLines = (type, text, previousType) => {
+  const maxChars = MOBILE_CHARS_PER_LINE[type] || MOBILE_CHARS_PER_LINE.Action;
+  return Math.max(1, mobileGetSpacingLines(type, previousType) + mobileGetWrappedLineCount(text || " ", maxChars));
+};
+
+const calculateMobileViewerPagination = (sceneList = [], displayLabelMap = null) => {
+  const pageBreakKeys = new Set();
+  const scenePageNumbers = {};
+  let pageIndex = 0;
+  let lineCursor = 0;
+  let previousType = null;
+
+  sceneList.forEach((scene, si) => {
+    const headingText = `${getSceneDisplayLabel(scene, displayLabelMap)}: ${normalizeMobileSceneHeadingText(scene?.heading)}`;
+    const headingLines = mobileGetElementLines("Scene Heading", headingText, previousType);
+
+    if (lineCursor > 0 && lineCursor + headingLines > MOBILE_PAGE_BODY_HEIGHT_LINES) {
+      pageBreakKeys.add(`scene-${si}`);
+      pageIndex += 1;
+      lineCursor = 0;
+      previousType = null;
+    }
+
+    scenePageNumbers[si] = pageIndex + 1;
+    lineCursor += headingLines;
+    previousType = "Scene Heading";
+
+    (scene.content || []).forEach((block, bi) => {
+      const blockType = block?.type || "Action";
+      const blockLines = mobileGetElementLines(blockType, block?.text || "", previousType);
+      if (lineCursor > 0 && lineCursor + blockLines > MOBILE_PAGE_BODY_HEIGHT_LINES) {
+        pageBreakKeys.add(`${si}-${bi}`);
+        pageIndex += 1;
+        lineCursor = 0;
+        previousType = null;
+      }
+      lineCursor += blockLines;
+      previousType = blockType;
+    });
+  });
+
+  return { pageBreakKeys, scenePageNumbers };
+};
+
+const MOBILE_PB_STYLE = {
+  borderTop: "2px dashed #ccc",
+  margin: "24pt 0",
+  paddingTop: "12pt",
+  fontSize: "10pt",
+  color: "#999",
+  textAlign: "right",
+  fontFamily: "\'Century Gothic\', \'Futura\', Arial, sans-serif",
+};
+
+function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = {} }) {
+  const sceneRefs = useRef({});
+  const pageMarkerRefs = useRef({});
+  const dropdownListRef = useRef(null);
+  const dropdownFieldRef = useRef(null);
+  const dropdownRowRefs = useRef({});
+  const pageRef = useRef(null);
+  const scrollAreaRef = useRef(null);
+  const [selectedSceneKey, setSelectedSceneKey] = useState("");
+  const [sceneDropdownOpen, setSceneDropdownOpen] = useState(false);
+  const [morePopupOpen, setMorePopupOpen] = useState(false);
+  const [showSidesOnly, setShowSidesOnly] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [selectedCharacterFilters, setSelectedCharacterFilters] = useState([]);
+  const [scheduleFilter, setScheduleFilter] = useState("all");
+  const [sidesBehaviorOpen, setSidesBehaviorOpen] = useState(true);
+  const [sidesCharacters, setSidesCharacters] = useState([]);
+  const [sidesShootingDay, setSidesShootingDay] = useState("");
+  const [sidesUseCurrentDay, setSidesUseCurrentDay] = useState(false);
+  const [scriptCharFilterOpen, setScriptCharFilterOpen] = useState(false);
+  const [baseFitScale, setBaseFitScale] = useState(1);
+  const [pageNaturalHeight, setPageNaturalHeight] = useState(0);
+
+  const displayLabelMap = React.useMemo(
+    () => buildSceneDisplayLabelMap(scenes),
+    [scenes]
+  );
+
+  const getSceneKey = (scene, index) =>
+    String(scene?.id || scene?.sceneId || scene?.sceneNumber || index);
+
+  const getSceneCharacters = React.useCallback((scene) => {
+    const names = new Set();
+    (scene?.content || []).forEach((block) => {
+      if (block?.type === "Character" && block?.text) {
+        names.add(String(block.text).trim().toUpperCase());
+      }
+    });
+    return Array.from(names).filter(Boolean);
+  }, []);
+
+  const characterOptions = React.useMemo(() => {
+    const names = new Set();
+    scenes.forEach((scene) => getSceneCharacters(scene).forEach((name) => names.add(name)));
+    return Array.from(names).sort();
+  }, [getSceneCharacters, scenes]);
+
+  const scheduledSceneNumberSet = React.useMemo(() => {
+    const set = new Set();
+    Object.values(scheduledScenes || {}).forEach((items) => {
+      (items || []).forEach((item) => {
+        const sceneNumber = typeof item === "string" || typeof item === "number"
+          ? item
+          : item?.sceneNumber || item?.scene?.sceneNumber;
+        if (sceneNumber !== undefined && sceneNumber !== null) set.add(String(sceneNumber));
+      });
+    });
+    return set;
+  }, [scheduledScenes]);
+
+  const getSceneNumbersForDay = React.useCallback((day) => {
+    const date = typeof day === "string" ? day : day?.date;
+    if (!date) return new Set();
+    const set = new Set();
+    (scheduledScenes?.[date] || []).forEach((item) => {
+      const sceneNumber = typeof item === "string" || typeof item === "number"
+        ? item
+        : item?.sceneNumber || item?.scene?.sceneNumber;
+      if (sceneNumber !== undefined && sceneNumber !== null) set.add(String(sceneNumber));
+    });
+    return set;
+  }, [scheduledScenes]);
+
+  const currentShootingDay = React.useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return (shootingDays || []).find((day) => day?.date === today) || null;
+  }, [shootingDays]);
+
+  const sceneMatchesSearch = React.useCallback((scene, index, query) => {
+    const text = query.trim().toLowerCase();
+    if (!text) return true;
+    const displayLabel = getSceneDisplayLabel(scene, displayLabelMap);
+    const contentText = (scene?.content || []).map((block) => block?.text || "").join(" ");
+    const haystack = [
+      displayLabel,
+      scene?.sceneNumber,
+      scene?.heading,
+      contentText,
+      ...getSceneCharacters(scene),
+    ].filter(Boolean).join(" ").toLowerCase();
+    return haystack.includes(text);
+  }, [displayLabelMap, getSceneCharacters]);
+
+  const sceneMatchesScheduleFilter = React.useCallback((scene, filterValue) => {
+    if (!filterValue || filterValue === "all") return true;
+    const sceneNumber = String(scene?.sceneNumber);
+    if (filterValue === "scheduled") return scheduledSceneNumberSet.has(sceneNumber);
+    if (filterValue === "currentDay") return currentShootingDay ? getSceneNumbersForDay(currentShootingDay).has(sceneNumber) : false;
+    if (filterValue.startsWith("day:")) {
+      const dayDate = filterValue.slice(4);
+      return getSceneNumbersForDay(dayDate).has(sceneNumber);
+    }
+    return true;
+  }, [currentShootingDay, getSceneNumbersForDay, scheduledSceneNumberSet]);
+
+  const baseFilteredScenes = React.useMemo(() => {
+    return scenes.filter((scene, index) => {
+      if (!sceneMatchesSearch(scene, index, searchText)) return false;
+      if (selectedCharacterFilters.length > 0 && !getSceneCharacters(scene).some((c) => selectedCharacterFilters.includes(c))) return false;
+      if (!sceneMatchesScheduleFilter(scene, scheduleFilter)) return false;
+      return true;
+    });
+  }, [selectedCharacterFilters, getSceneCharacters, sceneMatchesScheduleFilter, sceneMatchesSearch, scenes, searchText, scheduleFilter]);
+
+  const visibleScenes = React.useMemo(() => {
+    if (!showSidesOnly) return baseFilteredScenes;
+
+    const hasCharCriteria = sidesCharacters.length > 0;
+    const hasDayCriteria = sidesShootingDay !== "" || sidesUseCurrentDay;
+
+    // No criteria selected: fall back to current filters (safe default)
+    if (!hasCharCriteria && !hasDayCriteria) return baseFilteredScenes;
+
+    // Build day scene number set from selected day + current day toggles (union)
+    let daySceneNumberSet = null;
+    if (hasDayCriteria) {
+      daySceneNumberSet = new Set();
+      if (sidesShootingDay) {
+        getSceneNumbersForDay(sidesShootingDay).forEach((n) => daySceneNumberSet.add(n));
+      }
+      if (sidesUseCurrentDay && currentShootingDay) {
+        getSceneNumbersForDay(currentShootingDay).forEach((n) => daySceneNumberSet.add(n));
+      }
+    }
+
+    // Character + Day → intersection. Character only or Day only → that set alone.
+    if (hasDayCriteria && hasCharCriteria) {
+      return scenes.filter(
+        (scene) =>
+          daySceneNumberSet.has(String(scene?.sceneNumber)) &&
+          getSceneCharacters(scene).some((c) => sidesCharacters.includes(c))
+      );
+    }
+    if (hasDayCriteria) {
+      return scenes.filter((scene) => daySceneNumberSet.has(String(scene?.sceneNumber)));
+    }
+    return scenes.filter((scene) => getSceneCharacters(scene).some((c) => sidesCharacters.includes(c)));
+  }, [
+    baseFilteredScenes, currentShootingDay, getSceneCharacters, getSceneNumbersForDay,
+    scenes, showSidesOnly, sidesCharacters, sidesShootingDay, sidesUseCurrentDay,
+  ]);
+
+  const { pageBreakKeys, scenePageNumbers } = React.useMemo(
+    () => calculateMobileViewerPagination(visibleScenes, displayLabelMap),
+    [displayLabelMap, visibleScenes]
+  );
+
+  const finalScale = baseFitScale * SCRIPT_VIEWER_FIXED_ZOOM;
+  // scaledHeight must cover the full visual extent of the transformed page so the
+  // absolute-positioned pageRef does not overflow the height corrector and add
+  // phantom scroll space past the last content line.
+  const scaledHeight = Math.max(
+    1,
+    Math.ceil(pageNaturalHeight * finalScale) + MOBILE_SCRIPT_BOTTOM_BUFFER_PX
+  );
+  const scriptBodyLeftOffset =
+    SCRIPT_VIEWER_BODY_X_OFFSET_PX - (MOBILE_SCRIPT_BODY_LEFT_PX * finalScale);
+
+  // Measure fit scale from scroll area width; re-run when scenes change
+  React.useLayoutEffect(() => {
+    const measure = () => {
+      if (!pageRef.current || !scrollAreaRef.current) return;
+      const available = scrollAreaRef.current.clientWidth;
+      if (available <= 0) return;
+      setBaseFitScale(available / MOBILE_PAGE_WIDTH_PX);
+      setPageNaturalHeight(pageRef.current.scrollHeight);
+    };
+    measure();
+    const raf = requestAnimationFrame(measure);
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(measure);
+      if (scrollAreaRef.current) ro.observe(scrollAreaRef.current);
+      if (pageRef.current) ro.observe(pageRef.current);
+    }
+    return () => {
+      cancelAnimationFrame(raf);
+      if (ro) ro.disconnect();
+    };
+  }, [finalScale, visibleScenes]);
+
+  const scrollToScene = (scene, index) => {
+    const key = getSceneKey(scene, index);
+    setSelectedSceneKey(key);
+    setSceneDropdownOpen(false);
+    setMorePopupOpen(false);
+    const el = sceneRefs.current[key];
+    if (!el || !scrollAreaRef.current) return;
+    const areaRect = scrollAreaRef.current.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    scrollAreaRef.current.scrollTo({
+      top: scrollAreaRef.current.scrollTop + (elRect.top - areaRect.top),
+      behavior: "smooth",
+    });
+  };
+
+  React.useEffect(() => {
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) return undefined;
+    let raf = null;
+    const updateActiveSceneFromScroll = () => {
+      raf = null;
+      const areaRect = scrollArea.getBoundingClientRect();
+      const topThreshold = areaRect.top + 18;
+      let activeKey = "";
+      let activeDistance = Number.POSITIVE_INFINITY;
+
+      visibleScenes.forEach((scene, index) => {
+        const key = getSceneKey(scene, index);
+        const el = sceneRefs.current[key];
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const distance = Math.abs(rect.top - topThreshold);
+        if (rect.top <= topThreshold) {
+          activeKey = key;
+          activeDistance = distance;
+        } else if (!activeKey && distance < activeDistance) {
+          activeKey = key;
+          activeDistance = distance;
+        }
+      });
+
+      if (activeKey) {
+        setSelectedSceneKey((current) => (current === activeKey ? current : activeKey));
+      }
+    };
+    const handleScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(updateActiveSceneFromScroll);
+    };
+    scrollArea.addEventListener("scroll", handleScroll, { passive: true });
+    const initialRaf = requestAnimationFrame(updateActiveSceneFromScroll);
+    return () => {
+      scrollArea.removeEventListener("scroll", handleScroll);
+      if (raf) cancelAnimationFrame(raf);
+      cancelAnimationFrame(initialRaf);
+    };
+  }, [visibleScenes]);
+
+  const filtersActive = Boolean(searchText.trim()) ||
+    selectedCharacterFilters.length > 0 ||
+    scheduleFilter !== "all" ||
+    showSidesOnly;
+  const moreFiltersActive = Boolean(searchText.trim()) ||
+    selectedCharacterFilters.length > 0 ||
+    scheduleFilter !== "all";
+  const dropdownScenes = filtersActive ? visibleScenes : scenes;
+  React.useEffect(() => {
+    if (!sceneDropdownOpen || !selectedSceneKey) return undefined;
+    const raf = requestAnimationFrame(() => {
+      const list = dropdownListRef.current;
+      const row = dropdownRowRefs.current[selectedSceneKey];
+      if (!list || !row) return;
+      const rowTop = row.offsetTop;
+      const rowCenter = rowTop + (row.offsetHeight / 2);
+      const targetScrollTop = rowCenter - (list.clientHeight / 2);
+      const maxScrollTop = Math.max(0, list.scrollHeight - list.clientHeight);
+      list.scrollTop = Math.max(0, Math.min(targetScrollTop, maxScrollTop));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [sceneDropdownOpen, selectedSceneKey, dropdownScenes]);
+
+  // Close dropdown when tapping/clicking outside the field and panel
+  React.useEffect(() => {
+    if (!sceneDropdownOpen) return undefined;
+    const handleOutside = (e) => {
+      const field = dropdownFieldRef.current;
+      const panel = dropdownListRef.current;
+      if (field && field.contains(e.target)) return;
+      if (panel && panel.contains(e.target)) return;
+      setSceneDropdownOpen(false);
+    };
+    document.addEventListener("pointerdown", handleOutside, { passive: true });
+    return () => document.removeEventListener("pointerdown", handleOutside);
+  }, [sceneDropdownOpen]);
+
+  const clearFilters = () => {
+    setSearchText("");
+    setSelectedCharacterFilters([]);
+    setScheduleFilter("all");
+    setShowSidesOnly(false);
+  };
+
+  const selectedSceneIndex = scenes.findIndex(
+    (scene, index) => getSceneKey(scene, index) === selectedSceneKey
+  );
+  const selectedScene = selectedSceneIndex >= 0 ? scenes[selectedSceneIndex] : null;
+  const selectedSceneLabel = selectedScene
+    ? getSceneDisplayLabel(selectedScene, displayLabelMap)
+    : "";
+
+  if (!scenes.length) {
+    return (
+      <div style={{ ...styles.card, padding: "24px", textAlign: "center" }}>
+        <div style={{ fontSize: "15px", fontWeight: "bold", marginBottom: "6px" }}>
+          No production script loaded
+        </div>
+        <div style={{ fontSize: "13px", color: "#777", lineHeight: 1.5 }}>
+          Upload or save a script in Script Breakdown, then refresh mobile.
+        </div>
+      </div>
+    );
+  }
+
+  let pageLabel = 1;
+  return (
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Script toolbar — flexShrink:0, outside every scroll/scaled wrapper */}
+      <div
+        style={{
+          flexShrink: 0,
+          backgroundColor: "#ffffff",
+          padding: "6px 5px 8px",
+          borderBottom: "1px solid #eeeeee",
+          marginBottom: "8px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "5px",
+            minHeight: "32px",
+          }}
+        >
+          <div
+            style={{
+              flex: "0 0 auto",
+              minWidth: "48px",
+              maxWidth: "58px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "10px",
+                fontWeight: "bold",
+                letterSpacing: "0.08em",
+                color: "#2196F3",
+                textTransform: "uppercase",
+                lineHeight: 1.1,
+              }}
+            >
+              Script
+            </div>
+            <div
+              style={{
+                fontSize: "10px",
+                color: "#666",
+                marginTop: "1px",
+                lineHeight: 1.1,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {scenes.length} scenes
+            </div>
+          </div>
+          <button
+            ref={dropdownFieldRef}
+            type="button"
+            onClick={() => setSceneDropdownOpen((open) => !open)}
+            style={{
+              ...styles.select,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              textAlign: "left",
+              marginBottom: 0,
+              flex: "1 1 auto",
+              minWidth: 0,
+              height: "28px",
+              padding: "3px 5px",
+              fontSize: "10px",
+              lineHeight: "12px",
+              color: selectedScene ? "#222" : "#777",
+              backgroundColor: "#ffffff",
+              cursor: "pointer",
+            }}
+            aria-expanded={sceneDropdownOpen}
+            aria-haspopup="listbox"
+          >
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                minWidth: 0,
+              }}
+            >
+              {selectedScene
+                ? `${selectedSceneLabel}: ${normalizeMobileSceneHeadingText(selectedScene.heading) || "Untitled Scene"}`
+                : "Select scene..."}
+            </span>
+            <span style={{ flexShrink: 0, marginLeft: "4px", color: "#777" }}>▾</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSceneDropdownOpen(false);
+              setMorePopupOpen(true);
+            }}
+            style={{
+              flex: "0 0 auto",
+              backgroundColor: moreFiltersActive ? "#0b5cad" : "#ffffff",
+              border: moreFiltersActive ? "1px solid #0b5cad" : "1px solid #d7d7d7",
+              borderRadius: "4px",
+              color: moreFiltersActive ? "#ffffff" : "#444",
+              fontSize: "11px",
+              fontWeight: "bold",
+              padding: "6px 7px",
+              lineHeight: 1,
+              fontFamily: "Arial, sans-serif",
+            }}
+          >
+            More
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSceneDropdownOpen(false);
+              setMorePopupOpen(false);
+              setShowSidesOnly((active) => !active);
+            }}
+            style={{
+              flex: "0 0 auto",
+              backgroundColor: showSidesOnly ? "#0b5cad" : "#ffffff",
+              border: showSidesOnly ? "1px solid #0b5cad" : "1px solid #d7d7d7",
+              borderRadius: "4px",
+              color: showSidesOnly ? "#ffffff" : "#444",
+              fontSize: "11px",
+              fontWeight: "bold",
+              padding: "6px 7px",
+              lineHeight: 1,
+              fontFamily: "Arial, sans-serif",
+            }}
+          >
+            Sides
+          </button>
+        </div>
+      </div>
+
+
+      {sceneDropdownOpen && (
+        <div
+          ref={dropdownListRef}
+          role="listbox"
+          style={{
+            position: "absolute",
+            top: "45px",
+            left: "5px",
+            right: "5px",
+            zIndex: 200,
+            maxHeight: "60vh",
+            overflowY: "auto",
+            WebkitOverflowScrolling: "touch",
+            backgroundColor: "#ffffff",
+            border: "1px solid #d0d7de",
+            borderRadius: "6px",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+          }}
+        >
+          {dropdownScenes.map((scene, index) => {
+            const sceneKey = getSceneKey(scene, index);
+            const displayLabel = getSceneDisplayLabel(scene, displayLabelMap);
+            const isSelected = sceneKey === selectedSceneKey;
+            const status = scene.status || "";
+
+            return (
+              <button
+                key={sceneKey}
+                ref={(el) => {
+                  dropdownRowRefs.current[sceneKey] = el;
+                }}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => scrollToScene(scene, index)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  border: "none",
+                  borderBottom: "1px solid #eeeeee",
+                  backgroundColor: isSelected ? "#e5f2ff" : "#ffffff",
+                  color: "#222",
+                  padding: "6px 7px",
+                  textAlign: "left",
+                  fontFamily: "Arial, sans-serif",
+                  cursor: "pointer",
+                }}
+              >
+                <span
+                  style={{
+                    flex: "0 0 34px",
+                    fontSize: "10px",
+                    fontWeight: "bold",
+                    color: "#2196F3",
+                    lineHeight: 1.1,
+                  }}
+                >
+                  {displayLabel}
+                </span>
+                <span
+                  style={{
+                    flex: "1 1 auto",
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontSize: "11px",
+                    lineHeight: "13px",
+                  }}
+                >
+                  {normalizeMobileSceneHeadingText(scene.heading) || "Untitled Scene"}
+                </span>
+                <span
+                  style={{
+                    flex: "0 0 auto",
+                    fontSize: "9px",
+                    color: "#777",
+                    lineHeight: 1,
+                  }}
+                >
+                  p{scenePageNumbers[index] || 1}
+                </span>
+                {status && status !== "Not Scheduled" && (
+                  <span
+                    style={{
+                      flex: "0 0 auto",
+                      maxWidth: "54px",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      fontSize: "8px",
+                      fontWeight: "bold",
+                      color: "#ffffff",
+                      backgroundColor: "#2196F3",
+                      borderRadius: "999px",
+                      padding: "2px 5px",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {status}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {morePopupOpen && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 250,
+            backgroundColor: "rgba(0,0,0,0.28)",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "center",
+            padding: "52px 8px 0",
+          }}
+          onClick={() => setMorePopupOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Script Tools"
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "380px",
+              backgroundColor: "#ffffff",
+              borderRadius: "8px",
+              border: "1px solid #d0d7de",
+              boxShadow: "0 12px 28px rgba(0,0,0,0.24)",
+              overflow: "hidden",
+              fontFamily: "Arial, sans-serif",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "12px",
+                padding: "10px 12px",
+                borderBottom: "1px solid #eeeeee",
+              }}
+            >
+              <div style={{ fontSize: "14px", fontWeight: "bold", color: "#222" }}>
+                Script Tools
+              </div>
+              <button
+                type="button"
+                onClick={() => setMorePopupOpen(false)}
+                style={{
+                  border: "1px solid #d7d7d7",
+                  backgroundColor: "#ffffff",
+                  borderRadius: "4px",
+                  color: "#444",
+                  fontSize: "12px",
+                  fontWeight: "bold",
+                  padding: "5px 8px",
+                  lineHeight: 1,
+                  fontFamily: "Arial, sans-serif",
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ maxHeight: "72vh", overflowY: "auto", padding: "12px" }}>
+              <div style={{ marginBottom: "14px" }}>
+                <div style={{ fontSize: "11px", fontWeight: "bold", letterSpacing: "0.08em", textTransform: "uppercase", color: "#2196F3", marginBottom: "7px" }}>
+                  Search
+                </div>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <input
+                    type="search"
+                    value={searchText}
+                    onChange={(event) => setSearchText(event.target.value)}
+                    placeholder="Heading, scene, character, text"
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      border: "1px solid #d7d7d7",
+                      borderRadius: "4px",
+                      padding: "7px 8px",
+                      fontSize: "12px",
+                      fontFamily: "Arial, sans-serif",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSearchText("")}
+                    style={{
+                      border: "1px solid #d7d7d7",
+                      borderRadius: "4px",
+                      backgroundColor: "#ffffff",
+                      color: "#444",
+                      fontSize: "12px",
+                      fontWeight: "bold",
+                      padding: "7px 8px",
+                      fontFamily: "Arial, sans-serif",
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "14px" }}>
+                <div style={{ fontSize: "11px", fontWeight: "bold", letterSpacing: "0.08em", textTransform: "uppercase", color: "#2196F3", marginBottom: "7px" }}>
+                  Script Filters
+                </div>
+                <div style={{ display: "grid", gap: "10px" }}>
+                  {/* Characters — collapsible */}
+                  <div style={{ border: "1px solid #eeeeee", borderRadius: "5px", overflow: "hidden" }}>
+                    <button
+                      type="button"
+                      onClick={() => setScriptCharFilterOpen((o) => !o)}
+                      style={{
+                        width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                        background: selectedCharacterFilters.length > 0 ? "#e5f2ff" : "#fafafa",
+                        border: "none", padding: "7px 9px", cursor: "pointer",
+                        fontFamily: "Arial, sans-serif",
+                      }}
+                    >
+                      <span style={{ fontSize: "11px", color: "#444", fontWeight: "bold" }}>
+                        Characters
+                        {selectedCharacterFilters.length > 0 && (
+                          <span style={{ color: "#2196F3", marginLeft: "5px" }}>({selectedCharacterFilters.length})</span>
+                        )}
+                      </span>
+                      <span style={{ fontSize: "11px", color: "#888" }}>{scriptCharFilterOpen ? "−" : "+"}</span>
+                    </button>
+                    {scriptCharFilterOpen && (
+                      <div style={{ padding: "6px 8px 8px", borderTop: "1px solid #eeeeee" }}>
+                        {selectedCharacterFilters.length > 0 && (
+                          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "4px" }}>
+                            <button type="button" onClick={() => setSelectedCharacterFilters([])}
+                              style={{ border: "none", background: "none", color: "#2196F3", fontSize: "11px", cursor: "pointer", padding: "0", fontFamily: "Arial, sans-serif" }}>
+                              Clear
+                            </button>
+                          </div>
+                        )}
+                        {characterOptions.length === 0 ? (
+                          <div style={{ fontSize: "11px", color: "#aaa", padding: "4px 0" }}>No characters found in script.</div>
+                        ) : (
+                          <div style={{ maxHeight: "140px", overflowY: "auto" }}>
+                            {characterOptions.map((name) => {
+                              const checked = selectedCharacterFilters.includes(name);
+                              return (
+                                <label key={name}
+                                  style={{ display: "flex", alignItems: "center", gap: "7px", padding: "5px 2px", cursor: "pointer", backgroundColor: checked ? "#e5f2ff" : "transparent" }}>
+                                  <input type="checkbox" checked={checked}
+                                    onChange={() => setSelectedCharacterFilters((prev) =>
+                                      checked ? prev.filter((c) => c !== name) : [...prev, name]
+                                    )}
+                                    style={{ accentColor: "#2196F3", width: "14px", height: "14px", flexShrink: 0 }} />
+                                  <span style={{ fontSize: "12px", fontFamily: "Arial, sans-serif", color: "#222" }}>{name}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <label style={{ display: "grid", gap: "3px", fontSize: "11px", color: "#666" }}>
+                    Shooting Day / Schedule
+                    <select
+                      value={scheduleFilter}
+                      onChange={(event) => setScheduleFilter(event.target.value)}
+                      style={{ border: "1px solid #d7d7d7", borderRadius: "4px", padding: "7px 8px", fontSize: "12px", fontFamily: "Arial, sans-serif" }}
+                    >
+                      <option value="all">All Scenes</option>
+                      <option value="currentDay">Current Day / Today</option>
+                      {(shootingDays || []).map((day) => (
+                        <option key={day.id || day.date} value={`day:${day.date}`}>
+                          Day {day.dayNumber || "?"}{day.date ? ` · ${day.date}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                {filtersActive && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    style={{
+                      marginTop: "8px",
+                      width: "100%",
+                      border: "1px solid #d7d7d7",
+                      borderRadius: "4px",
+                      backgroundColor: "#ffffff",
+                      color: "#444",
+                      fontSize: "12px",
+                      fontWeight: "bold",
+                      padding: "7px 8px",
+                      fontFamily: "Arial, sans-serif",
+                    }}
+                  >
+                    Clear Search / Filters / Sides
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setSidesBehaviorOpen((open) => !open)}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    border: "1px solid #eeeeee",
+                    borderRadius: "5px",
+                    backgroundColor: "#fafafa",
+                    padding: "8px",
+                    color: "#2196F3",
+                    fontSize: "11px",
+                    fontWeight: "bold",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    fontFamily: "Arial, sans-serif",
+                  }}
+                >
+                  Sides Behavior
+                  <span>{sidesBehaviorOpen ? "−" : "+"}</span>
+                </button>
+                {sidesBehaviorOpen && (
+                  <div style={{ display: "grid", gap: "10px", paddingTop: "8px" }}>
+
+                    {/* Characters */}
+                    <div style={{ display: "grid", gap: "3px" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: "11px", color: "#666", fontWeight: "bold" }}>
+                          Characters {sidesCharacters.length > 0 && <span style={{ color: "#2196F3" }}>({sidesCharacters.length})</span>}
+                        </span>
+                        {sidesCharacters.length > 0 && (
+                          <button type="button" onClick={() => setSidesCharacters([])}
+                            style={{ border: "none", background: "none", color: "#2196F3", fontSize: "11px", cursor: "pointer", padding: "0", fontFamily: "Arial, sans-serif" }}>
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      {characterOptions.length === 0 ? (
+                        <div style={{ fontSize: "11px", color: "#aaa" }}>No characters found in script.</div>
+                      ) : (
+                        <div style={{ maxHeight: "130px", overflowY: "auto", border: "1px solid #d7d7d7", borderRadius: "4px", padding: "4px 0" }}>
+                          {characterOptions.map((name) => {
+                            const checked = sidesCharacters.includes(name);
+                            return (
+                              <label key={name}
+                                style={{ display: "flex", alignItems: "center", gap: "7px", padding: "5px 8px", cursor: "pointer", backgroundColor: checked ? "#e5f2ff" : "transparent" }}>
+                                <input type="checkbox" checked={checked}
+                                  onChange={() => setSidesCharacters((prev) => checked ? prev.filter((c) => c !== name) : [...prev, name])}
+                                  style={{ accentColor: "#2196F3", width: "14px", height: "14px", flexShrink: 0 }} />
+                                <span style={{ fontSize: "12px", fontFamily: "Arial, sans-serif", color: "#222" }}>{name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Shooting Day */}
+                    <label style={{ display: "grid", gap: "3px", fontSize: "11px", color: "#666", fontWeight: "bold" }}>
+                      Shooting Day
+                      <select value={sidesShootingDay} onChange={(e) => setSidesShootingDay(e.target.value)}
+                        style={{ border: "1px solid #d7d7d7", borderRadius: "4px", padding: "7px 8px", fontSize: "12px", fontFamily: "Arial, sans-serif", fontWeight: "normal" }}>
+                        <option value="">Any Day</option>
+                        {(shootingDays || []).map((day) => (
+                          <option key={day.id || day.date} value={day.date}>
+                            Day {day.dayNumber || "?"}{day.date ? ` · ${day.date}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    {/* Current Day toggle */}
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                      <input type="checkbox" checked={sidesUseCurrentDay} onChange={() => setSidesUseCurrentDay((v) => !v)}
+                        style={{ accentColor: "#2196F3", width: "14px", height: "14px", flexShrink: 0 }} />
+                      <span style={{ fontSize: "12px", fontFamily: "Arial, sans-serif", color: "#444" }}>Current Day / Today</span>
+                    </label>
+
+                    {/* Helper note when no criteria selected */}
+                    {sidesCharacters.length === 0 && !sidesShootingDay && !sidesUseCurrentDay && (
+                      <div style={{ fontSize: "11px", color: "#aaa", lineHeight: 1.4 }}>
+                        No criteria selected — Sides will show current filtered scenes.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Script viewer — only this element scrolls; toolbars are siblings above */}
+      <div
+        ref={scrollAreaRef}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          overflowX: "hidden",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        {/* Height matches the scaled page so vertical scroll range is correct. */}
+        <div
+          style={{
+            position: "relative",
+            height: `${scaledHeight}px`,
+            width: "100%",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: `${scriptBodyLeftOffset}px`,
+            }}
+          >
+            {/* Only this div carries the fixed visual scale — toolbars are siblings above */}
+            <div
+              ref={pageRef}
+              style={{
+                transformOrigin: "top left",
+                transform: `scale(${finalScale})`,
+                width: `${MOBILE_PAGE_WIDTH_PX}px`,
+                backgroundColor: "#ffffff",
+                border: "1px solid #d8dde3",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+                boxSizing: "border-box",
+                WebkitTextSizeAdjust: "100%",
+                textSizeAdjust: "100%",
+                padding: `${MOBILE_SCRIPT_PAGE_LAYOUT.pageMarginTop} ${MOBILE_SCRIPT_PAGE_LAYOUT.pageMarginRight} ${MOBILE_SCRIPT_PAGE_LAYOUT.pageMarginBottom} ${MOBILE_SCRIPT_PAGE_LAYOUT.pageMarginLeft}`,
+            }}
+          >
+              {visibleScenes.length === 0 ? (
+                <div
+                  style={{
+                    fontFamily: "Arial, sans-serif",
+                    fontSize: "13px",
+                    lineHeight: 1.5,
+                    color: "#666",
+                    padding: "24px 0",
+                  }}
+                >
+                  No scenes match the current search, filters, or sides settings.
+                </div>
+              ) : visibleScenes.map((scene, si) => {
+                const sceneKey = getSceneKey(scene, si);
+                const displayLabel = getSceneDisplayLabel(scene, displayLabelMap);
+
+                if (pageBreakKeys.has(`scene-${si}`)) pageLabel++;
+
+                return (
+                  <section
+                    key={sceneKey}
+                    ref={(el) => {
+                      sceneRefs.current[sceneKey] = el;
+                    }}
+                    style={{ marginTop: si === 0 ? 0 : "12pt", paddingTop: 0 }}
+                  >
+                    {pageBreakKeys.has(`scene-${si}`) && (
+                      <div ref={(el) => { pageMarkerRefs.current[pageLabel] = el; }} style={MOBILE_PB_STYLE}>Page {pageLabel}</div>
+                    )}
+                    <div style={{ marginBottom: "12pt" }}>
+                      <div style={getMobileProductionSceneHeadingStyle()}>
+                        {displayLabel}: {normalizeMobileSceneHeadingText(scene.heading)}
+                      </div>
+                    </div>
+                    {(scene.content || []).length === 0 ? (
+                      <div
+                        style={{
+                          ...getMobileProductionElementStyle("Action"),
+                          color: "#999",
+                          fontStyle: "italic",
+                        }}
+                      >
+                        No script content.
+                      </div>
+                    ) : (() => {
+                      // Union of normal filter characters + active sides characters
+                      const highlightedChars = new Set([
+                        ...selectedCharacterFilters,
+                        ...(showSidesOnly ? sidesCharacters : []),
+                      ]);
+                      const anyHighlight = highlightedChars.size > 0;
+                      let currentSpeaker = null;
+                      return (scene.content || []).map((block, bi) => {
+                        const previousType = scene.content?.[bi - 1]?.type || null;
+                        const nextType = scene.content?.[bi + 1]?.type || null;
+                        const blockType = block?.type || "Action";
+
+                        // Track current dialogue speaker for highlight
+                        if (blockType === "Character") {
+                          currentSpeaker = String(block?.text || "").trim().toUpperCase();
+                        } else if (!["Dialogue", "Parenthetical"].includes(blockType)) {
+                          currentSpeaker = null;
+                        }
+
+                        const isSpeakerHighlighted = anyHighlight &&
+                          currentSpeaker !== null &&
+                          highlightedChars.has(currentSpeaker) &&
+                          ["Character", "Dialogue", "Parenthetical"].includes(blockType);
+
+                        if (pageBreakKeys.has(`${si}-${bi}`)) pageLabel++;
+
+                        return (
+                          <div key={`${sceneKey}-${bi}`}>
+                            {pageBreakKeys.has(`${si}-${bi}`) && (
+                              <div ref={(el) => { pageMarkerRefs.current[pageLabel] = el; }} style={MOBILE_PB_STYLE}>Page {pageLabel}</div>
+                            )}
+                            <div style={getMobileProductionElementStyle(blockType, previousType, nextType)}>
+                              {isSpeakerHighlighted ? (
+                                <span style={{
+                                  backgroundColor: "rgba(255, 243, 128, 0.65)",
+                                  display: "inline",
+                                  WebkitBoxDecorationBreak: "clone",
+                                  boxDecorationBreak: "clone",
+                                }}>
+                                  {block.text || ""}
+                                </span>
+                              ) : (block.text || "")}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </section>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 
 // ─── Image Upload Button ──────────────────────────────────────────────────────
 function ImageUploadButton({ onUpload, uploading }) {
@@ -5520,6 +6774,59 @@ export default function MobileApp({ initialPropId, initialProjectId }) {
   const [projectSettings, setProjectSettings] = useState({});
   const [stripboardScenes, setStripboardScenes] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Lock body/html scroll, disable browser pinch-zoom, block gesture events
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+
+    // viewport meta: maximum-scale=1 + user-scalable=no disables visual-viewport pinch
+    let viewportMeta = document.querySelector('meta[name="viewport"]');
+    const prevViewportContent = viewportMeta
+      ? viewportMeta.getAttribute("content")
+      : null;
+    if (!viewportMeta) {
+      viewportMeta = document.createElement("meta");
+      viewportMeta.setAttribute("name", "viewport");
+      document.head.appendChild(viewportMeta);
+    }
+    viewportMeta.setAttribute(
+      "content",
+      "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    );
+
+    // Safari-specific gesture events — prevent browser zoom at the event level
+    const blockGesture = (e) => e.preventDefault();
+    document.addEventListener("gesturestart", blockGesture, { passive: false });
+    document.addEventListener("gesturechange", blockGesture, { passive: false });
+    document.addEventListener("gestureend", blockGesture, { passive: false });
+
+    // Block multi-touch touchmove at document level so browser cannot zoom
+    // Single-finger touches pass through normally; internal scroll areas handle their own events
+    const blockMultiTouchZoom = (e) => {
+      if (e.touches && e.touches.length > 1) e.preventDefault();
+    };
+    document.addEventListener("touchmove", blockMultiTouchZoom, { passive: false });
+
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      if (viewportMeta) {
+        if (prevViewportContent !== null) {
+          viewportMeta.setAttribute("content", prevViewportContent);
+        } else {
+          viewportMeta.remove();
+        }
+      }
+      document.removeEventListener("gesturestart", blockGesture);
+      document.removeEventListener("gesturechange", blockGesture);
+      document.removeEventListener("gestureend", blockGesture);
+      document.removeEventListener("touchmove", blockMultiTouchZoom);
+    };
+  }, []);
   // Auth
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -5604,119 +6911,162 @@ export default function MobileApp({ initialPropId, initialProjectId }) {
 
   return (
     <div style={styles.app}>
-      {/* Header */}
-      <div style={styles.header}>
-        <div>
-          <div style={styles.headerTitle}>{selectedProject.name}</div>
-          <div style={styles.headerProject}>Production Binder Mobile</div>
+      {/* Header: flexShrink:0 keeps it above scroll; title fills left, controls pin right */}
+      <div
+        style={{
+          flexShrink: 0,
+          backgroundColor: "#2196F3",
+          padding: "8px 12px",
+          display: "flex",
+          alignItems: "center",
+          zIndex: 100,
+        }}
+      >
+        <div
+          style={{
+            color: "#ffffff",
+            fontSize: "12px",
+            fontWeight: "bold",
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            textTransform: "uppercase",
+          }}
+        >
+          {selectedProject.name}
         </div>
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div
+          style={{
+            marginLeft: "auto",
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            paddingLeft: "8px",
+          }}
+        >
+          <select
+            style={{
+              width: "130px",
+              backgroundColor: "rgba(255,255,255,0.15)",
+              border: "1px solid rgba(255,255,255,0.4)",
+              color: "#ffffff",
+              padding: "6px 28px 6px 8px",
+              borderRadius: "4px",
+              fontSize: "13px",
+              fontWeight: "bold",
+              appearance: "none",
+              WebkitAppearance: "none",
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23fff' stroke-width='1.5' fill='none'/%3E%3C/svg%3E")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 8px center",
+              cursor: "pointer",
+            }}
+            value={activeModule}
+            onChange={(e) => {
+              const mod = MODULES.find((m) => m.name === e.target.value);
+              if (mod?.active) setActiveModule(e.target.value);
+            }}
+          >
+            {MODULES.map((mod) => (
+              <option
+                key={mod.name}
+                value={mod.name}
+                disabled={!mod.active}
+                style={{ color: mod.active ? "#222222" : "#888888", backgroundColor: "#ffffff" }}
+              >
+                {mod.active ? mod.name : `${mod.name} — coming soon`}
+              </option>
+            ))}
+          </select>
           <button
             onClick={() => setSelectedProject(null)}
             style={styles.signOutBtn}
           >
             Projects
           </button>
-          <button onClick={handleSignOut} style={styles.signOutBtn}>
-            Sign Out
-          </button>
         </div>
       </div>
 
-      {/* Module Navigation */}
-      <div
-        style={{
-          padding: "14px 14px",
-          backgroundColor: "#fff9e6",
-          borderBottom: "1px solid #e0c97f",
-        }}
-      >
-        <select
-          style={{ ...styles.moduleSelect, marginBottom: 0 }}
-          value={activeModule}
-          onChange={(e) => {
-            const mod = MODULES.find((m) => m.name === e.target.value);
-            if (mod?.active) setActiveModule(e.target.value);
-          }}
-        >
-          {MODULES.map((mod) => (
-            <option
-              key={mod.name}
-              value={mod.name}
-              disabled={!mod.active}
-              style={{ color: mod.active ? "#f0ede8" : "#444" }}
+      {/* Script: full-height flex child, padded to match module layout, manages own scroll */}
+      {activeModule === "Script" && (
+        <div style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: "10px 14px 0" }}>
+          <MobileScriptModule
+            scenes={scenes}
+            shootingDays={shootingDays}
+            scheduledScenes={scheduledScenes}
+          />
+        </div>
+      )}
+      {/* All other modules: scrollable content area */}
+      {activeModule !== "Script" && (
+        <div style={styles.content}>
+          {activeModule === "Dashboard" && (
+            <MobileDashboard
+              selectedProject={selectedProject}
+              todoItems={todoItems}
+              shootingDays={shootingDays}
+              scheduledScenes={scheduledScenes}
+              scenes={scenes}
+              actualLocations={actualLocations}
+              scriptLocations={scriptLocations}
+              callSheetData={callSheetData}
+              onToggleTodo={handleToggleTodo}
+              onNavigate={(module) => setActiveModule(module)}
+            />
+          )}
+          {activeModule === "Call Sheet" && (
+            <MobileCallSheetModule
+              initialDayNumber={callSheetInitialDay}
+              selectedProject={selectedProject}
+              shootingDays={shootingDays}
+              scheduledScenes={scheduledScenes}
+              scenes={scenes}
+              castCrew={castCrew}
+              characters={characters}
+              wardrobeItems={wardrobeItems}
+              actualLocations={actualLocations}
+              scriptLocations={scriptLocations}
+              callSheetData={callSheetData}
+              projectSettings={projectSettings}
+            />
+          )}
+          {activeModule === "Wardrobe" && (
+            <MobileWardrobeModule
+              selectedProject={selectedProject}
+              characters={characters}
+              castCrew={castCrew}
+              setCastCrew={setCastCrew}
+            />
+          )}
+          {activeModule === "Props" && (
+            <MobilePropsModule
+              selectedProject={selectedProject}
+              scenes={scenes}
+              characters={characters}
+              initialPropId={initialPropId}
+              stripboardScenes={stripboardScenes}
+              shootingDays={shootingDays}
+              onNavigate={setActiveModule}
+            />
+          )}
+          {activeModule === "Cost Report" && (
+            <MobileCostReportModule selectedProject={selectedProject} />
+          )}
+          {MODULES.find((m) => m.name === activeModule && !m.active) && (
+            <div
+              style={{ color: "#444", textAlign: "center", padding: "60px 20px" }}
             >
-              {mod.active ? mod.name : `${mod.name} — coming soon`}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Content */}
-      <div style={styles.content}>
-        {activeModule === "Dashboard" && (
-          <MobileDashboard
-            selectedProject={selectedProject}
-            todoItems={todoItems}
-            shootingDays={shootingDays}
-            scheduledScenes={scheduledScenes}
-            scenes={scenes}
-            actualLocations={actualLocations}
-            scriptLocations={scriptLocations}
-            callSheetData={callSheetData}
-            onToggleTodo={handleToggleTodo}
-            onNavigate={(module) => setActiveModule(module)}
-          />
-        )}
-        {activeModule === "Call Sheet" && (
-          <MobileCallSheetModule
-          initialDayNumber={callSheetInitialDay}
-            selectedProject={selectedProject}
-            shootingDays={shootingDays}
-            scheduledScenes={scheduledScenes}
-            scenes={scenes}
-            castCrew={castCrew}
-            characters={characters}
-            wardrobeItems={wardrobeItems}
-            actualLocations={actualLocations}
-            scriptLocations={scriptLocations}
-            callSheetData={callSheetData}
-            projectSettings={projectSettings}
-          />
-        )}
-        {activeModule === "Wardrobe" && (
-          <MobileWardrobeModule
-            selectedProject={selectedProject}
-            characters={characters}
-            castCrew={castCrew}
-            setCastCrew={setCastCrew}
-          />
-        )}
-        {activeModule === "Props" && (
-          <MobilePropsModule
-            selectedProject={selectedProject}
-            scenes={scenes}
-            characters={characters}
-            initialPropId={initialPropId}
-            stripboardScenes={stripboardScenes}
-            shootingDays={shootingDays}
-            onNavigate={setActiveModule}
-          />
-        )}
-        {activeModule === "Cost Report" && (
-          <MobileCostReportModule selectedProject={selectedProject} />
-        )}
-        {MODULES.find((m) => m.name === activeModule && !m.active) && (
-          <div
-            style={{ color: "#444", textAlign: "center", padding: "60px 20px" }}
-          >
-            <div style={{ fontSize: "32px", marginBottom: "16px" }}>🔒</div>
-            <div style={{ fontSize: "14px", letterSpacing: "0.05em" }}>
-              {activeModule} is not yet available on mobile.
+              <div style={{ fontSize: "32px", marginBottom: "16px" }}>🔒</div>
+              <div style={{ fontSize: "14px", letterSpacing: "0.05em" }}>
+                {activeModule} is not yet available on mobile.
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

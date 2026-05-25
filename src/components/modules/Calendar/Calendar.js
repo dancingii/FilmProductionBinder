@@ -128,55 +128,22 @@ function CalendarModule({
   };
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        width: "100%",
-        height: "calc(100vh - 40px)",
-        overflowY: "auto",
-        boxSizing: "border-box",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px",
-        }}
-      >
-        <button
-          onClick={() => navigateMonth(-1)}
-          style={{
-            padding: "10px 20px",
-            fontSize: "16px",
-            backgroundColor: "#2196F3",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            cursor: "pointer",
-          }}
-        >
-          ← Previous
-        </button>
-        <h2 style={{ margin: 0, fontSize: "28px" }}>
-          {monthNames[month]} {year}
-        </h2>
-        <button
-          onClick={() => navigateMonth(1)}
-          style={{
-            padding: "10px 20px",
-            fontSize: "16px",
-            backgroundColor: "#2196F3",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            cursor: "pointer",
-          }}
-        >
-          Next →
-        </button>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", padding: "5px 12px", minHeight: "38px", boxSizing: "border-box" }}>
+            <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold", justifySelf: "start" }}>CALENDAR</h2>
+            <span style={{ fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold", textTransform: "uppercase", justifySelf: "center" }}>{monthNames[month]} {year}</span>
+            <div style={{ justifySelf: "end", display: "flex", gap: "8px", alignItems: "center" }}>
+              <button onClick={() => navigateMonth(-1)} style={{ padding: "5px 12px", fontSize: "13px", backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>← Previous</button>
+              <button onClick={() => navigateMonth(1)} style={{ padding: "5px 12px", fontSize: "13px", backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>Next →</button>
+            </div>
+          </div>
+        </div>
       </div>
+      {/* ── Content area ── */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "10px" }}>
 
       <div
         style={{
@@ -632,6 +599,7 @@ function CalendarModule({
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );

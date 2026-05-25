@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { resolveInstanceSceneIndex } from "../../../utils/scriptSearch.js";
 
 function MakeupModule({
   taggedItems,
@@ -28,7 +29,7 @@ function MakeupModule({
     const sceneNum = scenes[sceneIndex]?.sceneNumber;
     makeupItems.forEach(([word, makeupItem]) => {
       const inInstances = (makeupItem.instances || []).some((instance) => {
-        return parseInt(instance.split("-")[0]) === sceneIndex;
+        return resolveInstanceSceneIndex(instance, scenes) === sceneIndex;
       });
       const inScenes =
         sceneNum !== undefined &&
@@ -86,7 +87,7 @@ function MakeupModule({
           boxSizing: "border-box",
         }}
       >
-        <h2>Makeup</h2>
+        <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>MAKEUP</h2>
         <p>
           No makeup items have been tagged yet. Double-click words in the Script
           module to tag them as makeup.
@@ -124,7 +125,7 @@ function MakeupModule({
             marginBottom: "20px",
           }}
         >
-          <h2 style={{ margin: 0 }}>Makeup</h2>
+          <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>MAKEUP</h2>
           <button
             onClick={() => {
               const tempMakeup = {
@@ -588,7 +589,7 @@ function MakeupModule({
                         selectedMakeupItem.instances &&
                         selectedMakeupItem.instances.some(
                           (instance) =>
-                            parseInt(instance.split("-")[0]) ===
+                            resolveInstanceSceneIndex(instance, scenes) ===
                             scenes.indexOf(scene)
                         );
                       return (

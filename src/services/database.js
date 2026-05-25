@@ -28,6 +28,82 @@ const getSceneRefIds = (sceneRefs = []) =>
     .map(getSceneRefId)
     .filter((value) => value !== null && value !== undefined && value !== "");
 
+const generateScriptShareToken = () => {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join("");
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+};
+
+const SCRIPT_SHARE_LINK_SELECT = "id, project_id, token, source, is_active, created_at, revoked_at, expires_at, watermark_settings";
+
+export const listScriptShareLinks = async (projectId) => {
+  if (!projectId) return [];
+  const { data, error } = await supabase
+    .from("script_share_links")
+    .select(SCRIPT_SHARE_LINK_SELECT)
+    .eq("project_id", projectId)
+    .eq("source", "writing")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+};
+
+export const createScriptShareLink = async (projectId) => {
+  if (!projectId) throw new Error("Cannot create a share link without a project id.");
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  const userId = userData?.user?.id;
+  if (!userId) throw new Error("You must be signed in to create a share link.");
+
+  const { data, error } = await supabase
+    .from("script_share_links")
+    .insert({
+      project_id: projectId,
+      created_by: userId,
+      token: generateScriptShareToken(),
+      source: "writing",
+      is_active: true,
+    })
+    .select(SCRIPT_SHARE_LINK_SELECT)
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const revokeScriptShareLink = async (linkId) => {
+  if (!linkId) throw new Error("Cannot revoke a share link without a link id.");
+  const { data, error } = await supabase
+    .from("script_share_links")
+    .update({
+      is_active: false,
+      revoked_at: new Date().toISOString(),
+    })
+    .eq("id", linkId)
+    .select(SCRIPT_SHARE_LINK_SELECT)
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const updateScriptShareWatermarkSettings = async (linkId, watermarkSettings) => {
+  if (!linkId) throw new Error("Cannot update watermark settings without a link id.");
+  const { data, error } = await supabase
+    .from("script_share_links")
+    .update({
+      watermark_settings: watermarkSettings || null,
+    })
+    .eq("id", linkId)
+    .select(SCRIPT_SHARE_LINK_SELECT)
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
 // ============================================================================
 // DATABASE LOAD FUNCTIONS
 // ============================================================================
@@ -62,12 +138,23 @@ export const loadScenesFromDatabase = async (
       notes: scene.notes || null,
     }));
 
-    // Simple numerical sort
-    formattedScenes.sort((a, b) => {
-      const aNum = parseInt(String(a.sceneNumber)) || 0;
-      const bNum = parseInt(String(b.sceneNumber)) || 0;
-      return aNum - bNum;
-    });
+    // Sort by scriptOrder when all scenes have it (post-migration); fall back
+    // to sceneNumber + replacementLetter for projects saved before this patch.
+    const allHaveScriptOrder = formattedScenes.every(
+      (s) => typeof s.metadata?.scriptOrder === "number"
+    );
+    if (allHaveScriptOrder) {
+      formattedScenes.sort((a, b) => a.metadata.scriptOrder - b.metadata.scriptOrder);
+    } else {
+      formattedScenes.sort((a, b) => {
+        const aNum = parseInt(String(a.sceneNumber)) || 0;
+        const bNum = parseInt(String(b.sceneNumber)) || 0;
+        if (aNum !== bNum) return aNum - bNum;
+        const aLetter = a.metadata?.replacementLetter || "";
+        const bLetter = b.metadata?.replacementLetter || "";
+        return aLetter.localeCompare(bLetter);
+      });
+    }
 
     console.log("Setting scenes:", formattedScenes.length, "scenes loaded");
     setScenes(formattedScenes);
@@ -784,13 +871,13 @@ export const saveScenesDatabase = async (
       "scenes"
     );
 
-    const scenesData = updatedScenes.map((scene) => ({
+    const scenesData = updatedScenes.map((scene, index) => ({
       id: scene.id || null,
       project_id: selectedProject.id,
       scene_number: scene.sceneNumber,
       heading: scene.heading,
       content: scene.content || [],
-      metadata: scene.metadata || {},
+      metadata: { ...(scene.metadata || {}), scriptOrder: index },
       page_number: scene.pageNumber,
       page_length: scene.pageLength,
       timeline_start_page: scene.timelineStartPage ?? null,
@@ -827,6 +914,24 @@ export const saveScenesDatabase = async (
         .upsert(scenesData, { onConflict: "id" });
 
       if (fallbackError) throw fallbackError;
+    }
+
+    // Delete scenes that are in the DB but not in the current scenes array.
+    // sync_scenes only upserts; without this step, deleted scenes survive in DB
+    // and get reloaded by the realtime subscription, resurrecting them.
+    const intendedIdSet = new Set(
+      scenesData.filter((s) => s.id != null).map((s) => String(s.id))
+    );
+    const staleIds = [...savedIds].filter((id) => !intendedIdSet.has(id));
+    if (staleIds.length > 0) {
+      console.log("🗑️ Deleting stale scenes from database:", staleIds.length);
+      const { error: deleteError } = await supabase
+        .from("scenes")
+        .delete()
+        .in("id", staleIds);
+      if (deleteError) {
+        console.error("Failed to delete stale scenes:", deleteError);
+      }
     }
 
     console.log("✅ Scenes saved successfully to database");

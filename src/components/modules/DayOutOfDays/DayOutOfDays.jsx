@@ -1849,96 +1849,40 @@ function DayOutOfDaysModule({
   };
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        fontFamily: "Arial, sans-serif",
-        height: "calc(100vh - 44px)",
-        overflowY: "auto",
-        boxSizing: "border-box",
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px",
-        }}
-      >
-        <div>
-          <h2 style={{ margin: 0 }}>Day Out of Days</h2>
-          {hasProductionDates && (
-            <div style={{ fontSize: "14px", color: "#666", marginTop: "5px" }}>
-              {formatDate(effectiveStartDate)} - {formatDate(effectiveEndDate)}(
-              {calendarDays.length} days)
-              {!productionStartDate && autoDetectedDates && (
-                <span
-                  style={{
-                    marginLeft: "10px",
-                    color: "#FF9800",
-                    fontSize: "12px",
-                  }}
-                >
-                  ⚠️ Auto-detected from schedule
-                </span>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+            <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>DAY OUT OF DAYS</h2>
+            <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+              {canEdit && (
+                <>
+                  <button onClick={handleAddEvent} disabled={isViewOnly || !hasProductionDates} style={{ padding: "5px 12px", backgroundColor: isViewOnly || !hasProductionDates ? "#ccc" : "#007bff", color: "white", border: "none", borderRadius: "4px", cursor: isViewOnly || !hasProductionDates ? "not-allowed" : "pointer", fontSize: "13px", fontWeight: "bold" }}>+ Add Manual Event</button>
+                  <button onClick={() => setShowSettings(true)} style={{ padding: "5px 12px", backgroundColor: "#757575", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "13px" }}>Settings</button>
+                </>
               )}
             </div>
-          )}
-        </div>
-
-        {hasProductionDates && canEdit && (
-          <div style={{ display: "flex", gap: "10px" }}>
-            <button
-              onClick={handleAddEvent}
-              disabled={isViewOnly || !hasProductionDates}
-              style={{
-                padding: "10px 20px",
-                backgroundColor:
-                  isViewOnly || !hasProductionDates ? "#ccc" : "#007bff",
-                color: "white",
-                border: "none",
-                borderRadius: "4px",
-                cursor:
-                  isViewOnly || !hasProductionDates ? "not-allowed" : "pointer",
-                fontSize: "14px",
-                fontWeight: "bold",
-              }}
-            >
-              + Add Manual Event
-            </button>
-            <button
-              onClick={() => setShowSettings(true)}
-              style={{
-                padding: "10px 20px",
-                backgroundColor: "#757575",
-                color: "white",
-                border: "none",
-                borderRadius: "4px",
-                cursor: "pointer",
-                fontSize: "14px",
-              }}
-            >
-              Settings
-            </button>
           </div>
-        )}
-
-        {/* Filter Controls */}
+        </div>
+      </div>
+      {/* ── Content area ── */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px", fontFamily: "Arial, sans-serif" }}>
+        {/* Controls row: date info and matrix filters */}
         {hasProductionDates && (
-          <div
-            style={{
-              backgroundColor: "#f9f9f9",
-              padding: "15px",
-              borderRadius: "4px",
-              marginTop: "20px",
-              border: "1px solid #ddd",
-            }}
-          >
-            <div style={{ fontWeight: "bold", marginBottom: "10px" }}>
-              📊 Matrix Filters
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "15px", marginBottom: "20px" }}>
+            <div style={{ flexShrink: 0 }}>
+              <div style={{ fontSize: "14px", color: "#666", marginBottom: "10px" }}>
+                {formatDate(effectiveStartDate)} - {formatDate(effectiveEndDate)} ({calendarDays.length} days)
+                {!productionStartDate && autoDetectedDates && (
+                  <span style={{ marginLeft: "10px", color: "#FF9800", fontSize: "12px" }}>⚠️ Auto-detected from schedule</span>
+                )}
+              </div>
             </div>
+            <div style={{ marginLeft: "auto", backgroundColor: "#f9f9f9", padding: "15px", borderRadius: "4px", border: "1px solid #ddd", minWidth: "300px" }}>
+              <div style={{ fontWeight: "bold", marginBottom: "10px" }}>
+                📊 Matrix Filters
+              </div>
             <div
               style={{
                 display: "grid",
@@ -2113,8 +2057,8 @@ function DayOutOfDaysModule({
               </div>
             </div>
           </div>
+          </div>
         )}
-      </div>
 
       {/* Production Date Setup (if not set) */}
       {renderProductionDateSetup()}
@@ -2346,6 +2290,7 @@ function DayOutOfDaysModule({
 
       {/* Override Selector Modal */}
       {renderOverrideSelector()}
+      </div>
     </div>
   );
 }

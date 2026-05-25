@@ -916,86 +916,80 @@ function ShotListModule({
 
   if (!stripboardScenes || stripboardScenes.length === 0) {
     return (
-      <div
-        style={{
-          padding: "20px",
-          width: "100%",
-          height: "calc(100vh - 40px)",
-          overflowY: "auto",
-          boxSizing: "border-box",
-        }}
-      >
-        <h2>Shot List</h2>
-        <p>No scenes available. Please load scenes in the Stripboard first.</p>
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+        {/* ── Header bar ── */}
+        <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+          <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+            <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+              <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>SHOT LIST</h2>
+            </div>
+          </div>
+        </div>
+        {/* ── Content area ── */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px", boxSizing: "border-box" }}>
+          <p>No scenes available. Please load scenes in the Stripboard first.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        width: "100%",
-        height: "calc(100vh - 40px)",
-        overflowY: "auto",
-        boxSizing: "border-box",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px",
-        }}
-      >
-        <h2>Shot List</h2>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <label style={{ fontWeight: "bold" }}>Filter by Date:</label>
-          <select
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            style={{
-              padding: "4px 8px",
-              fontSize: "12px",
-              border: "1px solid #ccc",
-              borderRadius: "3px",
-            }}
-          >
-            <option value="all">All Scenes</option>
-            {scheduledDates.map((dayInfo) => (
-              <option key={dayInfo.date} value={dayInfo.date}>
-                Day {dayInfo.dayNumber}{" "}
-                {new Date(dayInfo.date + "T12:00:00").toLocaleDateString(
-                  "en-US",
-                  { weekday: "short" }
-                )}{" "}
-                {new Date(dayInfo.date + "T12:00:00").toLocaleDateString(
-                  "en-US",
-                  { month: "2-digit", day: "2-digit", year: "numeric" }
-                )}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={exportToPDF}
-            style={{
-              backgroundColor: "#4CAF50",
-              color: "white",
-              border: "1px solid #45a049",
-              padding: "6px 12px",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontSize: "12px",
-              fontWeight: "bold",
-            }}
-          >
-            Export PDF
-          </button>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+            <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>SHOT LIST</h2>
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "8px" }}>
+              <label style={{ fontWeight: "bold", fontSize: "13px" }}>FILTER BY DATE:</label>
+              <select
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                style={{
+                  padding: "4px 8px",
+                  fontSize: "12px",
+                  border: "1px solid #ccc",
+                  borderRadius: "3px",
+                }}
+              >
+                <option value="all">All Scenes</option>
+                {scheduledDates.map((dayInfo) => (
+                  <option key={dayInfo.date} value={dayInfo.date}>
+                    Day {dayInfo.dayNumber}{" "}
+                    {new Date(dayInfo.date + "T12:00:00").toLocaleDateString(
+                      "en-US",
+                      { weekday: "short" }
+                    )}{" "}
+                    {new Date(dayInfo.date + "T12:00:00").toLocaleDateString(
+                      "en-US",
+                      { month: "2-digit", day: "2-digit", year: "numeric" }
+                    )}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={exportToPDF}
+                style={{
+                  backgroundColor: "#4CAF50",
+                  color: "white",
+                  border: "1px solid #45a049",
+                  padding: "5px 12px",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                }}
+              >
+                Export PDF
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {filteredScenes.map((scene) => {
+      {/* ── Content area ── */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px", boxSizing: "border-box" }}>
+        {filteredScenes.map((scene) => {
         const shots = getShotsForScene(scene);
         const sceneCastNumbers = getSceneCastNumbers(scene.sceneNumber);
 
@@ -1014,9 +1008,9 @@ function ShotListModule({
                 marginBottom: "1px",
               }}
             >
-              <div style={{ display: "flex", gap: "20px" }}>
+              <div style={{ display: "flex", gap: "20px", alignItems: "center", minWidth: 0, flex: 1 }}>
                 <div
-                  style={{ cursor: "pointer", textDecoration: "underline" }}
+                  style={{ cursor: "pointer", textDecoration: "underline", flexShrink: 0 }}
                   onClick={() => {
                     setPreviewSceneNumber(scene.sceneNumber);
                     setShowScenePreview(true);
@@ -1024,14 +1018,20 @@ function ShotListModule({
                 >
                   Scene {scene.sceneNumber}
                 </div>
-                <div>{scene.metadata?.intExt || ""}</div>
-                <div>{scene.metadata?.location || ""}</div>
-                <div>{scene.pageNumber || "1"}</div>
-                <div>{scene.pageLength || "1/8"}</div>
+                <div style={{ flexShrink: 0 }}>{scene.metadata?.intExt || ""}</div>
+                <div style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{scene.metadata?.location || ""}</div>
               </div>
               <div
-                style={{ display: "flex", gap: "8px", alignItems: "center" }}
+                style={{ display: "flex", gap: "8px", alignItems: "center", flexShrink: 0 }}
               >
+                <div style={{ width: "58px", textAlign: "right", fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>
+                  <div style={{ fontSize: "8px", letterSpacing: "0.04em", opacity: 0.85 }}>PG #</div>
+                  <div>{scene.pageNumber || "1"}</div>
+                </div>
+                <div style={{ width: "62px", textAlign: "right", fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>
+                  <div style={{ fontSize: "8px", letterSpacing: "0.04em", opacity: 0.85 }}>PG CNT</div>
+                  <div>{scene.pageLength || "1/8"}</div>
+                </div>
                 <button
                   onClick={() => {
                     setPreviewSceneNumber(scene.sceneNumber);
@@ -1456,7 +1456,8 @@ function ShotListModule({
             </div>
           </div>
         );
-      })}
+        })}
+      </div>
 
       {/* Script Popup Modal with exact Script module styling */}
       {showScenePreview && previewSceneNumber && (

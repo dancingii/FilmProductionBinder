@@ -1025,35 +1025,31 @@ function TimelineModule({
   return (
     <div
       style={{
+        display: "flex",
+        flexDirection: "column",
         width: "100%",
-        height: "calc(100vh - 40px)",
+        height: "100%",
+        minHeight: 0,
         boxSizing: "border-box",
-        position: "relative",
+        overflow: "hidden",
         backgroundColor: "#f9f9f9",
       }}
     >
-      {/* Header Section */}
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          backgroundColor: "white",
-          borderBottom: "1px solid #ddd",
-          padding: "15px 20px",
-          zIndex: 100,
-          boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-        }}
-      >
+      {/* Header bar */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
         <div
           style={{
+            flex: 1,
             display: "flex",
-            justifyContent: "space-between",
+            gap: "8px",
             alignItems: "center",
-            marginBottom: "15px",
+            padding: "5px 12px",
+            boxSizing: "border-box",
           }}
         >
-          <h2 style={{ margin: 0 }}>Timeline</h2>
-          <div style={{ display: "flex", gap: "10px" }}>
+          <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>TIMELINE</h2>
+          <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
             <button
               onClick={() => {
                 if (scenes && scenes.length > 0) {
@@ -1066,28 +1062,30 @@ function TimelineModule({
               style={{
                 backgroundColor: "#FF9800",
                 color: "white",
-                padding: "8px 16px",
+                padding: "5px 12px",
                 border: "none",
                 borderRadius: "4px",
                 cursor: "pointer",
                 fontWeight: "bold",
+                fontSize: "13px",
               }}
             >
-              Analyze Script
+              ANALYZE SCRIPT
             </button>
             <button
               onClick={() => setIsTimelineLocked(!isTimelineLocked)}
               style={{
                 backgroundColor: isTimelineLocked ? "#f44336" : "#9E9E9E",
                 color: "white",
-                padding: "8px 16px",
+                padding: "5px 12px",
                 border: "none",
                 borderRadius: "4px",
                 cursor: "pointer",
                 fontWeight: "bold",
+                fontSize: "13px",
               }}
             >
-              {isTimelineLocked ? "🔒 Unlock Timeline" : "🔓 Lock Timeline"}
+              {isTimelineLocked ? "🔒 UNLOCK TIMELINE" : "🔓 LOCK TIMELINE"}
             </button>
             <button
               onClick={addManualDay}
@@ -1095,34 +1093,38 @@ function TimelineModule({
               style={{
                 backgroundColor: isTimelineLocked ? "#ccc" : "#2196F3",
                 color: "white",
-                padding: "8px 16px",
+                padding: "5px 12px",
                 border: "none",
                 borderRadius: "4px",
                 cursor: isTimelineLocked ? "not-allowed" : "pointer",
                 fontWeight: "bold",
+                fontSize: "13px",
               }}
             >
-              + / - Day
+              + / - DAY
             </button>
             <button
               onClick={addContinuityElement}
               style={{
                 backgroundColor: "#4CAF50",
                 color: "white",
-                padding: "8px 16px",
+                padding: "5px 12px",
                 border: "none",
                 borderRadius: "4px",
                 cursor: "pointer",
                 fontWeight: "bold",
+                fontSize: "13px",
               }}
             >
-              + Add Continuity Element
+              + ADD CONTINUITY ELEMENT
             </button>
           </div>
         </div>
+        </div>
+      </div>
 
-        {/* Controls Row */}
-        <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
+      {/* Controls Row */}
+      <div style={{ flexShrink: 0, display: "flex", gap: "20px", alignItems: "center", padding: "12px 20px", borderBottom: "1px solid #eee", backgroundColor: "white" }}>
           {/* Timeline Type Selector */}
           <div>
             <label
@@ -1132,7 +1134,7 @@ function TimelineModule({
                 marginRight: "8px",
               }}
             >
-              Timeline:
+              TIMELINE:
             </label>
             <select
               value={selectedTimeline}
@@ -1146,7 +1148,7 @@ function TimelineModule({
             >
               {timelineTypes.map((type) => (
                 <option key={type.value} value={type.value}>
-                  {type.label}
+                  {type.label.toUpperCase()}
                 </option>
               ))}
             </select>
@@ -1166,26 +1168,25 @@ function TimelineModule({
                   borderRadius: "3px",
                   cursor: "pointer",
                   fontSize: "11px",
-                  textTransform: "capitalize",
                 }}
               >
-                {mode}
+                {mode.toUpperCase()}
               </button>
             ))}
           </div>
 
           {/* Detection Status */}
           <div style={{ fontSize: "11px", color: "#666" }}>
-            Status: Story day detection not yet implemented
+            STATUS: STORY DAY DETECTION NOT YET IMPLEMENTED
           </div>
-        </div>
       </div>
 
       {/* Main Content Area */}
       <div
         style={{
           display: "flex",
-          height: "calc(100vh - 160px)",
+          flex: 1,
+          minHeight: 0,
           overflow: "hidden",
         }}
       >

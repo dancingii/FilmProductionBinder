@@ -1366,65 +1366,50 @@ function WardrobeModule({
   }, [showSceneScriptViewer, showSceneAssignPopup]);
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        fontFamily: "Arial, sans-serif",
-        height: "calc(100vh - 44px)",
-        boxSizing: "border-box",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          marginBottom: "20px",
-          gap: "100px",
-          position: "sticky",
-          top: 0,
-          backgroundColor: "white",
-          zIndex: 100,
-          paddingBottom: "10px",
-          borderBottom: "1px solid #ddd",
-        }}
-      >
-        <h2 style={{ margin: 0 }}>Wardrobe Management</h2>
-        <div style={{ display: "flex", gap: "10px" }}>
-          <button
-            onClick={() => handleViewSwitch("scenes")}
-            style={{
-              backgroundColor: viewMode === "scenes" ? "#2196F3" : "#e0e0e0",
-              color: viewMode === "scenes" ? "white" : "#333",
-              border: "none",
-              padding: "8px 16px",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontWeight: viewMode === "scenes" ? "bold" : "normal",
-            }}
-          >
-            Scenes
-          </button>
-          <button
-            onClick={() => handleViewSwitch("characters")}
-            style={{
-              backgroundColor:
-                viewMode === "characters" ? "#2196F3" : "#e0e0e0",
-              color: viewMode === "characters" ? "white" : "#333",
-              border: "none",
-              padding: "8px 16px",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontWeight: viewMode === "characters" ? "bold" : "normal",
-            }}
-          >
-            Characters
-          </button>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+            <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>WARDROBE</h2>
+            <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+              <button
+                onClick={() => handleViewSwitch("scenes")}
+                style={{
+                  backgroundColor: viewMode === "scenes" ? "#2196F3" : "#e0e0e0",
+                  color: viewMode === "scenes" ? "white" : "#333",
+                  border: "none",
+                  padding: "5px 12px",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontWeight: viewMode === "scenes" ? "bold" : "normal",
+                  fontSize: "13px",
+                }}
+              >
+                SCENES
+              </button>
+              <button
+                onClick={() => handleViewSwitch("characters")}
+                style={{
+                  backgroundColor: viewMode === "characters" ? "#2196F3" : "#e0e0e0",
+                  color: viewMode === "characters" ? "white" : "#333",
+                  border: "none",
+                  padding: "5px 12px",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontWeight: viewMode === "characters" ? "bold" : "normal",
+                  fontSize: "13px",
+                }}
+              >
+                CHARACTERS
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div ref={scrollContainerRef} style={{ flex: 1, overflowY: "auto" }}>
+      {/* ── Content area ── */}
+      <div ref={scrollContainerRef} style={{ flex: 1, overflowY: "auto", fontFamily: "Arial, sans-serif" }}>
         {/* Character View */}
         {viewMode === "characters" && (
           <>

@@ -21,6 +21,17 @@ function Dashboard({
   syncProjectSettingsToDatabase,
 }) {
   const [editingSettings, setEditingSettings] = React.useState(false);
+  const [producerLines, setProducerLines] = React.useState([""]);
+  const [execProducerLines, setExecProducerLines] = React.useState([""]);
+
+  React.useEffect(() => {
+    if (editingSettings) {
+      const raw = projectSettings.producer || "";
+      setProducerLines(raw ? raw.split("\n") : [""]);
+      const rawExec = projectSettings.executiveProducer || "";
+      setExecProducerLines(rawExec ? rawExec.split("\n") : [""]);
+    }
+  }, [editingSettings]); // intentionally omits projectSettings from deps — only re-init on modal open
 
   const updateProjectSettings = (field, value) => {
     setProjectSettings((prev) => ({
@@ -193,41 +204,28 @@ function Dashboard({
   const totalPages = eighthsToDisplayFormat(totalEighths);
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        maxWidth: "1400px",
-        margin: "0 auto",
-        fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "30px",
-        }}
-      >
-        <h1 style={{ margin: 0, color: "#333" }}>Production Dashboard</h1>
-        {canEdit(userRole) && (
-          <button
-            onClick={() => setEditingSettings(true)}
-            style={{
-              backgroundColor: "#2196F3",
-              color: "white",
-              padding: "10px 20px",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontSize: "14px",
-              fontWeight: "bold",
-            }}
-          >
-            ⚙️ Project Settings
-          </button>
-        )}
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+      {/* Header bar — same structure as Script Breakdown */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+            <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold", flexShrink: 0 }}>PRODUCTION DASHBOARD</h2>
+            <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center", flexShrink: 0 }}>
+              {canEdit(userRole) && (
+                <button
+                  onClick={() => setEditingSettings(true)}
+                  style={{ padding: "6px 14px", backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "13px" }}
+                >
+                  PROJECT SETTINGS
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Scrollable content area */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 12px 20px 12px", boxSizing: "border-box" }}>
 
       {/* Top Row: My Tasks and Next Shoot Day */}
       <div
@@ -247,7 +245,7 @@ function Dashboard({
             padding: "20px",
           }}
         >
-          <h3 style={{ marginTop: 0, marginBottom: "15px" }}>My Tasks</h3>
+          <h3 style={{ marginTop: 0, marginBottom: "15px" }}>MY TASKS</h3>
           {myTasks.length === 0 ? (
             <p style={{ color: "#666", fontStyle: "italic" }}>
               No tasks assigned
@@ -414,7 +412,7 @@ function Dashboard({
             padding: "20px",
           }}
         >
-          <h3 style={{ marginTop: 0, marginBottom: "15px" }}>Next Shoot Day</h3>
+          <h3 style={{ marginTop: 0, marginBottom: "15px" }}>NEXT SHOOT DAY</h3>
           {!nextShootDay ? (
             <p style={{ color: "#666", fontStyle: "italic" }}>
               No upcoming shoot days scheduled
@@ -514,7 +512,7 @@ function Dashboard({
           }}
         >
           <h3 style={{ marginTop: 0, marginBottom: "15px" }}>
-            Call Sheet Preview - Day {nextShootDay.day_number} (
+            CALL SHEET PREVIEW — Day {nextShootDay.day_number} (
             {(() => {
               const [year, month, day] = nextShootDay.date.split("-");
               const localDate = new Date(year, month - 1, day);
@@ -677,7 +675,7 @@ function Dashboard({
           padding: "20px",
         }}
       >
-        <h3 style={{ marginTop: 0, marginBottom: "15px" }}>Upcoming Events</h3>
+        <h3 style={{ marginTop: 0, marginBottom: "15px" }}>UPCOMING EVENTS</h3>
 
         {upcomingDays.length === 0 ? (
           <p style={{ color: "#666", fontStyle: "italic" }}>
@@ -718,20 +716,13 @@ function Dashboard({
           </div>
         )}
       </div>
+      </div>{/* end scrollable content area */}
 
       {/* Project Settings Modal */}
       {editingSettings && (
         <>
           <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              backgroundColor: "rgba(0,0,0,0.5)",
-              zIndex: 999,
-            }}
+            style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.45)", zIndex: 999 }}
             onClick={() => setEditingSettings(false)}
           />
           <div
@@ -741,105 +732,238 @@ function Dashboard({
               left: "50%",
               transform: "translate(-50%, -50%)",
               backgroundColor: "white",
-              border: "2px solid #ccc",
+              border: "1px solid #ddd",
               borderRadius: "8px",
-              padding: "20px",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+              padding: "24px 28px",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.22)",
               zIndex: 1000,
-              minWidth: "400px",
+              width: "700px",
+              maxWidth: "calc(100vw - 40px)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxSizing: "border-box",
+              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
             }}
           >
-            <h3 style={{ marginTop: 0 }}>Project Settings</h3>
+            <h2 style={{ margin: "0 0 20px", fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>PROJECT SETTINGS</h2>
 
-            <div style={{ marginBottom: "15px" }}>
-              <label style={{ display: "block", marginBottom: "5px" }}>
-                <strong>Film Title:</strong>
-              </label>
-              <input
-                type="text"
-                value={projectSettings.filmTitle || ""}
-                onChange={(e) =>
-                  updateProjectSettings("filmTitle", e.target.value)
-                }
-                onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
-                style={{
-                  width: "100%",
-                  padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "3px",
-                }}
-              />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 28px" }}>
+              {/* Left column — core credits */}
+              <div>
+                {/* Film Title */}
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", letterSpacing: "0.05em", marginBottom: "6px" }}>FILM TITLE</div>
+                  <input
+                    type="text"
+                    value={projectSettings.filmTitle || ""}
+                    onChange={(e) => updateProjectSettings("filmTitle", e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                    style={{ width: "100%", padding: "7px 9px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                {/* Director */}
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", letterSpacing: "0.05em", marginBottom: "6px" }}>DIRECTOR</div>
+                  <input
+                    type="text"
+                    value={projectSettings.director || ""}
+                    onChange={(e) => updateProjectSettings("director", e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                    style={{ width: "100%", padding: "7px 9px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                {/* Producer — multi-line */}
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", letterSpacing: "0.05em" }}>PRODUCER</div>
+                    <button
+                      type="button"
+                      onClick={() => setProducerLines((l) => [...l, ""])}
+                      style={{ fontSize: "11px", padding: "2px 9px", backgroundColor: "#f3f4f6", border: "1px solid #ddd", borderRadius: "3px", cursor: "pointer", color: "#374151" }}
+                    >
+                      + Add
+                    </button>
+                  </div>
+                  {producerLines.map((line, i) => (
+                    <div key={i} style={{ display: "flex", gap: "6px", marginBottom: i < producerLines.length - 1 ? "6px" : 0 }}>
+                      <input
+                        type="text"
+                        value={line}
+                        onChange={(e) => {
+                          const next = [...producerLines];
+                          next[i] = e.target.value;
+                          setProducerLines(next);
+                        }}
+                        style={{ flex: 1, padding: "7px 9px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "13px" }}
+                      />
+                      {i > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setProducerLines((l) => l.filter((_, idx) => idx !== i))}
+                          style={{ padding: "4px 9px", backgroundColor: "#fee2e2", border: "1px solid #fca5a5", borderRadius: "4px", cursor: "pointer", color: "#dc2626", fontSize: "13px", lineHeight: 1 }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Executive Producer — multi-line */}
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", letterSpacing: "0.05em" }}>EXECUTIVE PRODUCER</div>
+                    <button
+                      type="button"
+                      onClick={() => setExecProducerLines((l) => [...l, ""])}
+                      style={{ fontSize: "11px", padding: "2px 9px", backgroundColor: "#f3f4f6", border: "1px solid #ddd", borderRadius: "3px", cursor: "pointer", color: "#374151" }}
+                    >
+                      + Add
+                    </button>
+                  </div>
+                  {execProducerLines.map((line, i) => (
+                    <div key={i} style={{ display: "flex", gap: "6px", marginBottom: i < execProducerLines.length - 1 ? "6px" : 0 }}>
+                      <input
+                        type="text"
+                        value={line}
+                        onChange={(e) => {
+                          const next = [...execProducerLines];
+                          next[i] = e.target.value;
+                          setExecProducerLines(next);
+                        }}
+                        style={{ flex: 1, padding: "7px 9px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "13px" }}
+                      />
+                      {i > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setExecProducerLines((l) => l.filter((_, idx) => idx !== i))}
+                          style={{ padding: "4px 9px", backgroundColor: "#fee2e2", border: "1px solid #fca5a5", borderRadius: "4px", cursor: "pointer", color: "#dc2626", fontSize: "13px", lineHeight: 1 }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right column — production metadata */}
+              <div>
+                {/* Production Company */}
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", letterSpacing: "0.05em", marginBottom: "6px" }}>PRODUCTION COMPANY</div>
+                  <input
+                    type="text"
+                    value={projectSettings.productionCompany || ""}
+                    onChange={(e) => updateProjectSettings("productionCompany", e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                    style={{ width: "100%", padding: "7px 9px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                {/* Format */}
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", letterSpacing: "0.05em", marginBottom: "6px" }}>FORMAT</div>
+                  <input
+                    type="text"
+                    value={projectSettings.format || ""}
+                    onChange={(e) => updateProjectSettings("format", e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                    placeholder="e.g. 4K UHD, HD 1920x1080"
+                    style={{ width: "100%", padding: "7px 9px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                {/* Camera Type */}
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", letterSpacing: "0.05em", marginBottom: "6px" }}>CAMERA TYPE</div>
+                  <input
+                    type="text"
+                    value={projectSettings.cameraType || ""}
+                    onChange={(e) => updateProjectSettings("cameraType", e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                    placeholder="e.g. ARRI Alexa Mini, RED Komodo"
+                    style={{ width: "100%", padding: "7px 9px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                {/* Estimated Length */}
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", letterSpacing: "0.05em", marginBottom: "6px" }}>ESTIMATED LENGTH</div>
+                  <input
+                    type="text"
+                    value={projectSettings.estimatedLength || ""}
+                    onChange={(e) => updateProjectSettings("estimatedLength", e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                    placeholder="e.g. 95min"
+                    style={{ width: "100%", padding: "7px 9px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                {/* Shooting Ratio */}
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", letterSpacing: "0.05em", marginBottom: "6px" }}>SHOOTING RATIO</div>
+                  <input
+                    type="text"
+                    value={projectSettings.shootingRatio || ""}
+                    onChange={(e) => updateProjectSettings("shootingRatio", e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                    placeholder="e.g. 7:1"
+                    style={{ width: "100%", padding: "7px 9px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                {/* Distribution */}
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", letterSpacing: "0.05em", marginBottom: "6px" }}>DISTRIBUTION</div>
+                  <input
+                    type="text"
+                    value={projectSettings.distribution || ""}
+                    onChange={(e) => updateProjectSettings("distribution", e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                    placeholder="e.g. Theatrical, Streaming, VOD"
+                    style={{ width: "100%", padding: "7px 9px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                {/* Date Prepared */}
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", letterSpacing: "0.05em", marginBottom: "6px" }}>DATE PREPARED</div>
+                  <input
+                    type="date"
+                    value={projectSettings.datePrepared || ""}
+                    onChange={(e) => updateProjectSettings("datePrepared", e.target.value)}
+                    style={{ width: "100%", padding: "7px 9px", border: "1px solid #ddd", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }}
+                  />
+                </div>
+              </div>
             </div>
 
-            <div style={{ marginBottom: "15px" }}>
-              <label style={{ display: "block", marginBottom: "5px" }}>
-                <strong>Producer:</strong>
-              </label>
-              <input
-                type="text"
-                value={projectSettings.producer || ""}
-                onChange={(e) =>
-                  updateProjectSettings("producer", e.target.value)
-                }
-                onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
-                style={{
-                  width: "100%",
-                  padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "3px",
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: "15px" }}>
-              <label style={{ display: "block", marginBottom: "5px" }}>
-                <strong>Director:</strong>
-              </label>
-              <input
-                type="text"
-                value={projectSettings.director || ""}
-                onChange={(e) =>
-                  updateProjectSettings("director", e.target.value)
-                }
-                onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
-                style={{
-                  width: "100%",
-                  padding: "8px",
-                  border: "1px solid #ddd",
-                  borderRadius: "3px",
-                }}
-              />
-            </div>
-
-            <div style={{ display: "flex", gap: "10px" }}>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "8px" }}>
+              <button
+                onClick={() => setEditingSettings(false)}
+                style={{ padding: "7px 16px", backgroundColor: "#f3f4f6", border: "1px solid #ddd", borderRadius: "4px", cursor: "pointer", fontSize: "13px", fontWeight: "bold", color: "#374151" }}
+              >
+                Cancel
+              </button>
               <button
                 onClick={async () => {
-                  await syncProjectSettingsToDatabase(projectSettings);
+                  const updatedSettings = {
+                    ...projectSettings,
+                    producer: producerLines.filter((l) => l.trim()).join("\n"),
+                    executiveProducer: execProducerLines.filter((l) => l.trim()).join("\n"),
+                    lastUpdate: new Date().toISOString().split("T")[0],
+                  };
+                  setProjectSettings(updatedSettings);
+                  await syncProjectSettingsToDatabase(updatedSettings);
                   alert("Settings saved!");
                   setEditingSettings(false);
                 }}
-                style={{
-                  backgroundColor: "#4CAF50",
-                  color: "white",
-                  padding: "8px 16px",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
+                style={{ padding: "7px 16px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "13px", fontWeight: "bold" }}
               >
                 Save Settings
-              </button>
-              <button
-                onClick={() => setEditingSettings(false)}
-                style={{
-                  backgroundColor: "#ccc",
-                  padding: "8px 16px",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
               </button>
             </div>
           </div>

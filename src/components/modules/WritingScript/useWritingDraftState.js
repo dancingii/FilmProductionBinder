@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loadWritingDraft, saveWritingDraft } from "./writingDraftPersistence";
+import { loadWritingDraftAsync, saveWritingDraftSafely } from "./writingDraftPersistence";
 
 export const WRITING_DRAFT_SAVE_STATUS = {
   SAVED: "saved",
@@ -19,6 +19,7 @@ function useWritingDraftState(project, options = {}) {
 
   useEffect(() => {
     clearTimeout(writingDraftSaveTimerRef.current);
+    let cancelled = false;
 
     if (!project) {
       setWritingDraftNodes([]);
@@ -27,19 +28,27 @@ function useWritingDraftState(project, options = {}) {
       return;
     }
 
-    try {
-      const draft = loadWritingDraft(project);
-      const nodes = draft.hasUserCreatedScript && draft.nodes.length ? draft.nodes : [];
+    (async () => {
+      try {
+        const draft = await loadWritingDraftAsync(project);
+        if (cancelled) return;
+        const nodes = draft.hasUserCreatedScript && draft.nodes.length ? draft.nodes : [];
 
-      setWritingDraftNodes(nodes);
-      lastWritingDraftPayloadRef.current = JSON.stringify(nodes);
-      setWritingDraftSaveStatus(WRITING_DRAFT_SAVE_STATUS.SAVED);
-    } catch (err) {
-      console.warn("Could not load writing draft:", err);
-      setWritingDraftNodes([]);
-      lastWritingDraftPayloadRef.current = JSON.stringify([]);
-      setWritingDraftSaveStatus(WRITING_DRAFT_SAVE_STATUS.ERROR);
-    }
+        setWritingDraftNodes(nodes);
+        lastWritingDraftPayloadRef.current = JSON.stringify(nodes);
+        setWritingDraftSaveStatus(WRITING_DRAFT_SAVE_STATUS.SAVED);
+      } catch (err) {
+        if (cancelled) return;
+        console.warn("Could not load writing draft:", err);
+        setWritingDraftNodes([]);
+        lastWritingDraftPayloadRef.current = JSON.stringify([]);
+        setWritingDraftSaveStatus(WRITING_DRAFT_SAVE_STATUS.ERROR);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [project]);
 
   useEffect(() => {
@@ -63,15 +72,14 @@ function useWritingDraftState(project, options = {}) {
     clearTimeout(writingDraftSaveTimerRef.current);
 
     writingDraftSaveTimerRef.current = setTimeout(() => {
-      try {
-        setWritingDraftSaveStatus(WRITING_DRAFT_SAVE_STATUS.SAVING);
-        saveWritingDraft(project, safeNodes);
+      setWritingDraftSaveStatus(WRITING_DRAFT_SAVE_STATUS.SAVING);
+      saveWritingDraftSafely(project, safeNodes).then(() => {
         lastWritingDraftPayloadRef.current = payload;
         setWritingDraftSaveStatus(WRITING_DRAFT_SAVE_STATUS.SAVED);
-      } catch (err) {
+      }).catch((err) => {
         console.error("Could not save writing draft:", err);
         setWritingDraftSaveStatus(WRITING_DRAFT_SAVE_STATUS.ERROR);
-      }
+      });
     }, saveDelayMs);
   }, [project, saveDelayMs]);
 

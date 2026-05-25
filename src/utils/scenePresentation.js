@@ -18,6 +18,7 @@ export const SCENE_CUSTOM_COLORS = {
 
 export const INSERTED_BORDER_COLOR = "#f59e0b";
 export const INSERTED_LABEL_COLOR = "#b45309";
+export const APP_TAB_BLUE = "#2196F3";
 
 export const SCENE_METADATA_COLUMN_WIDTHS = {
   customColor: "14px",
@@ -135,7 +136,7 @@ export const getSceneRowPresentation = (scene, options = {}) => {
     rowBackgroundColor: isDragging
       ? "rgba(227,242,253,0.75)"
       : isCurrent
-        ? "#316AC5"
+        ? APP_TAB_BLUE
         : hasStatus
           ? status.backgroundColor
           : customColor.hasCustomColor

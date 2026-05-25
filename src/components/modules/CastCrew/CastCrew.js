@@ -883,36 +883,41 @@ function CastCrewModule({
   }, []);
 
   return (
-    <div style={{ width: "100%", height: "calc(100vh - 40px)", boxSizing: "border-box", position: "relative" }}>
-      <div style={{ position: "sticky", top: 0, left: 0, right: 0, backgroundColor: "white", zIndex: 100, padding: "20px 20px 15px 20px", borderBottom: "1px solid #ddd", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ margin: 0 }}>Cast & Crew</h2>
-          {isViewOnly && (
-            <div style={{ padding: "8px 16px", backgroundColor: "#FF9800", color: "white", borderRadius: "4px", fontWeight: "bold", fontSize: "14px" }}>VIEW ONLY MODE</div>
-          )}
-          {canEdit && (
-            <button onClick={openAddPersonModal}
-              style={{ backgroundColor: "#2196F3", color: "white", padding: "8px 16px", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>
-              + Add Person
-            </button>
-          )}
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+            <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>CAST AND CREW</h2>
+            <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+              {isViewOnly && (
+                <div style={{ padding: "4px 12px", backgroundColor: "#FF9800", color: "white", borderRadius: "4px", fontWeight: "bold", fontSize: "13px" }}>VIEW ONLY MODE</div>
+              )}
+              {canEdit && (
+                <button onClick={openAddPersonModal}
+                  style={{ backgroundColor: "#2196F3", color: "white", padding: "5px 12px", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "13px" }}>
+                  + Add Person
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
-
-      <div style={{ padding: "0 20px 20px 20px", height: "calc(100% - 80px)", overflowY: "auto" }}>
+      {/* ── Content area ── */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 20px 20px" }}>
         <p style={{ fontSize: "13px", color: "#666", fontStyle: "italic", marginBottom: "15px" }}>
           Click any field to edit • Use Tab to navigate between fields • Availability: Click dates to cycle White → Green (Available) → Red (Unavailable) → White
         </p>
 
         <div style={{ marginTop: "15px" }}>
-          <div style={{ fontSize: "24px", color: "#333", marginBottom: "5px", padding: "8px", backgroundColor: "#A5D6A7", textAlign: "center", fontWeight: "bold", borderRadius: "4px" }}>
+          <div style={{ fontSize: "24px", color: "#333", marginBottom: "5px", padding: "8px", backgroundColor: "#A5D6A7", textAlign: "center", fontWeight: "bold", borderRadius: "4px", textTransform: "uppercase" }}>
             Cast ({grouped.cast.length})
           </div>
           {grouped.cast.length === 0 ? <p>No cast members added yet.</p> : grouped.cast.map(renderPersonCard)}
         </div>
 
         <div style={{ marginTop: "15px" }}>
-          <div style={{ fontSize: "24px", color: "#333", marginBottom: "5px", padding: "8px", backgroundColor: "#A5D6A7", textAlign: "center", fontWeight: "bold", borderRadius: "4px" }}>
+          <div style={{ fontSize: "24px", color: "#333", marginBottom: "5px", padding: "8px", backgroundColor: "#A5D6A7", textAlign: "center", fontWeight: "bold", borderRadius: "4px", textTransform: "uppercase" }}>
             Crew ({grouped.crew.length})
           </div>
           {grouped.crew.length === 0 ? (
@@ -923,7 +928,7 @@ function CastCrewModule({
               if (departmentCrew.length === 0) return null;
               return (
                 <div key={department} style={{ marginBottom: "20px" }}>
-                  <div style={{ fontSize: "14px", color: "white", marginBottom: "5px", padding: "8px", backgroundColor: "#FFC107", textAlign: "center", fontWeight: "bold", borderRadius: "4px" }}>
+                  <div style={{ fontSize: "14px", color: "white", marginBottom: "5px", padding: "8px", backgroundColor: "#FFC107", textAlign: "center", fontWeight: "bold", borderRadius: "4px", textTransform: "uppercase" }}>
                     {department} ({departmentCrew.length})
                   </div>
                   {departmentCrew.map(renderPersonCard)}
@@ -934,7 +939,7 @@ function CastCrewModule({
         </div>
 
         <div style={{ marginTop: "15px" }}>
-          <div style={{ fontSize: "24px", color: "#333", marginBottom: "5px", padding: "8px", backgroundColor: "#A5D6A7", textAlign: "center", fontWeight: "bold", borderRadius: "4px" }}>
+          <div style={{ fontSize: "24px", color: "#333", marginBottom: "5px", padding: "8px", backgroundColor: "#A5D6A7", textAlign: "center", fontWeight: "bold", borderRadius: "4px", textTransform: "uppercase" }}>
             Misc ({grouped.misc.length})
           </div>
           {grouped.misc.length === 0 ? <p>No misc contacts added yet.</p> : grouped.misc.map(renderPersonCard)}

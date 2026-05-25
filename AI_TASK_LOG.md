@@ -28,6 +28,1041 @@ main
 
 ## Completed Tasks
 
+### Writing Public Share Watermark Branding
+
+**Date:** 2026-05-25
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `src/components/modules/WritingScript/PublicScriptShareViewer.jsx`
+
+**Changes:**
+- Extended per-link Share Script watermark settings with project-name fallback text, optional recipient name, and URL-based branding image controls.
+- Organized the Watermark Settings popup into Text, Appearance, and Branding Image sections.
+- Updated the public script viewer to merge older/null watermark settings safely, use project name as the default watermark text, append recipient name when enabled, and render a non-interactive subtle branding image overlay when configured.
+- Kept storage in `script_share_links.watermark_settings`; no DB schema or RPC changes were made.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned; `git status --short build` showed no output.
+
+### Writing Page Body Line Offset Calibration
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added `pageBodyLineOffset` to the temporary Writing layout tuning defaults with a default of `1`.
+- Added a `Page body line offset` control to the LAYOUT TUNING panel with range `-3` to `3`, step `1`, unit `lines`.
+- Updated `getEffectivePageBodyHeightLines()` to return the physical derived line count plus the offset.
+- Kept visual top and bottom margins at `1in`.
+- Kept the physical page geometry calculation as the base source of truth.
+- Did not touch Scene Heading keep-together rules, block spacing values, parser/import logic, PDF import, `(CONT'D)` logic, Script.js, Script Breakdown, saved script content, contenteditable/caret internals, or unrelated modules.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Writing Physical Page Margin Pagination
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Set Writing page bottom margin defaults to `1in` in both `PAGE_LAYOUT` and `DEFAULT_LAYOUT_TUNING`.
+- Kept Writing page top margin defaults at `1in`.
+- Replaced independent `pageBodyHeightLines` pagination reads with a physical page-body line calculation derived from page height, top margin, bottom margin, and line height.
+- Removed the `pageBodyHeightLines` layout tuning control so it no longer conflicts with physical margins.
+- Applied the derived page-body line count to pagination, scene stats, and dialogue overflow splitting.
+- Did not touch parser/import logic, PDF import, `(CONT'D)` logic, Script.js, Script Breakdown, saved script content, contenteditable/caret internals, or unrelated modules.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Writing Scene Heading Final Pagination Pass + Top Margin Default
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Changed `PAGE_LAYOUT.pageMarginTop` fallback from `0.75in` to `1in`.
+- Confirmed `DEFAULT_LAYOUT_TUNING.pageMarginTopIn` remains `1` and `pageBodyHeightLines` remains `55`.
+- Added a final `fixTrailingSceneHeadings()` pass after `paginateNodesForScreen()` so the page array used by rendering cannot end a non-final page with a meaningful Scene Heading.
+- Added guarded finalized-page pagination diagnostics behind `window.__DEBUG_WRITING_PAGINATION`.
+- Did not touch parser/import logic, `(CONT'D)` logic, Script.js, Script Breakdown, saved script content, contenteditable/caret internals, spacing values, or unrelated modules.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### PDF Action Page-Boundary Cleanup + Writing Scene Heading Guard
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/utils/screenplayImport.js`
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added a conservative PDF page-artifact cleanup heuristic that preserves a blank paragraph boundary when removing a standalone page number/artifact between two action-looking lines and the previous line is sentence-complete.
+- Kept wrapped action line grouping and mid-sentence action continuation behavior intact.
+- Updated Writing page capacity defaults from 54/56 to `55` where the active tuning/default page-body line count is defined.
+- Raised the Scene Heading hard keep-together guard from fewer than 4 remaining lines to fewer than 6 remaining lines.
+- Kept the deterministic trailing Scene Heading post-pass in place.
+- Did not touch `(CONT'D)` logic, Script.js, Script Breakdown, saved content, contenteditable/caret internals, or the layout tuning panel behavior.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Writing Trailing Scene Heading Pagination Post-Pass
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added page finalization logic inside `paginateNodesForScreen`.
+- Before a page is pushed, it checks the last meaningful node.
+- If that last meaningful node is a Scene Heading, the heading and trailing non-meaningful nodes are carried to the next page.
+- Avoids pushing an empty page if the moved heading was the only page content.
+- Kept existing keep-together estimates and hard remaining-lines guard.
+- Did not change spacing values, tuning UI behavior, parser/import logic, `(CONT'D)` behavior, Script Breakdown, saved content, or contenteditable internals.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Writing Scene Heading Hard Keep Guard
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added a hard Scene Heading pagination guard inside `paginateNodesForScreen`.
+- If fewer than 4 tuned page lines remain and the current page already has content, Scene Heading nodes now force a page break before placement.
+- Kept the existing next-meaningful-node keep-together logic.
+- Added `remainingLines` and `sceneHeadingHardBreak` fields to guarded pagination debug output.
+- Did not change spacing values, tuning UI behavior, parser/import logic, `(CONT'D)` behavior, Script Breakdown, or contenteditable internals.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Writing Keep-Together Pagination Refinement
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Updated temporary layout tuning defaults to the provided baseline values for current testing.
+- Added meaningful-node lookup so keep-together estimates do not fail when empty/harmless nodes appear between structural elements.
+- Scene Heading, Character, and Parenthetical keep-together checks now use the next meaningful required content/dialogue node.
+- Added guarded debug logging behind `window.__DEBUG_WRITING_PAGINATION`.
+- Did not touch parser/import logic, `(CONT'D)` import behavior, Script Breakdown, saved script content, or contenteditable internals.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Writing Pagination Keep-Together Rules
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added `getNodeFirstLineEstimate()` and `getKeepTogetherLineEstimate()` for Writing pagination.
+- Prevents Scene Heading, Character cue, and Parenthetical nodes from being stranded at page bottoms when their required following line does not fit.
+- Character keep-together includes an optional following Parenthetical plus the first Dialogue line.
+- Kept dialogue continuation visual/render-only behavior unchanged.
+- Did not touch parser/import logic, `(CONT'D)` import behavior, Script Breakdown, spacing values, or tuning slider behavior.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Writing Layout Tuning Panel Portal
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Imported `createPortal` from `react-dom`.
+- Rendered the existing temporary `LAYOUT TUNING` panel through `document.body` so it is no longer trapped by the editor/sidebar stacking context.
+- Kept the same fixed top/right position, z-index, controls, slider behavior, tuning state, and copyable JSON readout.
+- Did not change spacing values, parser/import/save logic, `(CONT'D)` handling, or Script Breakdown.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Writing Layout Tuning Panel Stacking
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Raised the temporary `LAYOUT TUNING` panel z-index from `1400` to `2147483647`.
+- Did not move the panel, change slider behavior, change spacing values, or touch import/save/parser logic.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Writing Draft Quota Fallback
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `src/components/modules/WritingScript/useWritingDraftState.js`
+- `src/components/modules/WritingScript/writingDraftPersistence.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added a native IndexedDB fallback for oversized Writing draft payloads.
+- Kept small drafts on the existing `writingScriptDraft:<project-id>` localStorage path.
+- On localStorage `QuotaExceededError`, saves the full draft to IndexedDB and stores only a small marker in localStorage.
+- Updated Writing draft loading to restore marker-backed drafts from IndexedDB.
+- Updated the existing `useWritingDraftState` helper to use the same async safe load/save path.
+- Suppressed repeated identical save-error spam and only warns once per oversized payload when using the fallback.
+- Removed now-unused inline Writing draft storage-key callbacks from `WritingScript.jsx`.
+- Did not touch PDF import, parser/classification, `(CONT'D)` logic, Script Breakdown, editor layout tuning, or contenteditable internals.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Temporary Writing Layout Tuning Panel
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added a temporary floating `LAYOUT TUNING` button and collapsible panel in the Writing screenplay editor.
+- Added live sliders for page top/bottom margins, all requested block top/bottom margins, line height, and page body line count.
+- Initialized tuning state from the current Writing layout constants so default rendering is unchanged.
+- Routed tuning state into `getScreenplayNodeStyle`, pagination estimates, scene stats, and dialogue overflow splitting.
+- Added a copyable JSON readout of the current tuning values.
+- Did not persist tuning values or change script data/import/parser behavior.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Writing Page Spacing Tuning
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Tuned only Writing screenplay page layout constants.
+- Reduced Scene Heading margins from `24pt` before/after to `12pt` before/after.
+- Updated `getSpacingBeforeNodeLines()` so Scene Heading before/after spacing estimates match the visual one-line gap.
+- Increased `PAGE_LAYOUT.pageBodyHeightLines` from 54 to 56 to bring page breaks closer to the rendered page body and bottom margin.
+- Did not touch PDF import, `(CONT'D)` logic, Script Breakdown, parser classification, page-break rendering internals, or contenteditable behavior.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### PDF Continuation UI Path Normalization
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/utils/screenplayImport.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Confirmed Script Breakdown and Writing both use the shared `parseScriptFile()` import path from `src/utils/screenplayImport.js`.
+- Added `normalizeCharacterContinuationMarkers()` as a post-parse cleanup before imported scenes are returned to App/Writing state.
+- The normalizer folds a continuation-marker Parenthetical immediately after a Character block into that Character cue and removes the separate Parenthetical block.
+- Added a parser fallback for continuation marker lines that appear after an extracted blank but still directly follow a Character block in scene content.
+- Kept normal parentheticals as separate Parenthetical blocks and left render/editor internals unchanged.
+
+**Verification:**
+- Harness confirmed `ROLLAND` + `(CONT'D)` becomes `ROLLAND (CONT'D)` before imported data reaches UI state.
+- Harness confirmed `(confused)` remains a Parenthetical under `MARIE`.
+- Sample PDF check still showed zero separate continuation-marker Parenthetical blocks and zero `88xx..` numeric artifact blocks.
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### PDF Dialogue Continuation Cleanup
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/utils/screenplayImport.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added a targeted PDF numeric-artifact cleanup for standalone and trailing markers like `8833..`, `8822..`, and `8844..`.
+- Kept standalone page number cleanup and title-page cleanup intact.
+- Removed the artificial blank immediately after stripped page/artifact markers so dialogue mode can continue across page breaks.
+- Preserved the existing action paragraph grouping and normal blank-line paragraph boundaries.
+- Kept `(CONT'D)` continuation markers attached to Character cues while leaving normal parentheticals as Parenthetical blocks.
+
+**Verification:**
+- Parser harness confirmed continuation markers attach to Character cues and regular parentheticals remain separate.
+- Tested `/Users/joshuachiara/Desktop/I am awake (12-21-22).pdf`; long dialogue with `(pause)` parentheticals remains Dialogue across the `8833..` page artifact, and numeric `88xx..` artifacts are removed from parsed blocks.
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### PDF Character Continuation Import
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/utils/screenplayImport.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added continuation-marker detection for imported parenthetical text immediately following a Character block.
+- Folded `(CONT'D)`, smart-apostrophe `(CONT’D)`, and dotted continuation variants into the preceding Character cue.
+- Kept normal parentheticals as separate Parenthetical blocks so dialogue sequences still render correctly.
+- Left Writing/Script renderers, contenteditable behavior, page-break logic, and scene parsing behavior otherwise unchanged.
+
+**Verification:**
+- Parser harness confirmed `MARIE` + `(CONT'D)` imports as `MARIE (CONT'D)` while `(nervously)` remains a Parenthetical block.
+- Sample PDF import path produced no separate continuation-marker parenthetical blocks in the parsed output.
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Writing Mood Board Shared Route
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/App.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added a shared `renderSharedMoodBoardModule()` helper in `App.js`.
+- Reused that helper for both the normal production/pre-production `MoodBoard` module case and the Writing workflow Mood Board nav route.
+- Removed duplicated inline Mood Board JSX from the Writing workflow path.
+- Kept the same canonical Mood Board component, selected project, user role/editability, user, and moodboard data callback for both routes.
+- Added the same `10px` content padding for Writing workflow Mood Board rendering.
+- Did not change Mood Board internals, state/storage shape, page/layer/canvas behavior, export behavior, or saved data behavior.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### PDF Import Paragraph Grouping
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/utils/screenplayImport.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Preserved paragraph gaps during positioned PDF text extraction so blank-line boundaries survive import.
+- Changed plain screenplay parsing to accumulate wrapped physical lines into screenplay blocks rather than committing every line as its own block.
+- Grouped wrapped Action paragraphs into one Action element.
+- Grouped wrapped Dialogue lines under the same Character cue into one Dialogue element.
+- Recombined wrapped parentheticals and kept them as Parenthetical elements in dialogue sequences.
+- Kept title-page cleanup and standalone page-number cleanup in the PDF text path.
+- Left Final Draft XML import behavior unchanged.
+
+**Verification:**
+- Tested `/Users/joshuachiara/Desktop/I am awake (12-21-22).pdf`; output starts at `EXT. ALLEY - NIGHT`, excludes title/contact text and standalone page numbers, groups first-scene wrapped Action paragraphs, and preserves wrapped Parenthetical blocks.
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Writing Header Toolbar Refinement
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Removed the old visible `Writing Editor` label.
+- Moved `TARGET` immediately to the right of the unified `WRITING` title.
+- Moved the existing Writing toolbar controls into the unified header row while preserving control behavior.
+- Kept the `Element` selector and controls to its right anchored to the same horizontal position inside the editor-width column as closely as possible.
+- Left Writing editor internals, caret/contenteditable behavior, page rendering, scene window, import behavior, and Writing-to-Pre-Production isolation untouched.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Script Import Popups and Writing Shell
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/App.js`
+- `src/components/ProjectSelector.js`
+- `src/components/modules/Script/Script.js`
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `src/utils/screenplayImport.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Kept Script Breakdown `.fdx`/selectable-text `.pdf` import routed through the shared screenplay import helper.
+- Replaced remaining Script Breakdown import/replace confirmation and alert paths with the existing centered app modal callbacks.
+- Removed browser popup fallbacks from the legacy Script module when App modal callbacks are provided.
+- Replaced Project Selection delete confirmation and delete result browser alerts with a matching centered app-style modal.
+- Added the unified `WRITING` module header and writing-workflow `10px` content padding for the Writing Script submodule.
+- Routed Writing import failure through the app alert callback when available.
+
+**Verification:**
+- Sample screenplay PDF extraction had already been verified against `/Users/joshuachiara/Desktop/I am awake (12-21-22).pdf`, producing recognizable screenplay text and 99 parsed scenes.
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Screenplay PDF Import
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/App.js`
+- `src/components/modules/Script/Script.js`
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `src/utils/screenplayImport.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added a shared `screenplayImport` utility that preserves existing Final Draft XML import and adds selectable-text screenplay PDF extraction/parsing.
+- Updated Script Breakdown upload to accept `.fdx` and `.pdf` while keeping the existing production scene state, page stats, location/character detection, database save, and AI summarization prompt flow.
+- Added Writing import support for `.fdx` and `.pdf` when the Writing editor has no script, converting imported scenes through the existing writing node conversion and draft save path.
+- Kept imported-state behavior tied to existing content state: Script Breakdown hides upload once production scenes exist; Writing hides import/new controls once `noScript` is false.
+- Did not add OCR or a new PDF-only script data shape.
+
+**Verification:**
+- Tested `/Users/joshuachiara/Desktop/I am awake (12-21-22).pdf` through the PDF extraction/parser path; it produced recognizable screenplay text and 99 parsed scenes.
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Props Header Unification
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/App.js`
+- `src/components/modules/Props/Props.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Confirmed the exact Props active module key is `Props`.
+- Added `Props` to the App-level unified module padding condition.
+- Reworked the Props root into the same fixed header and flex content structure used by confirmed reference modules.
+- Set the header title to `PROPS` with the unified module title style.
+- Moved Print Queue and `+ ADD CUSTOM PROP` into the right-aligned header action group.
+- Kept prop filters, prop list, scene breakdown, prop management popup, image/lightbox behavior, scene associations, print queue behavior, and saved data behavior intact.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mood Board Board Title Correction
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/MoodBoard/MoodBoard.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Removed the active board title from the global `MOOD BOARD` module header.
+- Restored the active board title, such as `Mood Board 1`, to the board workspace row directly above the canvas.
+- Kept global Mood Board toolbar controls in the module header row with uppercase labels.
+- Preserved add page, add text, duplicate, delete, grid snap, zoom, fit, export PDF, layers, canvas, pages, layer panel, image/card, presentation, and saved data behavior.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mood Board Header Toolbar
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/MoodBoard/MoodBoard.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Confirmed the exact Mood Board active module key is `MoodBoard` and it is already in the shared App-level `10px` padding condition.
+- Moved the main Mood Board canvas toolbar controls into the unified `MOOD BOARD` header row.
+- Header now contains Add Page, Add Text, Duplicate, Delete, Grid Snap, Zoom, Fit, Export PDF, Layers, active board name, and status text.
+- Removed the old separate main toolbar row so the workspace/content starts one row higher.
+- Preserved contextual selected-item controls and existing canvas, layer, zoom, snap, export, add/delete/duplicate, upload, image/card, presentation, and saved data behavior.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mood Board Header Unification
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/App.js`
+- `src/components/modules/MoodBoard/MoodBoard.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Confirmed the exact Mood Board active module key is `MoodBoard`.
+- Added `MoodBoard` to the App-level unified module padding condition.
+- Added the shared fixed module header above the existing Mood Board workspace.
+- Set the header title to `MOOD BOARD` with the unified module title style.
+- Kept the existing board list, upload/roll controls, canvas toolbar, image/card layout, layer panel, presentation mode, drag/reorder behavior, and saved data behavior intact.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Timeline Header Unification
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/App.js`
+- `src/components/modules/Timeline/Timeline.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Confirmed the exact Timeline active module key is `Timeline`.
+- Added `Timeline` to the App-level unified module padding condition.
+- Reworked the Timeline root into the same fixed header, controls row, and scrollable content structure used by the confirmed reference modules.
+- Set the header title to `TIMELINE` with the unified module title style.
+- Kept primary Timeline actions right-aligned in the header row and uppercased visible header/control labels.
+- Kept Timeline selector, view tabs, and status in a separate controls row below the header.
+- Preserved timeline visualization, event editing, lock behavior, view switching, scrolling, and saved data behavior.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Shot List PG Columns Refinement
+
+**Date:** 2026-05-22
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/ShotList/ShotList.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added visible `PG #` and `PG CNT` labels to the fixed right-side page columns in Shot List scene heading rows.
+- Kept page number and page count immediately to the left of `View Scene`.
+- Preserved Shot List header layout, scene preview behavior, shot controls, editing, filtering, export, and saved data behavior.
+- Confirmed To Do List already uses the exact `ToDoList` App module key, shared `10px` wrapper padding, and unified header structure from the prior pass.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Shot List Row Alignment and To Do List Header
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/App.js`
+- `src/components/modules/ShotList/ShotList.js`
+- `src/components/modules/ToDoList.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Adjusted Shot List scene heading rows so page number and page count use fixed right-side columns immediately before `View Scene`.
+- Kept Shot List scene title/location area flexible so long titles do not shift the page columns or action button.
+- Confirmed the exact To Do List active module key is `ToDoList`.
+- Added `ToDoList` to the App-level unified module padding condition.
+- Reworked To Do List root into the same fixed header and scrollable content structure used by the confirmed reference modules.
+- Set the header title to `TO DO LIST` with the unified module title style.
+- Kept `SHOW/HIDE COMPLETED` and `+ ADD TASK` controls right-aligned in the header.
+- Kept Status, Assigned To, and Category filters in a separate control row below the header.
+- Uppercased visible To Do List header/filter labels while preserving task behavior, completion, filtering, editing, deletion, and saved data behavior.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Shot List — Header Unification
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/App.js`
+- `src/components/modules/ShotList/ShotList.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Confirmed the exact Shot List active module key is `ShotList`.
+- Added `ShotList` to the App-level unified module padding condition.
+- Reworked the desktop Shot List root into the same fixed header and scrollable content structure used by the confirmed reference modules.
+- Set the header title to `SHOT LIST` with the unified module title style.
+- Kept the date filter and `Export PDF` controls together and right-aligned in the header.
+- Kept scene rows, shot controls, shot editing, drag/reorder, PDF export, preview modal, and saved data behavior intact.
+- Updated the no-scenes empty state to use the same header/content structure.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Call Sheet — Wrapper Padding Fix
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/App.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Corrected the unified App-level module padding condition from `Call Sheet` to the actual active module name `CallSheet`.
+- This gives Call Sheet the same `10px` outer wrapper padding as the confirmed reference modules.
+- No Call Sheet document/page preview styling, controls, export behavior, saved data behavior, or unrelated modules were changed in this pass.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Call Sheet — Header Unification
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/App.js`
+- `src/components/modules/CallSheet/CallSheet.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added `Call Sheet` to the App-level unified module padding list.
+- Reworked the desktop Call Sheet root into the same fixed header and scrollable content structure used by the confirmed reference modules.
+- Set the header title to `CALL SHEET` with the unified module title style.
+- Kept the Shooting Day selector plus `Export Call Sheet` and `Export Sides` controls in the same relative group, right-aligned in the header.
+- Kept the call sheet document body in the scrollable content area.
+- Updated the no-shooting-days empty state to use the same header/content structure.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Day Out of Days — Header Button Placement
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/DayOutOfDays/DayOutOfDays.jsx`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Moved `+ Add Manual Event` and `Settings` from the Day Out of Days content controls row into the top header row.
+- Kept the `DAY OUT OF DAYS` heading left-aligned and placed the buttons in a right-aligned header group.
+- Preserved Matrix Filters in their existing content controls area.
+- Preserved existing button handlers, disabled state, and settings modal behavior.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mobile Script Reader — Active Scene Dropdown and Sides Polish
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added production-style mobile scene heading rendering that collapses embedded heading whitespace/newlines before display.
+- Kept scene headings single-rendered and removed the raw `pre-wrap` heading behavior that could force imported heading fragments onto separate lines.
+- Removed the separate `Sides view active` banner.
+- Changed `Sides` button styling so inactive is white/gray like `More`, and active remains blue-filled.
+- Kept `Sides` as a toggle/action; it does not open the `More` / `Script Tools` popup.
+- Added active scene tracking from the mobile script scroll container.
+- Updated the custom scene dropdown field to display the current active scene.
+- Added dropdown row refs and list centering so opening the scene dropdown highlights and centers the active row when possible.
+- Kept `More` / `Script Tools`, search, page jump, filters, Sides Behavior settings, custom scene dropdown, production-scene data source, fixed zoom, and fixed offset intact.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mobile Script Reader — Script Tools Filters and Sides
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Expanded the mobile Script `More` popup into `Script Tools` sections for `Search`, `Page Jump`, `Script Filters`, and a collapsible `Sides Behavior` accordion.
+- Kept the `More` popup free of any scenes grid; scene navigation remains handled by the custom toolbar scene dropdown.
+- Added local search/filter state for text search, character, schedule/shooting day, status, and sides behavior settings.
+- Derived a single local `visibleScenes` list from production scenes plus active search, filters, and sides settings without mutating source scenes.
+- Added search against scene display labels/numbers, headings, script content text, and character cues.
+- Added character options from production `Character` blocks.
+- Added schedule options from already-loaded mobile `shootingDays` / `scheduledScenes` data and status options from `scene.status`.
+- Changed `Sides` so it applies the selected local sides behavior as a toggle, while `More` remains the only button that opens `Script Tools`.
+- Added page jump using rendered page-break markers with a closest-known-page fallback.
+- Kept `SCRIPT_VIEWER_FIXED_ZOOM = 1.32`, `SCRIPT_VIEWER_BODY_X_OFFSET_PX = 9`, production-scenes-only data, and the custom scene dropdown intact.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mobile Script Reader — Sides Toggle and Text Autosizing
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added local `showSidesOnly` state.
+- Changed `Sides` so it toggles sides display state instead of opening the `More` / `Script Tools` popup.
+- Added a visible active state for `Sides` and a compact `Sides view active` banner.
+- Kept `More` as the only toolbar button that opens the `Script Tools` popup.
+- Kept the `Sides Behavior` placeholder section inside `Script Tools`.
+- Added `WebkitTextSizeAdjust: "100%"` and `textSizeAdjust: "100%"` to the shared screenplay base style and scaled script page container to prevent mobile Safari from autosizing wider Scene Heading/Action blocks differently from narrower Dialogue/Parenthetical blocks.
+- Kept `SCRIPT_VIEWER_BODY_X_OFFSET_PX = 9` and `SCRIPT_VIEWER_FIXED_ZOOM = 1.32`.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mobile Script Reader — Font Consistency and Scroll Spacer
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Removed the custom mobile `h2` scene heading render path.
+- Rendered scene headings through `getMobileProductionElementStyle("Scene Heading")`, matching the same duplicated production-style helper used by Action/Character/Dialogue/Parenthetical/Transition/Shot.
+- Kept duplicated production base font family, `12pt` font size, `12pt` line height, color, whitespace, and wrapping behavior shared across all screenplay element types.
+- Kept the duplicate metadata-style scene heading line removed.
+- Trimmed the scroll spacer by the 0.75in page bottom margin and kept only a small 16px bottom buffer after scaled content.
+- Kept fixed `SCRIPT_VIEWER_FIXED_ZOOM = 1.32`, `SCRIPT_VIEWER_BODY_X_OFFSET_PX = 9`, the custom scene dropdown, `More`, `Sides`, and Script Tools shell intact.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mobile Script Reader — Locked Offset and Script Tools Shell
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Removed temporary offset slider UI and `bodyOffsetPx` local state.
+- Locked `SCRIPT_VIEWER_BODY_X_OFFSET_PX = 9`.
+- Kept body alignment calculation as `SCRIPT_VIEWER_BODY_X_OFFSET_PX - (MOBILE_SCRIPT_BODY_LEFT_PX * finalScale)`.
+- Kept fixed `SCRIPT_VIEWER_FIXED_ZOOM = 1.32`.
+- Added a compact `Sides` button at the far right of the mobile Script toolbar.
+- Wired both `More` and `Sides` to a basic `Script Tools` popup shell.
+- Added a `Sides Behavior` section with placeholders for `Day / Shooting Day`, `Character`, `Current Day`, and `Scheduled Scenes`.
+- Matched mobile read-only scene heading style more closely to production `ContinuousScript` h2 style.
+- Kept duplicate metadata heading/status body line removed; status remains only in the custom scene picker.
+- Changed scroll-height initialization/measurement to reduce stale blank space after the final script content.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mobile Script Reader — Offset Slider and Production Body Cleanup
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added temporary local `bodyOffsetPx` state initialized from `SCRIPT_VIEWER_BODY_X_OFFSET_PX = -15`.
+- Added a compact non-persistent offset slider in the mobile Script toolbar with range `-80` to `80`, step `1`, and visible numeric value.
+- Slider updates the readable body offset live via `bodyOffsetPx - (MOBILE_SCRIPT_BODY_LEFT_PX * finalScale)`.
+- Removed the mobile-only `INT/EXT • LOCATION • TIME` metadata line under scene headings.
+- Removed the mobile-only status badge from the script body; compact status remains in the custom scene picker.
+- Changed mobile scene heading rendering to match production Script Breakdown's read-only h2-style heading more closely.
+- Kept production duplicated body styles for Action/Character/Dialogue/Parenthetical/Transition/Shot.
+- Observed the rendered page in the scroll-height measurement path so the vertical spacer tracks content height more reliably.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mobile Script Reader — Custom Scene Picker and Body Alignment
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Removed the native scene `<select>` from `MobileScriptModule`.
+- Added a custom toolbar scene field that opens a compact popup below the one-line Script toolbar.
+- Popup rows show scene display label, heading, viewer-estimated page number, and scheduled status badge when available.
+- Selecting a row closes the popup and scrolls the script viewer to that scene.
+- Kept `More` as a button only; no More/Filters modal was added.
+- Replaced outer-page offset tuning with `SCRIPT_VIEWER_BODY_X_OFFSET_PX = -15`.
+- Body alignment subtracts the scaled 1.4in page/body margin before applying the body offset, so the tuning constant visibly moves the readable script body.
+- Kept fixed 132% zoom, production scene data source, production-style formatting, page breaks, and browser pinch prevention unchanged.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mobile Script Reader — Screen-Space Offset and Compact Select
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Replaced the transform-combined horizontal offset with `SCRIPT_VIEWER_X_OFFSET_SCREEN_PX = -15`.
+- Applied the offset to an unscaled outer wrapper using `left: -15px`, while the inner page keeps `transform: scale(finalScale)`.
+- Kept `SCRIPT_VIEWER_FIXED_ZOOM = 1.32`.
+- Preserved the one-line toolbar layout and `More` button.
+- Tightened the closed native scene select with 5px toolbar side padding, smaller font, compact height, and compact padding.
+- Did not implement the More modal or change script formatting/data source.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mobile Script Reader — One-Line Toolbar and Offset
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Set `SCRIPT_VIEWER_X_OFFSET_PX = -15` for the fixed-scale mobile Script page.
+- Kept `SCRIPT_VIEWER_FIXED_ZOOM = 1.32` and the existing fit-to-width baseline calculation.
+- Collapsed the mobile Script toolbar from two rows to one compact row.
+- Toolbar now shows Script title and scene count on the left, native Scenes dropdown in the center, and a `More` button at the far right.
+- Removed the read-only pill from the toolbar and kept zoom controls absent.
+- Made the native scene select field more compact with smaller font, compact height, and near full available center width.
+- Left browser pinch prevention, production-style formatting, page breaks, and production-scene data source unchanged.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mobile Script Reader — Fixed 132% Viewer Zoom
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Removed mobile Script reader manual zoom state, refs, touch listeners, +/- buttons, and zoom label.
+- Kept app-level browser pinch prevention intact.
+- Added `SCRIPT_VIEWER_FIXED_ZOOM = 1.32` and `SCRIPT_VIEWER_X_OFFSET_PX = 0`.
+- Changed the mobile Script page transform to `translateX(${SCRIPT_VIEWER_X_OFFSET_PX}px) scale(${finalScale})`, with `finalScale` derived from fit-to-width scale times the fixed 132% zoom.
+- Kept the main mobile toolbar and Script toolbar outside the scaled script wrapper.
+- Left production-style script formatting, page breaks, and production-scene data source unchanged.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+### Mobile Script Reader — Production Formatting and Toolbar
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Replaced the simplified mobile-only screenplay formatting with duplicated production Script Breakdown formatting constants from `Script.js`.
+- Mobile reader now uses production-style page width, body margins, per-element indents/widths, uppercase behavior, and dialogue/parenthetical spacing.
+- Wrapped the script page in horizontal overflow so mobile preserves production-style relative formatting instead of collapsing it into percentage indents.
+- Reworked the scene dropdown into a sticky mobile Script toolbar with module label, read-only status, current scene indicator, and Scenes navigation control.
+- Kept the reader read-only and production-scenes-only.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+---
+
+### Mobile Script Reader — Production Scenes Read-Only MVP
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Enabled the existing mobile `Script` module option.
+- Added `MobileScriptModule`, a read-only mobile script reader that uses production `scenes` loaded from the `scenes` table.
+- Added scene jump dropdown with smooth scroll to scene sections.
+- Rendered scene display labels, headings, metadata location/time summary, status badge, and content blocks with mobile-readable screenplay formatting.
+- Did not use WritingScript, writing draft nodes, writing localStorage, beats, or writing timeline state.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+---
+
+### Production Script Breakdown — Viewer-Based Page Stats and Wrap Spacing
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/Script/Script.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Replaced SceneList's independent `calculateScenePageStats()` fallback with page stats emitted by production `ContinuousScript`.
+- Added a single viewer pagination pass that generates both viewer page breaks and per-scene `{ pageNumber, startPage, timelineStartPage, timelinePageLength }`.
+- Passed viewer page stats from `ContinuousScript` up to `Script` and down into `SceneList`.
+- Adapted production script element wrapping/spacing constants from the Writing editor: screenplay body margins, per-element widths/indents, line wrapping, and dialogue/parenthetical spacing.
+- Kept production edit mode and existing production save/database paths intact.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+---
+
+### Stripboard Schedule — Lunch Divider Reflow and Empty Target Fill
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/StripboardSchedule/StripboardSchedule.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Added empty target detection for schedule scene blocks with no scene/custom/lunch/end-of-day content.
+- Dropping an available or scheduled scene/custom item onto an empty block now fills that block instead of inserting before/after it.
+- Added lunch-divider reflow helpers so non-lunch scheduled moves reorder the non-lunch sequence and then restore lunch to its previous divider index.
+- Lunch itself still moves through the existing insert/reflow path when dragged.
+- Kept `preserveEmpty` rows, UUID `+` rows, immediate `+` row sync, insert/reflow behavior, and shooting-day persistence behavior intact.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+---
+
+### Stripboard Schedule — Preserve Intentional Empty Rows During Reorder
+
+**Date:** 2026-05-21
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/StripboardSchedule/StripboardSchedule.js`
+- `HANDOFF.md`, `AI_TASK_LOG.md`
+
+**Changes:**
+- Stopped the reorder helper from globally filtering every empty scene block during scene/custom/lunch moves.
+- Reorder now removes only the dragged source block and inserts it before/after the drop target, preserving all other empty rows.
+- Scene removal still removes the specific scene block so that removal collapses that row only.
+- New `+` empty rows now use UUID ids, are marked with `preserveEmpty: true`, and sync immediately via the existing schedule-block update path.
+- Empty-row removal and custom-item edits now also sync the changed day blocks immediately, reducing stale realtime overwrite windows.
+
+**Verification:**
+- `npm run build` — passed.
+- Generated build artifacts were restored/cleaned.
+
+---
+
 ### Writing Timeline Visibility Fix — Scene and Beats Tracks Independent
 
 **Date:** 2026-05-16

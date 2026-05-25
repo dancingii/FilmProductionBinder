@@ -16,6 +16,12 @@ export function getSceneEstimatedLines(scene) {
 }
 
 export function getSceneEstimatedPages(scene) {
+  const writingPageLength = Number(scene?.metadata?.writingTimelinePageLength);
+
+  if (Number.isFinite(writingPageLength) && writingPageLength > 0) {
+    return Math.max(0.125, writingPageLength);
+  }
+
   const lines = getSceneEstimatedLines(scene);
   return Math.max(0.125, lines / LINES_PER_PAGE);
 }
@@ -65,10 +71,16 @@ export function getSceneTimelineData(scenes = [], targetPages = DEFAULT_TARGET_P
 
   return scenes.map((scene, index) => {
     const pageLength = getSceneEstimatedPages(scene);
-    const startPage = getSceneTimelineStartPage(scene, fallbackCumulativePages);
+    const hasExplicitStartPage =
+      scene?.timelineStartPage !== null &&
+      scene?.timelineStartPage !== undefined &&
+      scene?.timelineStartPage !== "";
+    const startPage = hasExplicitStartPage
+      ? getSceneTimelineStartPage(scene, fallbackCumulativePages)
+      : fallbackCumulativePages;
     const endPage = startPage + pageLength;
 
-    fallbackCumulativePages += pageLength;
+    fallbackCumulativePages = endPage;
 
     return {
       scene,
@@ -118,15 +130,22 @@ export function getSourceClosedTimelineScenes(scenes = [], movedSceneIndex) {
 
   const timelineItems = scenes.map((scene, index) => {
     const pageLength = getSceneEstimatedPages(scene);
-    const startPage = getSceneTimelineStartPage(scene, fallbackCumulativePages);
+    const hasExplicitStartPage =
+      scene?.timelineStartPage !== null &&
+      scene?.timelineStartPage !== undefined &&
+      scene?.timelineStartPage !== "";
+    const startPage = hasExplicitStartPage
+      ? getSceneTimelineStartPage(scene, fallbackCumulativePages)
+      : fallbackCumulativePages;
+    const endPage = startPage + pageLength;
 
-    fallbackCumulativePages += pageLength;
+    fallbackCumulativePages = endPage;
 
     return {
       index,
       pageLength,
       startPage,
-      endPage: startPage + pageLength,
+      endPage,
     };
   });
 
@@ -170,17 +189,24 @@ export function rippleTimelineSceneMove(
 
   const timelineItems = scenes.map((scene, index) => {
     const pageLength = getSceneEstimatedPages(scene);
-    const startPage = getSceneTimelineStartPage(scene, fallbackCumulativePages);
+    const hasExplicitStartPage =
+      scene?.timelineStartPage !== null &&
+      scene?.timelineStartPage !== undefined &&
+      scene?.timelineStartPage !== "";
+    const startPage = hasExplicitStartPage
+      ? getSceneTimelineStartPage(scene, fallbackCumulativePages)
+      : fallbackCumulativePages;
+    const endPage = startPage + pageLength;
     const isMovedScene = index === movedSceneIndex;
 
-    fallbackCumulativePages += pageLength;
+    fallbackCumulativePages = endPage;
 
     return {
       scene,
       index,
       pageLength,
       startPage,
-      endPage: startPage + pageLength,
+      endPage,
       isMovedScene,
     };
   });

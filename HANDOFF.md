@@ -6,6 +6,1060 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ## Current Known State
 
+## Codex Handoff — Writing Public Share Watermark Branding
+
+**Completed 2026-05-25:** Extended public script share watermark customization without changing DB schema or RPC SQL.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `src/components/modules/WritingScript/PublicScriptShareViewer.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Share Script Watermark Settings now support project-name default text, optional recipient name text, and URL-based branding image settings.
+- Watermark settings are still saved per link in `script_share_links.watermark_settings`.
+- Public viewer defaults to the project name when no custom watermark text is set, then falls back to `SHARED SCRIPT`.
+- Recipient names are only rendered in the public watermark when explicitly enabled.
+- Branding images render as a subtle, non-interactive overlay and do not affect normal authenticated Writing.
+- Existing links with older or null `watermarkSettings` continue to load safely.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned; `git status --short build` showed no output.
+
+## Codex Handoff — Writing Page Body Line Offset Calibration
+
+**Completed 2026-05-22:** Added a small pagination-only line offset to fine-tune Writing page fit after the physical margin calculation.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `pageBodyLineOffset` defaults to `1`.
+- The LAYOUT TUNING panel now includes `Page body line offset` from `-3` to `3` lines.
+- `getEffectivePageBodyHeightLines()` still derives the physical base from page height, top margin, bottom margin, and line height, then adds the offset.
+- With current defaults, the physical base is 54 lines and the effective pagination fit is 55 lines.
+- The offset affects pagination fit only; visual page margins remain `1in` top and `1in` bottom.
+- Scene Heading keep-together rules and block spacing values were not changed.
+- No parser/import logic, PDF import, `(CONT'D)` logic, Script.js, Script Breakdown, saved content, contenteditable/caret internals, or unrelated modules were changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Writing Physical Page Margin Pagination
+
+**Completed 2026-05-22:** Updated Writing pagination so rendered page body margins and page-break calculations use the same physical page geometry.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Writing top margin defaults remain `1in`.
+- Writing bottom margin defaults are now `1in`.
+- Pagination now derives effective body lines from `PAGE_LAYOUT.pageHeight`, `pageMarginTopIn`, `pageMarginBottomIn`, and `lineHeightPt`.
+- With 11in page height, 1in top/bottom margins, and 12pt line height, the derived usable body height is 54 lines.
+- The top and bottom margin sliders now affect page breaks because they feed the same derived line count used by pagination.
+- The visual page body still uses the same top/bottom margin tuning values.
+- The independent `pageBodyHeightLines` tuning control was removed to avoid contradicting physical margins.
+- Scene Heading keep-together behavior remains in place.
+- No parser/import logic, PDF import, `(CONT'D)` logic, Script.js, Script Breakdown, saved content, contenteditable/caret internals, or unrelated modules were changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Writing Scene Heading Final Pagination Pass + Top Margin Default
+
+**Completed 2026-05-22:** Fixed the Writing top margin fallback and added a final rendered-page Scene Heading correction pass.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `PAGE_LAYOUT.pageMarginTop` now defaults to `1in`.
+- `DEFAULT_LAYOUT_TUNING.pageMarginTopIn` remains `1`.
+- `pageBodyHeightLines` remains `55`.
+- `paginatedPages` is now produced by running `fixTrailingSceneHeadings()` after `paginateNodesForScreen()`.
+- The final pass moves a trailing meaningful Scene Heading from a non-final page to the start of the next page, preserving node order and avoiding empty rendered pages.
+- Guarded debug output behind `window.__DEBUG_WRITING_PAGINATION` logs finalized page diagnostics, including last meaningful node type/text, whether correction ran, and the next page's first meaningful node type/text.
+- No parser/import logic, `(CONT'D)` logic, Script.js, Script Breakdown, saved content, contenteditable/caret internals, spacing values, or unrelated modules were changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — PDF Action Page-Boundary Cleanup + Writing Scene Heading Guard
+
+**Completed 2026-05-22:** Fixed the scoped PDF action over-merge case and adjusted Writing page capacity/Scene Heading keep-together behavior.
+
+Files changed:
+- `src/utils/screenplayImport.js`
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- PDF artifact cleanup now preserves a paragraph boundary when a standalone page artifact/page number is removed between two action-looking lines and the previous action line is sentence-complete.
+- Wrapped action lines still group normally; mid-sentence action continuation across a page break is not forcibly split.
+- Inline numeric artifact cleanup and existing page/artifact removal remain in place.
+- Writing `pageBodyHeightLines` defaults now use `55` in both `PAGE_LAYOUT` and the temporary layout tuning defaults.
+- The Scene Heading hard page-bottom guard now forces a break when fewer than `6` tuned lines remain before placement.
+- The deterministic trailing Scene Heading finalization post-pass remains in place.
+- No `(CONT'D)` logic, Script.js, Script Breakdown, saved content, contenteditable/caret internals, or layout tuning panel behavior was changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Writing Trailing Scene Heading Pagination Post-Pass
+
+**Completed 2026-05-22:** Added deterministic page finalization logic so Writing pages do not end with a meaningful Scene Heading.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `paginateNodesForScreen` now finalizes pages through a local helper before pushing them.
+- Before a page is pushed, the helper finds the last meaningful node on that page.
+- If the last meaningful node is a Scene Heading, that heading and any trailing non-meaningful nodes are removed from the current page and carried to the start of the next page.
+- If removing the heading leaves the page empty, no empty page is pushed.
+- Existing line-estimate guards and tuning behavior remain in place.
+- Guarded debug output behind `window.__DEBUG_WRITING_PAGINATION` logs when a trailing Scene Heading is moved.
+- No spacing values, tuning panel behavior, parser/import logic, `(CONT'D)` handling, Script Breakdown, saved content, or contenteditable internals were changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Writing Scene Heading Hard Keep Guard
+
+**Completed 2026-05-22:** Added a hard remaining-lines guard for Writing Scene Heading pagination.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `paginateNodesForScreen` now calculates `remainingLines = linesPerPage - currentLineCount` before placing each node.
+- If the current node is a Scene Heading, the current page already has content, and fewer than 4 lines remain, pagination forces a page break before placing that heading.
+- Existing next-meaningful-node keep-together checks remain in place.
+- Guarded debug output behind `window.__DEBUG_WRITING_PAGINATION` now includes `remainingLines` and `sceneHeadingHardBreak`.
+- No spacing values, tuning UI, parser/import logic, `(CONT'D)` handling, Script Breakdown, saved content, or contenteditable internals were changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Writing Keep-Together Pagination Refinement
+
+**Completed 2026-05-22:** Tightened Writing keep-together pagination and set the temporary tuning defaults to the current testing baseline.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Updated temporary `DEFAULT_LAYOUT_TUNING` to the provided current baseline values: top margin `1in`, Scene Heading margins `22pt/13pt`, and `pageBodyHeightLines: 54`.
+- Keep-together now finds the next meaningful node instead of failing when an empty/harmless node sits between structural elements.
+- Scene Heading keep-with-next now uses the next meaningful content line.
+- Character keep-with-dialogue now supports an optional meaningful Parenthetical before the first Dialogue line.
+- Parenthetical keep-with-dialogue now checks the next meaningful Dialogue line.
+- Added guarded pagination diagnostics behind `window.__DEBUG_WRITING_PAGINATION`.
+- No parser/import logic, `(CONT'D)` import behavior, Script Breakdown, saved content, or contenteditable internals were changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Writing Pagination Keep-Together Rules
+
+**Completed 2026-05-22:** Added Final Draft-style keep-together checks to Writing pagination.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Added minimum keep-together estimates for Scene Heading, Character, and Parenthetical nodes inside `paginateNodesForScreen`.
+- Scene Heading moves to the next page if there is not room for the heading plus the first following content line.
+- Character cue moves to the next page if there is not room for the cue, optional following Parenthetical, and at least the first Dialogue line.
+- Parenthetical moves to the next page if there is not room for it plus at least one following Dialogue line.
+- Estimates use the existing tuned layout values and line estimates.
+- Existing visual dialogue continuation cue behavior remains render-only; no fake blocks or script data mutations were added.
+- Layout tuning sliders, parser/import logic, `(CONT'D)` import handling, Script Breakdown, and contenteditable internals were not changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Writing Layout Tuning Panel Portal
+
+**Completed 2026-05-22:** Moved the temporary Writing `LAYOUT TUNING` panel into a `document.body` portal so it escapes the editor/sidebar stacking context.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Imported `createPortal` from `react-dom`.
+- Extracted the existing tuning panel JSX into a local `layoutTuningPanel` constant and renders it with `createPortal(layoutTuningPanel, document.body)`.
+- Preserved the same fixed top/right visual position and high z-index.
+- Slider behavior, tuning values, JSON readout, spacing constants, parser/import/save logic, `(CONT'D)` handling, and Script Breakdown were not changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Writing Layout Tuning Panel Stacking
+
+**Completed 2026-05-22:** Raised the temporary Writing `LAYOUT TUNING` panel above the scenes/sidebar UI.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Increased the fixed layout tuning panel z-index from `1400` to `2147483647`.
+- Panel location, sliders, tuning values, and live behavior were not changed.
+- No parser/import/save logic, `(CONT'D)` handling, Script Breakdown, or spacing constants were changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Writing Draft Quota Fallback
+
+**Completed 2026-05-22:** Fixed Writing draft save failures when full imported scripts exceed localStorage quota.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `src/components/modules/WritingScript/useWritingDraftState.js`
+- `src/components/modules/WritingScript/writingDraftPersistence.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Small Writing drafts still save to the existing `writingScriptDraft:<project-id>` localStorage key.
+- If localStorage throws `QuotaExceededError`, the full draft payload is saved to native IndexedDB and localStorage stores only a small marker pointing to that IndexedDB record.
+- Writing draft load now checks that marker and restores oversized drafts from IndexedDB.
+- The existing `useWritingDraftState` helper now uses the same async safe load/save helpers.
+- Repeated save-error console spam is avoided by warning once per oversized payload and suppressing repeated identical save errors.
+- In-memory draft state is not cleared when a save fallback is needed.
+- No parser/import logic, `(CONT'D)` handling, Script Breakdown, editor rendering, or contenteditable internals were changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Temporary Writing Layout Tuning Panel
+
+**Completed 2026-05-22:** Added a temporary live layout tuning panel to the Writing screenplay editor.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Added a floating `LAYOUT TUNING` button/panel inside `WritingScriptEditor.jsx`.
+- Panel sliders control page top margin, page bottom margin, Scene Heading margins, Action margins, Character margins, Parenthetical margins, Dialogue margins, Transition margins, line height, and page body line count.
+- Defaults match the current hard-coded Writing layout values.
+- Slider values update render styles live and are also used by pagination estimates, scene stats, and dialogue overflow splitting.
+- Added a copyable JSON readout of the current tuning values for later hard-coding.
+- Values are local component state only and are not persisted to project/script data.
+- PDF import, `(CONT'D)` handling, parser/classification logic, Script Breakdown, page content data, and contenteditable internals were not changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Writing Page Spacing Tuning
+
+**Completed 2026-05-22:** Tuned only the Writing screenplay page spacing/layout constants.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScriptEditor.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Reduced Scene Heading visual spacing from `24pt` before/after to `12pt` before/after for a cleaner one-line screenplay gap.
+- Updated the matching pagination estimator so Scene Heading before/after spacing counts as one line instead of two.
+- Adjusted Writing page body line capacity from 54 to 56 lines so visual page breaks better match the rendered 8.5x11 page body and bottom margin.
+- Action, Dialogue, Character, Parenthetical content, import parsing, `(CONT'D)` logic, page-break rendering internals, and editor/contenteditable behavior were not changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — PDF Continuation UI Path Normalization
+
+**Completed 2026-05-22:** Added a shared post-import continuation-marker normalization step so the actual App/Writing import path cannot keep `(CONT'D)` as a separate Parenthetical block.
+
+Files changed:
+- `src/utils/screenplayImport.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Confirmed both Script Breakdown and Writing import through `parseScriptFile()` from `src/utils/screenplayImport.js`.
+- Added `normalizeCharacterContinuationMarkers()` to walk imported scene blocks after parsing.
+- If a Parenthetical block whose text is exactly a continuation marker follows a Character block, it is appended to that Character cue and the separate Parenthetical block is removed.
+- Added a parser fallback for continuation marker lines that appear after an extracted blank but still immediately follow a Character block in scene content.
+- Normal parentheticals like `(pause)` and `(confused)` remain separate Parenthetical blocks.
+- No renderer, contenteditable, page-break, or editor internals were changed.
+
+Verification:
+- Harness verified `ROLLAND` + `(CONT'D)` normalizes to `ROLLAND (CONT'D)` before state receives it.
+- Harness verified normal parentheticals remain separate.
+- Sample PDF check still reports zero separate continuation-marker Parenthetical blocks and zero `88xx..` numeric artifact blocks.
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — PDF Dialogue Continuation Cleanup
+
+**Completed 2026-05-22:** Tightened PDF screenplay import cleanup so page artifacts do not break dialogue context.
+
+Files changed:
+- `src/utils/screenplayImport.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Added targeted cleanup for obvious PDF numeric artifacts such as `8833..`, `8822..`, `8844..`, including standalone artifact lines and artifact fragments appended to dialogue/action lines.
+- Removed the blank line immediately after a stripped PDF page/artifact marker so dialogue can continue across page breaks instead of being reclassified as Action.
+- Existing standalone page number cleanup remains in place.
+- `(CONT'D)`/`(CONT’D)` continuation markers still fold into the preceding Character cue, while normal parentheticals remain separate Parenthetical blocks.
+- Parser/editor renderers, contenteditable internals, page-break rendering, and saved data shape were not changed.
+
+Verification:
+- Parser harness confirmed `MARIE` + `(CONT'D)` imports as `MARIE (CONT'D)` and normal parentheticals stay separate.
+- Tested `/Users/joshuachiara/Desktop/I am awake (12-21-22).pdf`; long MARIE dialogue across `8833..`/page-break cleanup remains Dialogue, `(pause)` remains Parenthetical, and `88xx..` artifacts no longer appear in parsed blocks.
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — PDF Character Continuation Import
+
+**Completed 2026-05-22:** Fixed PDF/plain screenplay import normalization for character continuation markers.
+
+Files changed:
+- `src/utils/screenplayImport.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- A Parenthetical block immediately following a Character block is now folded into the Character text only when it is a continuation marker such as `(CONT'D)`, `(CONT’D)`, or `(CONT'D.)`.
+- Imported output now renders cues like `MARIE (CONT'D)` on the character cue line instead of as a separate parenthetical line.
+- Regular parentheticals such as `(nervously)` and `(she tries to force a smile)` remain separate Parenthetical blocks below the cue.
+- No renderer, editor, page-break, scene parsing, or saved data shape changes were made.
+
+Verification:
+- Parser harness confirmed continuation markers attach to Character blocks while normal parentheticals remain separate.
+- Checked the sample PDF import path; no separate continuation-marker parenthetical blocks were produced in that sample parse.
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Writing Mood Board Shared Route
+
+**Completed 2026-05-22:** Routed the Writing workflow Mood Board nav item through the same shared Mood Board module render path used by the rest of the app.
+
+Files changed:
+- `src/App.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Added `renderSharedMoodBoardModule()` in `App.js` and use it for both the production/pre-production `MoodBoard` module case and the Writing workflow Mood Board nav item.
+- Removed the duplicated inline Mood Board JSX from the Writing workflow route.
+- Writing Mood Board now receives the same canonical `MoodBoard` component, props, user role/editability, selected project, user, and `onMoodboardDataChange` behavior as the normal module.
+- Writing Mood Board now receives the same 10px content wrapper padding as the shared module shell.
+- No Mood Board module internals, data storage, page/layer/canvas behavior, export behavior, or saved data behavior were changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — PDF Import Paragraph Grouping
+
+**Completed 2026-05-22:** Refined selectable-text PDF screenplay import so wrapped visual lines become proper screenplay blocks.
+
+Files changed:
+- `src/utils/screenplayImport.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- PDF extraction now preserves paragraph gaps from positioned PDF text instead of returning only flat physical lines.
+- The plain screenplay parser now accumulates wrapped Action lines into one Action block until a blank line or screenplay boundary.
+- Dialogue lines under the same character cue are accumulated into one Dialogue block until a blank line, parenthetical, new cue, scene heading, transition, or other boundary.
+- Wrapped/multiline parentheticals are recombined and retained as Parenthetical blocks.
+- Standalone page numbers and title-page material before `FADE IN:` or the first scene heading remain ignored.
+- FDX import path was not changed.
+
+Verification:
+- Tested `/Users/joshuachiara/Desktop/I am awake (12-21-22).pdf`; first scene imports as `EXT. ALLEY - NIGHT`, title/contact text is not imported, standalone page numbers are ignored, wrapped first-scene action lines are grouped into paragraph blocks, and wrapped parentheticals remain parentheticals.
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Writing Header Toolbar Refinement
+
+**Completed 2026-05-22:** Moved the Writing toolbar controls into the unified `WRITING` module header row.
+
+Files changed:
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Removed the old visible `Writing Editor` text from the toolbar.
+- Moved `TARGET` immediately next to the `WRITING` title.
+- Moved the `Element` selector, save status, scene/beat zoom controls, written/remaining page counter, import/new script controls, and settings into the same header row.
+- Kept the `Element` selector group anchored to the same horizontal position inside the 8.5in editor column while moving it vertically into the header.
+- Left the Writing editor/contenteditable internals, page rendering, scene window, import behavior, and Writing isolation behavior unchanged.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Script Import Popups and Writing Shell
+
+**Completed 2026-05-22:** Finished the expanded screenplay import/pass by replacing browser popups in Script Breakdown and Project Selection and unifying the Writing shell.
+
+Files changed:
+- `src/App.js`
+- `src/components/ProjectSelector.js`
+- `src/components/modules/Script/Script.js`
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `src/utils/screenplayImport.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Script Breakdown import continues to accept `.fdx` and selectable-text `.pdf` through the shared screenplay import utility.
+- Script Breakdown import success/summarization, import failures, replace-scene messages, and Script module confirmations now use app-style centered modals instead of browser `alert`/`confirm`.
+- Project Selection delete confirmation and delete success/failure messages now use the same centered app-style modal pattern instead of browser popups.
+- Writing import uses the shared screenplay import helper and routes import failure through the app modal when available.
+- Writing in the writing workflow now receives the same `10px` content padding for the Script submodule and has a unified `WRITING` header row above the existing Writing toolbar/editor.
+
+Verification:
+- Sample selectable-text PDF extraction was verified in the prior import pass with `/Users/joshuachiara/Desktop/I am awake (12-21-22).pdf`, producing recognizable screenplay lines and 99 parsed scenes.
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Screenplay PDF Import
+
+**Completed 2026-05-22:** Added selectable-text screenplay PDF import support to production Script Breakdown and Writing import flows.
+
+Files changed:
+- `src/App.js`
+- `src/components/modules/Script/Script.js`
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `src/utils/screenplayImport.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Added a shared screenplay import utility for existing Final Draft XML import plus selectable-text PDF extraction.
+- Script Breakdown upload now accepts `.fdx` and `.pdf`; imported production scenes still flow through the existing App script state, page stats, location detection, character detection, database save, and AI summarization prompt.
+- Writing now exposes an import button only when no writing script exists; it accepts `.fdx` and `.pdf`, converts imported scenes into writing nodes, and uses the existing writing draft save path.
+- Imported-state behavior is driven by existing content state (`scenes.length` in Script Breakdown and `noScript` in Writing), not by a separate duplicated flag.
+- PDF support is text extraction only; OCR was not added.
+
+Verification:
+- Tested `/Users/joshuachiara/Desktop/I am awake (12-21-22).pdf` through the PDF extraction/parser path; it produced recognizable screenplay lines and 99 parsed scenes.
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Props Header Unification
+
+**Completed 2026-05-22:** Unified the desktop Props module header with the production/pre-production module header pattern.
+
+Files changed:
+- `src/App.js`
+- `src/components/modules/Props/Props.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- The exact active module key is `Props`; it is now included in the App-level `10px` module wrapper padding condition.
+- Props root now uses the shared fixed header plus scrollable/flex content structure.
+- Header title is `PROPS` with the unified `17px`, `0.08em` letter spacing style.
+- Print queue and `+ ADD CUSTOM PROP` remain available and are right-aligned in the header row.
+- Existing prop filters, prop list, scene breakdown, prop management popup, image/lightbox behavior, scene associations, print queue behavior, and saved data behavior were preserved.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mood Board Board Title Correction
+
+**Completed 2026-05-22:** Corrected Mood Board header/title separation after moving global toolbar controls.
+
+Files changed:
+- `src/components/modules/MoodBoard/MoodBoard.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `MOOD BOARD` remains the global module title in the unified module header.
+- The active board title, such as `Mood Board 1`, was removed from the global header and restored to the board workspace row directly above the canvas.
+- Global toolbar controls remain in the `MOOD BOARD` header row with uppercase labels.
+- The old separate global toolbar row remains removed; the board title row now keeps the board title visually associated with the canvas.
+- Existing add page, add text, duplicate, delete, grid snap, zoom, fit, export PDF, layers, canvas, pages, layer panel, image/card, presentation, and saved data behavior were preserved.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mood Board Header Toolbar
+
+**Completed 2026-05-22:** Moved Mood Board's main canvas toolbar controls into the unified `MOOD BOARD` header row.
+
+Files changed:
+- `src/components/modules/MoodBoard/MoodBoard.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Confirmed the exact active module key is `MoodBoard` and it is already included in the App-level `10px` module wrapper padding condition.
+- Moved Add Page, Add Text, Duplicate, Delete, Grid Snap, Zoom, Fit, Export PDF, Layers, active board name, and status text into the main `MOOD BOARD` header row.
+- Removed the old separate main toolbar row above the canvas workspace so the workspace shifts up into that space.
+- Contextual selected-item controls remain below the header and retain their existing behavior.
+- Mood board pages, canvas workspace, layers, zoom, snap, export, add/delete/duplicate behavior, uploads, image/card behavior, presentation mode, and saved data behavior were preserved.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mood Board Header Unification
+
+**Completed 2026-05-22:** Unified the desktop Mood Board module header with the production/pre-production module header pattern.
+
+Files changed:
+- `src/App.js`
+- `src/components/modules/MoodBoard/MoodBoard.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- The exact active module key is `MoodBoard`; it is now included in the App-level `10px` module wrapper padding condition.
+- Mood Board root now uses the shared fixed module header above the existing two-pane mood board workspace.
+- Header title is `MOOD BOARD` with the unified `17px`, `0.08em` letter spacing style.
+- Existing board list, upload/roll controls, canvas toolbar, image/card layout, layer panel, presentation mode, drag/reorder behavior, and saved data behavior were preserved.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Timeline Header Unification
+
+**Completed 2026-05-22:** Unified the desktop Timeline module header with the production/pre-production module header pattern.
+
+Files changed:
+- `src/App.js`
+- `src/components/modules/Timeline/Timeline.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- The exact active module key is `Timeline`; it is now included in the App-level `10px` module wrapper padding condition.
+- Timeline root now uses the shared fixed header plus separate controls row and flex content structure.
+- Header title is `TIMELINE` with the unified `17px`, `0.08em` letter spacing style.
+- Primary Timeline buttons remain right-aligned in the header row with uppercase labels.
+- Timeline selector, view mode tabs, and detection status remain in a separate controls row below the header with uppercase visible labels.
+- Timeline events, editing, placement, lock behavior, view switching, scrolling, and saved data behavior were preserved.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Shot List PG Columns Refinement
+
+**Completed 2026-05-22:** Added visible `PG #` and `PG CNT` labels to the Shot List scene heading row page columns.
+
+Files changed:
+- `src/components/modules/ShotList/ShotList.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Shot List scene heading rows now show fixed right-side `PG #` and `PG CNT` label/value columns immediately before `View Scene`.
+- Page number and page count values remain aligned across rows regardless of scene heading length.
+- The existing Shot List module header, scene preview behavior, shot controls, editing, filtering, export, and saved data behavior were preserved.
+- To Do List was inspected; the exact active module key remains `ToDoList` and it already uses the unified App-level `10px` padding plus unified header structure from the prior pass.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Shot List Row Alignment and To Do List Header
+
+**Completed 2026-05-21:** Refined Shot List scene heading rows and unified the desktop To Do List module header.
+
+Files changed:
+- `src/App.js`
+- `src/components/modules/ShotList/ShotList.js`
+- `src/components/modules/ToDoList.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Shot List scene heading rows now keep page number and page count in fixed right-side columns immediately before `View Scene`.
+- Long scene title/location text no longer shifts the page columns or `View Scene` action.
+- `ShotList` remains in the App-level `10px` module wrapper padding condition.
+- The exact To Do List active module key is `ToDoList`; it is now included in the App-level `10px` module wrapper padding condition.
+- To Do List root now uses the shared fixed header plus scrollable content layout.
+- Header title is `TO DO LIST` with the unified `17px`, `0.08em` letter spacing style.
+- `SHOW/HIDE COMPLETED` and `+ ADD TASK` remain available and are right-aligned in the header row.
+- Status, Assigned To, and Category filters remain in a separate control row below the header.
+- Visible To Do List header/filter labels were uppercased; task behavior, completion, filtering, editing, deletion, and saved data behavior were preserved.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Shot List Header Unification
+
+**Completed 2026-05-21:** Unified the desktop Shot List module header with the production/pre-production module header pattern.
+
+Files changed:
+- `src/App.js`
+- `src/components/modules/ShotList/ShotList.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- The actual active module key is `ShotList`; it is now included in the App-level `10px` module wrapper padding condition.
+- Shot List root now uses the shared fixed header plus scrollable content layout.
+- Header title is `SHOT LIST` with the unified `17px`, `0.08em` letter spacing style.
+- Date filter and `Export PDF` controls remain available and are right-aligned in the header row.
+- Shot List scene rows, shot editing, drag/reorder, PDF export, scene preview modal, and saved data behavior were preserved.
+- The empty state for no scenes also uses the unified header/content structure.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Call Sheet Wrapper Padding Fix
+
+**Completed 2026-05-21:** Corrected Call Sheet's App-level module padding key.
+
+Files changed:
+- `src/App.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- The active module name is `CallSheet`, not `Call Sheet`.
+- Updated the unified App wrapper padding condition to match `CallSheet`, so Call Sheet now receives the same `10px` wrapper padding as the confirmed reference modules.
+- No Call Sheet document/page-preview layout or module functionality was changed in this pass.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Call Sheet Header Unification
+
+**Completed 2026-05-21:** Unified the desktop Call Sheet module header with the production/pre-production module header pattern.
+
+Files changed:
+- `src/App.js`
+- `src/components/modules/CallSheet/CallSheet.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Call Sheet now receives the same App-level `10px` module padding as the confirmed reference modules.
+- Call Sheet root now uses the shared fixed header plus scrollable content layout.
+- Header title is `CALL SHEET` with the unified `17px`, `0.08em` letter spacing style.
+- Shooting Day selector plus `Export Call Sheet` and `Export Sides` remain available and are right-aligned in the header row.
+- The call sheet body remains in a scrollable content area; existing call sheet editing/export behavior was preserved.
+- The empty state for no shooting days also uses the unified header/content structure.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Day Out of Days Header Buttons
+
+**Completed 2026-05-21:** Moved Day Out of Days action buttons into the module header row.
+
+Files changed:
+- `src/components/modules/DayOutOfDays/DayOutOfDays.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `DAY OUT OF DAYS` remains left-aligned in the unified module header.
+- `+ Add Manual Event` and `Settings` now sit in a right-aligned header button group.
+- Matrix Filters remain in their existing content controls area.
+- Button handlers, disabled behavior, and settings modal behavior were preserved.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mobile Script Active Scene Dropdown and Sides Polish
+
+**Completed 2026-05-21:** Polished mobile Script scene heading wrapping, Sides active UI, and active-scene dropdown behavior.
+
+Files changed:
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Mobile scene headings now normalize embedded whitespace/newlines before rendering, matching production Script Breakdown's read-only heading behavior that collapses raw line breaks.
+- Mobile scene headings render once through a production-style inline heading block instead of the body element `pre-wrap` path, preventing headings like `AIRSPEED / HORSA / - SAME - NIGHT` from being forced onto separate raw lines.
+- Removed the separate `Sides view active` banner below the toolbar.
+- `Sides` now communicates state only through the toolbar button: white/gray when off, blue filled when on.
+- `Sides` still toggles sides view and does not open the `More` / `Script Tools` popup.
+- The custom scene dropdown field displays the current selected/active scene.
+- The script scroll container updates active scene state from the scene nearest the top of the viewer.
+- The opened scene dropdown highlights the active scene row and scrolls that row toward the vertical center when possible.
+- Opening the dropdown does not scroll the script viewer; selecting a scene still closes the dropdown and scrolls the viewer to that scene.
+- `More` / `Script Tools`, search, page jump, filters, Sides Behavior settings, custom scene dropdown, production-scene data source, `SCRIPT_VIEWER_FIXED_ZOOM = 1.32`, and `SCRIPT_VIEWER_BODY_X_OFFSET_PX = 9` remain unchanged.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mobile Script Tools Filters and Sides
+
+**Completed 2026-05-21:** Built out the mobile Script `More` / `Script Tools` popup with local search, filters, page jump, and sides behavior controls.
+
+Files changed:
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `More` opens a mobile-friendly `Script Tools` popup with `Search`, `Page Jump`, `Script Filters`, and a collapsible `Sides Behavior` accordion.
+- No scenes grid was added to the `More` popup; the custom scene dropdown remains the fast scene navigation tool.
+- Search filters visible production scenes by display label/number, heading, script content, and character cues.
+- Character options are derived from production script `Character` blocks.
+- Schedule filters use already-loaded mobile `shootingDays` and `scheduledScenes` data when available; no new database reads were added.
+- Status filters use existing `scene.status`, falling back to `Not Scheduled`.
+- `Sides` remains a separate toolbar toggle and uses local `Sides Behavior` settings instead of opening `Script Tools`.
+- `visibleScenes` is derived locally from production scenes plus search/filter/sides state; original scene data is not mutated.
+- Page jump uses rendered mobile page break markers, with a closest-known-page fallback.
+- When search/filters/sides are active, the custom scene dropdown shows the currently visible scenes so scene jumps target rendered content.
+- `SCRIPT_VIEWER_FIXED_ZOOM = 1.32` and `SCRIPT_VIEWER_BODY_X_OFFSET_PX = 9` remain unchanged.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mobile Script Sides Toggle and Text Autosizing
+
+**Completed 2026-05-21:** Corrected mobile Script Sides behavior and addressed the remaining iPhone font-size mismatch caused by mobile text autosizing.
+
+Files changed:
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `More` still opens the `Script Tools` popup.
+- `Sides` no longer opens `Script Tools`; it toggles local `showSidesOnly` state.
+- When active, `Sides` uses a darker active button color and shows a compact `Sides view active` banner.
+- Full sides filtering/generation is still not implemented.
+- The `Script Tools` popup still contains the `Sides Behavior` placeholder section.
+- All mobile screenplay elements already used the same duplicated production `12pt/12pt` base source styles; the visual mismatch was caused by mobile Safari text autosizing enlarging wider blocks like Scene Heading/Action differently than narrower dialogue blocks.
+- Added `WebkitTextSizeAdjust: "100%"` and `textSizeAdjust: "100%"` to the shared mobile production base style and scaled script page container.
+- `SCRIPT_VIEWER_BODY_X_OFFSET_PX = 9` and fixed `SCRIPT_VIEWER_FIXED_ZOOM = 1.32` remain unchanged.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mobile Script Font and Scroll Spacer
+
+**Completed 2026-05-21:** Fixed the remaining mobile Script heading/body font mismatch and trimmed blank scroll space after the final content.
+
+Files changed:
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `SCRIPT_VIEWER_BODY_X_OFFSET_PX` remains locked at `9`.
+- Fixed `SCRIPT_VIEWER_FIXED_ZOOM = 1.32` remains unchanged.
+- Mobile scene headings no longer render through a custom `h2` style.
+- Scene headings now render through `getMobileProductionElementStyle("Scene Heading")`, the same duplicated production-style helper used for body blocks.
+- This puts Scene Heading, Action, Character, Dialogue, Parenthetical, Transition, and Shot on the same production base font family/size/line-height/wrapping system.
+- The duplicate metadata-style scene heading line remains removed.
+- The scroll spacer now subtracts the 0.75in page bottom margin from measured page height and adds only a small 16px buffer, reducing blank scrollable space after the last content.
+- Custom scene dropdown, `More`, `Sides`, Script Tools popup shell, production-scene data source, browser pinch prevention, and fixed app shell behavior remain unchanged.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mobile Script Locked Offset and Tools Shell
+
+**Completed 2026-05-21:** Removed the temporary mobile Script offset slider, locked the tuned body offset, and added the initial Script Tools/Sides shell.
+
+Files changed:
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Removed temporary `bodyOffsetPx` state and range slider UI.
+- Locked `SCRIPT_VIEWER_BODY_X_OFFSET_PX = 9`.
+- Readable body alignment still uses `SCRIPT_VIEWER_BODY_X_OFFSET_PX - (MOBILE_SCRIPT_BODY_LEFT_PX * finalScale)`.
+- Fixed `SCRIPT_VIEWER_FIXED_ZOOM = 1.32` remains unchanged.
+- The custom scene dropdown remains in the one-line toolbar.
+- Added a compact `Sides` button at the far right of the Script toolbar.
+- `More` and `Sides` open a basic `Script Tools` popup; full filtering/sides generation is not implemented.
+- The popup includes a `Sides Behavior` section with placeholders for `Day / Shooting Day`, `Character`, `Current Day`, and `Scheduled Scenes`.
+- Mobile scene heading rendering now mirrors production Script Breakdown's read-only h2 inline style more closely; body blocks continue using duplicated production `getProductionElementStyle` values.
+- The duplicate metadata-style scene heading line remains removed; status badges remain in the custom scene picker, not in the script body.
+- Scroll spacer now starts at `0`, uses measured unscaled `pageRef.scrollHeight * finalScale`, and remeasures after render/resize to reduce blank scroll space after final content.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mobile Script Offset Tuning Slider
+
+**Completed 2026-05-21:** Added a temporary body offset tuning slider and removed mobile-only duplicate scene metadata from the Script body.
+
+Files changed:
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `MobileScriptModule` keeps the custom scene dropdown and fixed `SCRIPT_VIEWER_FIXED_ZOOM = 1.32`.
+- Added local `bodyOffsetPx` state initialized from `SCRIPT_VIEWER_BODY_X_OFFSET_PX = -15`.
+- Added a compact temporary toolbar slider (`-80` to `80`, step `1`) that shows `Offset: <value>` and updates body alignment live.
+- The body offset still maps through `bodyOffsetPx - (MOBILE_SCRIPT_BODY_LEFT_PX * finalScale)` so tuning moves the readable script body, not only the page frame.
+- Removed the mobile-only metadata line under scene headings (`INT/EXT • LOCATION • TIME`), which caused a duplicate scene heading appearance.
+- Removed the mobile-only status badge from the script body; status remains available in the custom scene picker.
+- Mobile scene heading/body rendering now follows production Script Breakdown read-only rendering more closely: heading uses the production h2 style, body blocks use the duplicated production element styles.
+- The scroll-height spacer now observes both the scroll area and rendered page so stale content height is less likely to leave large blank space after the last page.
+- No desktop Script Breakdown, Writing, database, or production save behavior was intentionally changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mobile Script Custom Scene Picker
+
+**Completed 2026-05-21:** Replaced the native mobile Script scene select with a custom compact scene picker and aligned the readable script body rather than the outer page frame.
+
+Files changed:
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- The mobile Script toolbar remains one row: Script/scene count, custom scene field, and `More` button.
+- Native `<select>` was removed from `MobileScriptModule`.
+- Tapping the custom scene field opens a near edge-to-edge popup (`5px` side margins) below the toolbar.
+- Popup rows show scene display label, heading, viewer-estimated page number, and compact status badge when scheduled.
+- Tapping a row closes the popup and scrolls the isolated script viewer to that production scene.
+- `More` remains present; the full More/Filters modal was not implemented.
+- Body alignment now uses `SCRIPT_VIEWER_BODY_X_OFFSET_PX = -15`.
+- The script page wrapper subtracts the scaled 1.4in body margin before applying that body offset, so the constant affects the readable script body rather than only the outer page frame.
+- Fixed `SCRIPT_VIEWER_FIXED_ZOOM = 1.32`, production-style formatting constants, page breaks, browser pinch prevention, and production-scenes-only data source remain unchanged.
+- The right-side clipping was caused by cropping the zoomed full page while leaving the scaled left page margin in view; aligning to the readable body crops page margin instead of body text.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mobile Script Screen-Space Offset
+
+**Completed 2026-05-21:** Made the mobile Script horizontal offset apply in rendered screen pixels and tightened the closed native scene select.
+
+Files changed:
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Replaced the transform-combined offset with `SCRIPT_VIEWER_X_OFFSET_SCREEN_PX = -15`.
+- The offset is applied to an unscaled outer wrapper with `left: -15px`; the inner script page still only uses `transform: scale(finalScale)`.
+- `SCRIPT_VIEWER_FIXED_ZOOM` remains `1.32`; production-style formatting, page breaks, and production scene data source were not intentionally changed.
+- The one-line toolbar layout remains intact.
+- The closed native scene select was tightened with 5px toolbar side padding, smaller font, smaller height, and compact padding.
+- Native iOS opened select picker row density remains browser-controlled; the next modal/grid pass is the correct route for a denser scene picker.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mobile Script Toolbar Condense
+
+**Completed 2026-05-21:** Condensed the mobile-only Script toolbar to one row and shifted the fixed-zoom script page left for visual tuning.
+
+Files changed:
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `SCRIPT_VIEWER_X_OFFSET_PX` is now `-15`.
+- `SCRIPT_VIEWER_FIXED_ZOOM` remains `1.32`; the script page still uses fit-to-width scale times the fixed 132% zoom.
+- The mobile Script toolbar is now a single compact row with Script title/scene count on the left, native Scenes dropdown in the middle, and a `More` button on the right.
+- The previous read-only pill/second toolbar row is removed; no zoom controls are present.
+- The native scene dropdown has compact field styling and uses the available center width.
+- Browser/page pinch prevention and app-shell fixed viewport behavior remain unchanged.
+- Script formatting, page breaks, production scene data source, desktop Script Breakdown, and standalone Writing were not intentionally changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mobile Script Fixed Zoom
+
+**Completed 2026-05-21:** Removed manual zoom from the mobile-only Script reader and fixed its viewer scale to the tested 132% visual zoom.
+
+Files changed:
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Mobile Script still lives only in `src/components/mobile/MobileApp.js`.
+- The reader still uses production `scenes`; no Writing data, beats, writing localStorage, or writing timeline state is used.
+- Browser/page pinch prevention remains in the mobile app shell: viewport locking, Safari gesture prevention, and document-level multi-touch prevention are still active.
+- Internal Script viewer zoom was removed: no `userZoom` state, no script-area pinch listeners, and no +/- zoom controls.
+- The script page keeps the 8.5in / 816px model and now uses `finalScale = baseFitScale * 1.32`.
+- `SCRIPT_VIEWER_X_OFFSET_PX` was added near the mobile script constants for manual side-to-side tuning of the scaled page.
+- Script toolbar and main mobile toolbar remain outside the scaled wrapper.
+- Script formatting, page break labels, and production-scene data source were not intentionally changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mobile Script Formatting
+
+**Completed 2026-05-21:** Updated the mobile-only Script reader to preserve production Script Breakdown screenplay formatting more closely.
+
+Files changed:
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `MobileScriptModule` still lives only in `src/components/mobile/MobileApp.js`.
+- It still renders production `scenes` loaded from the `scenes` table; no Writing data, beats, writing localStorage, or writing timeline state is used.
+- Formatting constants are duplicated from production `Script.js` for this pass: page width, page margins, per-element indents/widths, uppercase behavior, and dialogue/parenthetical spacing.
+- Mobile script content now renders inside an 8.5in script page with horizontal scrolling on small screens, preserving relative screenplay formatting instead of using mobile percentage indents.
+- The mobile Script top area is now a sticky toolbar with Script label, read-only state, current scene indicator, and Scenes dropdown for navigation.
+- Desktop Script Breakdown, standalone Writing tab, and production save/database behavior were not intentionally changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Mobile Production Script Reader
+
+**Completed 2026-05-21:** Added the first functional mobile-only Script reader.
+
+Files changed:
+- `src/components/mobile/MobileApp.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Mobile app lives in `src/components/mobile/MobileApp.js` and is selected by `src/index.js` for iPhone/iPad/Android or viewport width under 768px.
+- The existing mobile module dropdown now enables `Script`.
+- `MobileScriptModule` renders production `scenes` loaded via `database.loadScenesFromDatabase(selectedProject, setScenes, ...)`.
+- The reader is read-only and does not write to database.
+- The reader displays scene labels/headings, location/time metadata when present, production status, and scene content blocks in mobile-readable screenplay formatting.
+- A sticky scene dropdown lets users jump/scroll to scenes.
+- It does not use `WritingScript.jsx`, writing draft nodes, writing localStorage, beats, or writing timeline state.
+- Desktop Script Breakdown and standalone Writing tab were not intentionally changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Production Script Breakdown Pagination
+
+**Completed 2026-05-21:** Fixed production Script Breakdown SceneList page metadata to use the production script viewer pagination source of truth.
+
+Files changed:
+- `src/components/modules/Script/Script.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `SceneList` no longer falls back to the old independent `calculateScenePageStats()` estimate.
+- `ContinuousScript` now computes one viewer pagination pass used for both page break labels and per-scene stats.
+- `Script` stores viewer-emitted stats and passes them back into `SceneList`.
+- SceneList page number and 1/8 page length now come from the same calculation as the visible production script viewer.
+- Production script wrapping/spacing was aligned more closely with Writing editor constants: 0.75in top/bottom page margins, 1.4in left body margin, 1in right margin, per-element screenplay widths, and dialogue/parenthetical spacing.
+- Production edit mode, production save/database behavior, standalone Writing tab, and Stripboard Schedule were not intentionally changed.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Stripboard Schedule Lunch Divider and Empty Target Fill
+
+**Completed 2026-05-21:** Refined Stripboard Schedule reorder behavior after the empty-row preservation fix.
+
+Files changed:
+- `src/components/modules/StripboardSchedule/StripboardSchedule.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Empty scene blocks are detected as fill targets (`type: "scene"`, no scene/custom/lunch/end-of-day).
+- Dropping an available scene or scheduled scene/custom block onto an empty block fills that existing block instead of inserting a new block around it.
+- Non-lunch scheduled moves preserve lunch as a divider by reordering the non-lunch sequence and reinserting lunch at its previous divider index.
+- Example now intended: `Scene 1, Scene 2, Lunch, Scene 3, Scene 4`; moving Scene 3 before Scene 2 produces `Scene 1, Scene 3, Lunch, Scene 2, Scene 4`.
+- Dragging lunch itself still uses the regular insert/reflow path, so lunch remains movable.
+- Prior fixes remain: `preserveEmpty` rows, UUID `+` rows, immediate `+` row sync, insert/reflow instead of swap, and shooting-day persistence.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
+## Codex Handoff — Stripboard Schedule Empty Row Preservation
+
+**Completed 2026-05-21:** Fixed the previous Stripboard Schedule reorder/removal cleanup so intentional empty rows are preserved.
+
+Files changed:
+- `src/components/modules/StripboardSchedule/StripboardSchedule.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- `normalizeOrderedBlocks()` no longer filters all empty scene blocks.
+- `insertBlockAtTarget()` preserves existing empty rows and inserts the dragged block before/after the target.
+- Removing a scheduled scene removes only that scene's block, so the removed row collapses without deleting unrelated empty rows.
+- User-created `+` empty rows now use UUID ids, carry `preserveEmpty: true`, and sync immediately via `updateShootingDayScheduleBlocks`.
+- Removing empty rows and editing/removing custom items now syncs the changed day blocks immediately.
+- Lunch remains draggable; scene/custom/lunch reorders remain insert/reflow rather than swap.
+- Shooting-day creation persistence fix from the prior pass was preserved.
+
+Verification:
+- `npm run build` passed.
+- Generated build artifacts were restored/cleaned.
+
 ## Claude Handoff — Workflow Split Through Timeline Fix
 
 ### Last Completed Phase

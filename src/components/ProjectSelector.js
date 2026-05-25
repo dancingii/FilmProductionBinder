@@ -8,6 +8,36 @@ function ProjectSelector({ user, onProjectSelected }) {
   const [newProjectName, setNewProjectName] = useState("");
   const [newProducer, setNewProducer] = useState("");
   const [newDirector, setNewDirector] = useState("");
+  const [projectAlert, setProjectAlert] = useState(null);
+
+  const showProjectAlert = (message) =>
+    new Promise((resolve) =>
+      setProjectAlert({
+        message,
+        onOk: () => {
+          setProjectAlert(null);
+          resolve(true);
+        },
+        onCancel: null,
+      })
+    );
+
+  const showProjectConfirm = (message, confirmLabel = "OK", cancelLabel = "Cancel") =>
+    new Promise((resolve) =>
+      setProjectAlert({
+        message,
+        confirmLabel,
+        cancelLabel,
+        onOk: () => {
+          setProjectAlert(null);
+          resolve(true);
+        },
+        onCancel: () => {
+          setProjectAlert(null);
+          resolve(false);
+        },
+      })
+    );
 
   useEffect(() => {
     loadProjects();
@@ -106,8 +136,10 @@ function ProjectSelector({ user, onProjectSelected }) {
   const deleteProject = async (projectId, projectName, e) => {
     e.stopPropagation(); // Prevent project card click
 
-    const confirmed = window.confirm(
-      `Are you sure you want to DELETE the project "${projectName}"?\n\nThis will permanently delete:\n- All scenes and script content\n- All stripboard and scheduling data\n- All cast, crew, and character data\n- All department data (props, makeup, wardrobe, etc.)\n- All budget and cost data\n- All shooting day and call sheet data\n\nThis action CANNOT be undone.`
+    const confirmed = await showProjectConfirm(
+      `Are you sure you want to DELETE the project "${projectName}"?\n\nThis will permanently delete:\n- All scenes and script content\n- All stripboard and scheduling data\n- All cast, crew, and character data\n- All department data (props, makeup, wardrobe, etc.)\n- All budget and cost data\n- All shooting day and call sheet data\n\nThis action CANNOT be undone.`,
+      "Delete",
+      "Cancel"
     );
 
     if (!confirmed) return;
@@ -124,10 +156,10 @@ function ProjectSelector({ user, onProjectSelected }) {
       // Remove from local state
       setProjects(projects.filter((p) => p.id !== projectId));
 
-      alert(`Project "${projectName}" has been deleted successfully.`);
+      await showProjectAlert(`Project "${projectName}" has been deleted successfully.`);
     } catch (error) {
       console.error("Error deleting project:", error);
-      alert(`Failed to delete project: ${error.message}`);
+      await showProjectAlert(`Failed to delete project: ${error.message}`);
     }
   };
 
@@ -150,15 +182,16 @@ function ProjectSelector({ user, onProjectSelected }) {
   }
 
   return (
-    <div
-      style={{
-        padding: "40px",
-        maxWidth: "800px",
-        margin: "0 auto",
-        fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
-        marginTop: "60px",
-      }}
-    >
+    <>
+      <div
+        style={{
+          padding: "40px",
+          maxWidth: "800px",
+          margin: "0 auto",
+          fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+          marginTop: "60px",
+        }}
+      >
       <h1 style={{ textAlign: "center", marginBottom: "40px", color: "#333" }}>
         Select a Film Project
       </h1>
@@ -382,7 +415,132 @@ function ProjectSelector({ user, onProjectSelected }) {
           </div>
         </div>
       )}
-    </div>
+      </div>
+
+      {projectAlert && (
+        <div
+          style={{
+            position: "fixed",
+            top: "44px",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            zIndex: 99998,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") projectAlert.onOk();
+            if (e.key === "Escape" && projectAlert.onCancel) projectAlert.onCancel();
+          }}
+          tabIndex={-1}
+          ref={(el) => el && el.focus()}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: "8px",
+              padding: "0",
+              maxWidth: "420px",
+              width: "90%",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: projectAlert.confirmLabel === "Delete" ? "#f44336" : "#2196F3",
+                padding: "14px 20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span
+                style={{
+                  color: "white",
+                  fontWeight: "bold",
+                  fontSize: "15px",
+                  fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+                }}
+              >
+                {projectAlert.confirmLabel === "Delete" ? "Confirm Delete" : "Confirm"}
+              </span>
+              {projectAlert.onCancel && (
+                <button
+                  onClick={projectAlert.onCancel}
+                  style={{
+                    backgroundColor: "transparent",
+                    border: "none",
+                    color: "white",
+                    fontSize: "20px",
+                    cursor: "pointer",
+                    lineHeight: 1,
+                    padding: "0 2px",
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            <div style={{ padding: "24px 24px 20px" }}>
+              <p
+                style={{
+                  margin: "0 0 22px",
+                  fontSize: "14px",
+                  lineHeight: "1.6",
+                  whiteSpace: "pre-wrap",
+                  color: "#333",
+                  fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+                }}
+              >
+                {projectAlert.message}
+              </p>
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                {projectAlert.onCancel && (
+                  <button
+                    onClick={projectAlert.onCancel}
+                    style={{
+                      padding: "8px 18px",
+                      backgroundColor: "white",
+                      border: "1px solid #ccc",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+                      color: "#555",
+                    }}
+                  >
+                    {projectAlert.cancelLabel || "Cancel"}
+                  </button>
+                )}
+                <button
+                  autoFocus
+                  onClick={projectAlert.onOk}
+                  style={{
+                    padding: "8px 20px",
+                    backgroundColor: projectAlert.confirmLabel === "Delete" ? "#f44336" : "#2196F3",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: "bold",
+                    fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+                  }}
+                >
+                  {projectAlert.confirmLabel || "OK"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

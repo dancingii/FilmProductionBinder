@@ -530,12 +530,18 @@ function LocationsModule({
   }, []);
 
   return (
-    <div style={{ padding: "20px", minHeight: "100vh", width: "100%", maxWidth: "100vw", overflow: "hidden", boxSizing: "border-box" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2>Locations</h2>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+            <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>LOCATIONS</h2>
+          </div>
+        </div>
       </div>
 
-      <div style={{ display: "flex", gap: "20px", height: "calc(100vh - 164px)" }}>
+      {/* ── Content area ── */}
+      <div style={{ flex: 1, display: "flex", gap: "20px", overflow: "hidden", padding: "10px" }}>
         {/* Left Panel */}
         <div style={{ flex: "1", borderRight: "1px solid #ddd", paddingRight: "20px", display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>

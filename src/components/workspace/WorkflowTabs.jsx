@@ -40,15 +40,15 @@ function WorkflowTabs({ activeWorkflow, onWorkflowChange }) {
               color: isActive ? "#1976D2" : isDisabled ? "rgba(255,255,255,0.5)" : "white",
               cursor: isDisabled ? "not-allowed" : "pointer",
               opacity: 1,
+              boxShadow: "none",
               boxSizing: "border-box",
               fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
               fontSize: "12px",
               fontWeight: "bold",
-              lineHeight: 1,
+              lineHeight: "14px",
               textAlign: "center",
               whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
+              overflow: "visible",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
@@ -56,7 +56,7 @@ function WorkflowTabs({ activeWorkflow, onWorkflowChange }) {
               gap: "2px",
             }}
           >
-            <span style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <span style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", lineHeight: "16px" }}>
               {workflow.label}
             </span>
             {isDisabled && (

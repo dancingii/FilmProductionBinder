@@ -32,6 +32,19 @@ const cloneScene = (scene = {}) => ({
 
 const safeText = (value) => String(value || "");
 
+const sanitizeWritingSceneMetadata = (metadata = {}) => {
+  const {
+    originalSceneNumber,
+    importedSceneNumber,
+    sourceSceneNumber,
+    displayedSceneNumber,
+    replacementLetter,
+    ...rest
+  } = metadata || {};
+
+  return rest;
+};
+
 const makeNodeId = (prefix, parts = []) => {
   return [prefix, ...parts.map(part => String(part || "").replace(/\s+/g, "-"))]
     .filter(Boolean)
@@ -61,19 +74,31 @@ export const documentNodesFromScenes = (scenes = []) => {
 
   const nodes = [];
 
-  sourceScenes.forEach((scene, sceneIndex) => {
+  sourceScenes.forEach((scene) => {
     const sceneId = isValidSceneId(scene?.id) ? scene.id : createSceneId();
+    const headingText = safeText(scene?.heading);
+    const content = Array.isArray(scene?.content) ? scene.content : [];
+
+    if (!headingText.trim()) {
+      content.forEach((block, blockIndex) => {
+        nodes.push({
+          id: block.id || makeNodeId("preamble", [blockIndex, safeText(block.text).slice(0, 24)]),
+          type: normalizeType(block.type),
+          text: safeText(block.text),
+          sceneId: null,
+          sourceBlockIndex: blockIndex,
+        });
+      });
+      return;
+    }
 
     nodes.push({
       id: makeNodeId("heading", [sceneId]),
       type: "Scene Heading",
-      text: safeText(scene?.heading),
+      text: headingText,
       sceneId,
-      sourceSceneNumber: scene?.sceneNumber ?? sceneIndex + 1,
-      metadata: { ...(scene?.metadata || {}) },
+      metadata: sanitizeWritingSceneMetadata(scene?.metadata || {}),
     });
-
-    const content = Array.isArray(scene?.content) ? scene.content : [];
 
     if (content.length === 0) {
       nodes.push(createEmptyWritingNode(DEFAULT_BODY_BLOCK_TYPE, sceneId));
@@ -132,8 +157,8 @@ const makeSceneFromHeadingNode = (headingNode, sceneNumber, previousSceneMap) =>
     heading: safeText(headingNode.text),
     content: [],
     metadata: {
-      ...(existingScene?.metadata || {}),
-      ...(headingNode.metadata || {}),
+      ...sanitizeWritingSceneMetadata(existingScene?.metadata || {}),
+      ...sanitizeWritingSceneMetadata(headingNode.metadata || {}),
       scriptOrder: sceneNumber,
     },
   };
@@ -177,12 +202,7 @@ export const scenesFromDocumentNodes = (documentNodes = [], previousScenes = [])
     }
 
     if (!currentScene) {
-      const fallbackHeadingNode = {
-        type: "Scene Heading",
-        text: "",
-        sceneId: node?.sceneId && isValidSceneId(node.sceneId) ? node.sceneId : createSceneId(),
-      };
-      currentScene = makeSceneFromHeadingNode(fallbackHeadingNode, scenes.length + 1, previousSceneMap);
+      return;
     }
 
     currentScene.content.push({

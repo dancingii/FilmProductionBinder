@@ -1,10 +1,12 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import * as database from "../../../services/database";
 import {
   normalizeScheduleBlock,
   normalizeSceneRef,
   sameScene,
 } from "../../../utils/sceneIdentity";
+import { buildSceneDisplayLabelMap, getSceneDisplayLabel } from "../../../utils/sceneDisplayLabel";
+import { INSERTED_BORDER_COLOR } from "../../../utils/scenePresentation";
 
 function DayBlock({
   day,
@@ -12,6 +14,7 @@ function DayBlock({
   onDrop,
   handleDragOver,
   handleDragStart,
+  handleDragEnd,
   removeScene,
   removeBlock,
   addBlock,
@@ -23,9 +26,11 @@ function DayBlock({
   unlockDay,
   getSceneBlockColor,
   getSceneBlockTextColor,
+  displayLabelMap,
   updateDayCollapse,
   handleSceneDoubleClick,
   syncShootingDays,
+  dropIndicator,
   canEdit,
 }) {
   const [editingBlock, setEditingBlock] = React.useState(null);
@@ -253,9 +258,13 @@ function DayBlock({
           }
 
           if (block.isLunch) {
+            const showDropBefore = dropIndicator?.dayId === day.id && dropIndicator?.blockId === block.id && dropIndicator?.position === "before";
+            const showDropAfter = dropIndicator?.dayId === day.id && dropIndicator?.blockId === block.id && dropIndicator?.position === "after";
             return (
               <div
                 key={block.id}
+                onDrop={day.isLocked ? null : (e) => onDrop(e, day.id, block.id)}
+                onDragOver={day.isLocked ? null : (e) => handleDragOver(e, day.id, block.id)}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -264,6 +273,8 @@ function DayBlock({
                   fontSize: "14px",
                   fontWeight: "bold",
                   border: "1px solid #000",
+                  borderTop: showDropBefore ? "3px solid #2196F3" : "1px solid #000",
+                  borderBottom: showDropAfter ? "3px solid #2196F3" : "1px solid #000",
                   minHeight: "40px",
                   padding: "5px",
                 }}
@@ -290,6 +301,7 @@ function DayBlock({
                 </div>
                 <div
                   draggable={true}
+                  onDragEnd={handleDragEnd}
                   onDragStart={(e) => {
                     const lunchScene = {
                       sceneNumber: "LUNCH",
@@ -306,8 +318,6 @@ function DayBlock({
                       block.id
                     );
                   }}
-                  onDrop={(e) => onDrop(e, day.id, block.id)}
-                  onDragOver={handleDragOver}
                   style={{
                     flex: 1,
                     textAlign: "center",
@@ -333,6 +343,9 @@ function DayBlock({
 
           const scene = block.scene;
           const isOddRow = index % 2 === 1;
+          const showDropBefore = dropIndicator?.dayId === day.id && dropIndicator?.blockId === block.id && dropIndicator?.position === "before";
+          const showDropAfter = dropIndicator?.dayId === day.id && dropIndicator?.blockId === block.id && dropIndicator?.position === "after";
+          const showDropFill = dropIndicator?.dayId === day.id && dropIndicator?.blockId === block.id && dropIndicator?.position === "fill";
           const backgroundColor = scene
             ? getSceneBlockColor(scene, isOddRow)
             : block.customItem
@@ -347,12 +360,15 @@ function DayBlock({
             <div
               key={block.id}
               onDrop={day.isLocked ? null : (e) => onDrop(e, day.id, block.id)}
-              onDragOver={day.isLocked ? null : handleDragOver}
+              onDragOver={day.isLocked ? null : (e) => handleDragOver(e, day.id, block.id)}
               style={{
                 display: "flex",
                 alignItems: "center",
                 backgroundColor: backgroundColor,
                 border: "1px solid #ddd",
+                borderTop: showDropBefore ? "3px solid #2196F3" : "1px solid #ddd",
+                borderBottom: showDropAfter ? "3px solid #2196F3" : "1px solid #ddd",
+                boxShadow: showDropFill ? "inset 0 0 0 3px #2196F3" : "none",
                 minHeight: "40px",
                 fontSize: "12px",
                 padding: "5px",
@@ -395,6 +411,7 @@ function DayBlock({
                     onDragStart={(e) =>
                       handleDragStart(e, scene, "scheduled", day.id, block.id)
                     }
+                    onDragEnd={handleDragEnd}
                     onDoubleClick={() => handleSceneDoubleClick(scene)}
                     title="Double-click to view script"
                     style={{
@@ -402,6 +419,7 @@ function DayBlock({
                       padding: "4px",
                       borderRadius: "3px",
                       border: "1px dashed rgba(0,0,0,0.2)",
+                      borderLeft: Boolean(scene.metadata?.replacementLetter) ? `3px solid ${INSERTED_BORDER_COLOR}` : "1px dashed rgba(0,0,0,0.2)",
                       color: getSceneBlockTextColor(scene),
                     }}
                     onMouseOver={(e) => {
@@ -419,7 +437,7 @@ function DayBlock({
                         textOverflow: "ellipsis",
                       }}
                     >
-                      Scene {scene.sceneNumber}: {scene.metadata?.intExt} -{" "}
+                      Scene {getSceneDisplayLabel(scene, displayLabelMap)}: {scene.metadata?.intExt} -{" "}
                       {scene.metadata?.location}
                     </strong>
                     <div
@@ -438,6 +456,7 @@ function DayBlock({
                 ) : block.customItem ? (
                   <div
                     draggable={true}
+                    onDragEnd={handleDragEnd}
                     onDragStart={(e) => {
                       const customScene = {
                         sceneNumber: "CUSTOM",
@@ -633,9 +652,11 @@ function StripboardScheduleModule({
   const [selectedSceneForScript, setSelectedSceneForScript] = useState(null);
   const [scriptFullMode, setScriptFullMode] = useState(false);
   const [scriptFullIndex, setScriptFullIndex] = useState(0);
+  const [dropIndicator, setDropIndicator] = useState(null);
 
   const lockQueue = useRef([]);
   const lockTimeout = useRef(null);
+  const displayLabelMap = useMemo(() => buildSceneDisplayLabelMap(scenes), [scenes]);
 
   useEffect(() => {
     if (!scrollContainerRef.current || !shootingDays.length) return;
@@ -782,7 +803,18 @@ function StripboardScheduleModule({
       dayNumber: shootingDays.length + 1,
       scheduleBlocks: createDefaultScheduleBlocks(),
     };
-    setShootingDays([...shootingDays, newDay]);
+    const updatedDays = [...shootingDays, newDay];
+    console.log("🔄 Creating shooting day and syncing to database:", {
+      dayId: newDay.id,
+      date: newDay.date,
+      dayNumber: newDay.dayNumber,
+    });
+    setShootingDays(updatedDays);
+    if (typeof onSyncAllShootingDays === "function") {
+      onSyncAllShootingDays(updatedDays);
+    } else if (typeof syncShootingDays === "function") {
+      syncShootingDays(updatedDays);
+    }
   };
 
   const removeShootingDay = (dayId) => {
@@ -985,194 +1017,312 @@ function StripboardScheduleModule({
 
   const availableScenes = getFilteredScenes();
 
+  const getDropPosition = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientY <= rect.top + rect.height / 2 ? "before" : "after";
+  };
+
+  const normalizeOrderedBlocks = (blocks = []) => {
+    const endOfDayBlock = blocks.find((block) => block.isEndOfDay);
+    const orderedBlocks = blocks
+      .filter((block) => !block.isEndOfDay)
+      .map((block) => normalizeScheduleBlock(block));
+
+    return endOfDayBlock
+      ? [...orderedBlocks, normalizeScheduleBlock(endOfDayBlock)]
+      : orderedBlocks;
+  };
+
+  const isLunchBlock = (block) => Boolean(block?.isLunch || block?.scene?.isLunch);
+
+  const isEmptySceneBlockTarget = (block) => (
+    block &&
+    block.type === "scene" &&
+    !block.scene &&
+    !block.customItem &&
+    !block.isLunch &&
+    !block.isEndOfDay
+  );
+
+  const getLunchDividerIndex = (blocks = []) => (
+    blocks.filter((block) => !block.isEndOfDay).findIndex(isLunchBlock)
+  );
+
+  const assembleBlocksWithLunchAtIndex = (blocks, lunchIndex) => {
+    const endOfDayBlock = blocks.find((block) => block.isEndOfDay);
+    const bodyBlocks = blocks.filter((block) => !block.isEndOfDay);
+    const lunchBlock = bodyBlocks.find(isLunchBlock);
+    if (!lunchBlock || lunchIndex < 0) return normalizeOrderedBlocks(blocks);
+
+    const nonLunchBlocks = bodyBlocks.filter((block) => !isLunchBlock(block));
+    const nextBlocks = nonLunchBlocks.map((block) => normalizeScheduleBlock(block));
+    const insertIndex = Math.max(0, Math.min(lunchIndex, nextBlocks.length));
+    nextBlocks.splice(insertIndex, 0, normalizeScheduleBlock(lunchBlock));
+
+    return endOfDayBlock
+      ? [...nextBlocks, normalizeScheduleBlock(endOfDayBlock)]
+      : nextBlocks;
+  };
+
+  const insertBlockAtTarget = (blocks, blockToInsert, targetBlockId, position) => {
+    const endOfDayBlock = blocks.find((block) => block.isEndOfDay);
+    const bodyBlocks = blocks.filter((block) => !block.isEndOfDay);
+    const targetIndex = bodyBlocks.findIndex((block) => block.id === targetBlockId);
+    const orderedBlocks = [...bodyBlocks];
+    const insertIndex = targetIndex === -1
+      ? orderedBlocks.length
+      : targetIndex + (position === "after" ? 1 : 0);
+
+    orderedBlocks.splice(insertIndex, 0, normalizeScheduleBlock(blockToInsert));
+
+    return endOfDayBlock
+      ? [...orderedBlocks.map((block) => normalizeScheduleBlock(block)), normalizeScheduleBlock(endOfDayBlock)]
+      : orderedBlocks.map((block) => normalizeScheduleBlock(block));
+  };
+
+  const insertBlockAtTargetPreservingLunch = (blocks, blockToInsert, targetBlockId, position, lunchIndex) => {
+    if (isLunchBlock(blockToInsert) || lunchIndex < 0) {
+      return insertBlockAtTarget(blocks, blockToInsert, targetBlockId, position);
+    }
+
+    const endOfDayBlock = blocks.find((block) => block.isEndOfDay);
+    const bodyBlocks = blocks.filter((block) => !block.isEndOfDay);
+    const lunchBlock = bodyBlocks.find(isLunchBlock);
+    if (!lunchBlock) return insertBlockAtTarget(blocks, blockToInsert, targetBlockId, position);
+
+    const nonLunchBlocks = bodyBlocks.filter((block) => !isLunchBlock(block));
+    const targetBlock = bodyBlocks.find((block) => block.id === targetBlockId);
+    let insertIndex = nonLunchBlocks.length;
+
+    if (targetBlock) {
+      if (isLunchBlock(targetBlock)) {
+        insertIndex = position === "before"
+          ? Math.max(0, lunchIndex - 1)
+          : Math.min(lunchIndex, nonLunchBlocks.length);
+      } else {
+        const targetNonLunchIndex = nonLunchBlocks.findIndex((block) => block.id === targetBlockId);
+        if (targetNonLunchIndex !== -1) {
+          insertIndex = targetNonLunchIndex + (position === "after" ? 1 : 0);
+        }
+      }
+    }
+
+    const nextBlocks = nonLunchBlocks.map((block) => normalizeScheduleBlock(block));
+    nextBlocks.splice(
+      Math.max(0, Math.min(insertIndex, nextBlocks.length)),
+      0,
+      normalizeScheduleBlock(blockToInsert)
+    );
+    nextBlocks.splice(
+      Math.max(0, Math.min(lunchIndex, nextBlocks.length)),
+      0,
+      normalizeScheduleBlock(lunchBlock)
+    );
+
+    return endOfDayBlock
+      ? [...nextBlocks, normalizeScheduleBlock(endOfDayBlock)]
+      : nextBlocks;
+  };
+
+  const fillEmptyBlockTarget = (blocks, targetBlockId, blockToFill) => (
+    blocks.map((block) => {
+      if (block.id !== targetBlockId) return normalizeScheduleBlock(block);
+
+      const targetBlock = { ...block };
+      delete targetBlock.preserveEmpty;
+      delete targetBlock.sceneId;
+      delete targetBlock.sceneNumber;
+      const nextBlock = {
+        ...targetBlock,
+        type: "scene",
+        scene: blockToFill.scene ? normalizeSceneRef(blockToFill.scene) : null,
+      };
+
+      if (blockToFill.customItem) {
+        nextBlock.customItem = blockToFill.customItem;
+      } else {
+        delete nextBlock.customItem;
+      }
+
+      return normalizeScheduleBlock(nextBlock);
+    })
+  );
+
+  const createScheduledSceneBlock = (scene, targetBlock) => normalizeScheduleBlock({
+    id: crypto.randomUUID(),
+    scene: normalizeSceneRef(scene),
+    time: targetBlock?.time || "8:00 AM",
+    type: "scene",
+  });
+
+  const syncDayBlocks = (dayId, scheduleBlocks) => {
+    syncLocks.current.shootingDays = true;
+    return database
+      .updateShootingDayScheduleBlocks(selectedProject, dayId, scheduleBlocks)
+      .then(() => { syncLocks.current.shootingDays = false; })
+      .catch((error) => { console.error("❌ Atomic schedule blocks update failed:", error); syncLocks.current.shootingDays = false; });
+  };
+
   const handleDragStart = (e, scene, source, sourceDayId = null, sourceBlockId = null) => {
     setDraggedItem({ scene, source, sourceDayId, sourceBlockId });
+    setDropIndicator(null);
     e.dataTransfer.effectAllowed = "move";
   };
 
-  const handleDragOver = (e) => {
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDropIndicator(null);
+  };
+
+  const handleDragOver = (e, dayId = null, blockId = null) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
+    if (dayId && blockId) {
+      const day = shootingDays.find((shootingDay) => shootingDay.id === dayId);
+      const block = day?.scheduleBlocks?.find((scheduleBlock) => scheduleBlock.id === blockId);
+      const position = isEmptySceneBlockTarget(block) ? "fill" : getDropPosition(e);
+      setDropIndicator((current) => (
+        current?.dayId === dayId && current?.blockId === blockId && current?.position === position
+          ? current
+          : { dayId, blockId, position }
+      ));
+    }
   };
 
   const handleDrop = (e, dayId, blockId) => {
     e.preventDefault();
-    if (!draggedItem) return;
+    if (!draggedItem) {
+      setDropIndicator(null);
+      return;
+    }
 
     const updatedDays = [...shootingDays];
     const targetDayIndex = updatedDays.findIndex((day) => day.id === dayId);
-    if (targetDayIndex === -1) { setDraggedItem(null); return; }
+    if (targetDayIndex === -1) { setDraggedItem(null); setDropIndicator(null); return; }
 
     const targetBlocks = updatedDays[targetDayIndex].scheduleBlocks;
     const targetBlockIndex = targetBlocks.findIndex((block) => block.id === blockId);
-    if (targetBlockIndex === -1) { setDraggedItem(null); return; }
+    if (targetBlockIndex === -1) { setDraggedItem(null); setDropIndicator(null); return; }
 
     const targetBlock = targetBlocks[targetBlockIndex];
+    const dropPosition = getDropPosition(e);
+    const isEmptyTarget = isEmptySceneBlockTarget(targetBlock);
 
     if (draggedItem.source === "available") {
-      if (targetBlock.type !== "scene") { setDraggedItem(null); return; }
-
-      if (targetBlock.scene) {
-        const displacedScene = targetBlock.scene;
-        const emptyBlockIndex = targetBlocks.findIndex((block) => block.type === "scene" && block.scene === null);
-        if (emptyBlockIndex !== -1) {
-          targetBlocks[emptyBlockIndex].scene = normalizeSceneRef(displacedScene);
-          targetBlocks[emptyBlockIndex] = normalizeScheduleBlock(targetBlocks[emptyBlockIndex]);
-        } else {
-          if (onUnscheduleScene) {
-            onUnscheduleScene(stripboardScenes.findIndex((s) => sameScene(s, displacedScene)));
-          }
-        }
-      }
-
       const latestScene = normalizeSceneRef(
         stripboardScenes.find((s) => sameScene(s, draggedItem.scene)) ||
           draggedItem.scene
       );
-      targetBlock.scene = latestScene;
-      Object.assign(targetBlock, normalizeScheduleBlock(targetBlock));
+      const insertedBlock = createScheduledSceneBlock(latestScene, targetBlock);
+      const nextScheduleBlocks = isEmptyTarget
+        ? fillEmptyBlockTarget(targetBlocks, blockId, insertedBlock)
+        : insertBlockAtTarget(targetBlocks, insertedBlock, blockId, dropPosition);
+      updatedDays[targetDayIndex] = {
+        ...updatedDays[targetDayIndex],
+        scheduleBlocks: nextScheduleBlocks,
+      };
       setShootingDays(updatedDays);
 
       onScheduleScene(
         stripboardScenes.findIndex((s) => sameScene(s, latestScene)),
         updatedDays[targetDayIndex].date,
-        targetBlock.time
+        insertedBlock.time
       );
 
-      syncLocks.current.shootingDays = true;
-      database
-        .updateShootingDayScheduleBlocks(selectedProject, dayId, updatedDays[targetDayIndex].scheduleBlocks)
-        .then(() => { syncLocks.current.shootingDays = false; })
-        .catch((error) => { console.error("❌ Atomic schedule blocks update failed:", error); syncLocks.current.shootingDays = false; });
+      syncDayBlocks(dayId, updatedDays[targetDayIndex].scheduleBlocks);
 
     } else if (draggedItem.source === "scheduled") {
       const sourceDayIndex = updatedDays.findIndex((day) => day.id === draggedItem.sourceDayId);
-      if (sourceDayIndex === -1) { setDraggedItem(null); return; }
+      if (sourceDayIndex === -1) { setDraggedItem(null); setDropIndicator(null); return; }
 
       const sourceBlocks = updatedDays[sourceDayIndex].scheduleBlocks;
       const sourceBlockIndex = sourceBlocks.findIndex((block) => block.id === draggedItem.sourceBlockId);
-      if (sourceBlockIndex === -1) { setDraggedItem(null); return; }
+      if (sourceBlockIndex === -1) { setDraggedItem(null); setDropIndicator(null); return; }
 
       const sourceBlock = sourceBlocks[sourceBlockIndex];
+      const movedBlock = normalizeScheduleBlock({ ...sourceBlock });
+      const sourceLunchIndex = getLunchDividerIndex(sourceBlocks);
+      const targetLunchIndex = sourceDayIndex === targetDayIndex
+        ? sourceLunchIndex
+        : getLunchDividerIndex(targetBlocks);
+      const shouldPreserveLunch = !isLunchBlock(movedBlock);
 
       if (draggedItem.sourceDayId === dayId && draggedItem.sourceBlockId === blockId) {
         setDraggedItem(null);
+        setDropIndicator(null);
         return;
       }
 
-      if (draggedItem.scene.isLunch) {
-        if (targetBlock.type !== "scene") { setDraggedItem(null); return; }
-        const sourceLunchBlock = { ...sourceBlock };
-        const targetSceneBlock = { ...targetBlock };
-        sourceBlocks[sourceBlockIndex] = { ...targetSceneBlock, id: sourceBlock.id };
-        targetBlocks[targetBlockIndex] = { ...sourceLunchBlock, id: targetBlock.id };
-        setShootingDays(updatedDays);
-      } else if (draggedItem.scene.isCustom) {
-        if (targetBlock.type !== "scene") { setDraggedItem(null); return; }
-        const customItemToMove = sourceBlock.customItem;
-        const displacedScene = targetBlock.scene;
-        const displacedCustomItem = targetBlock.customItem;
-        delete sourceBlock.customItem;
-        if (targetBlock.scene) {
-          targetBlock.scene = null;
-          Object.assign(targetBlock, normalizeScheduleBlock(targetBlock));
+      const sceneToMove = movedBlock.scene;
+      const sourceBlocksAfterRemoval = normalizeOrderedBlocks(
+        sourceBlocks.filter((block) => block.id !== draggedItem.sourceBlockId)
+      );
+      updatedDays[sourceDayIndex] = {
+        ...updatedDays[sourceDayIndex],
+        scheduleBlocks: shouldPreserveLunch
+          ? assembleBlocksWithLunchAtIndex(sourceBlocksAfterRemoval, sourceLunchIndex)
+          : sourceBlocksAfterRemoval,
+      };
+
+      const nextTargetBlocks = sourceDayIndex === targetDayIndex
+        ? updatedDays[targetDayIndex].scheduleBlocks
+        : targetBlocks;
+      const targetBlocksAfterDrop = isEmptyTarget && !isLunchBlock(movedBlock)
+        ? fillEmptyBlockTarget(nextTargetBlocks, blockId, movedBlock)
+        : (
+            shouldPreserveLunch
+              ? insertBlockAtTargetPreservingLunch(nextTargetBlocks, movedBlock, blockId, dropPosition, targetLunchIndex)
+              : insertBlockAtTarget(nextTargetBlocks, movedBlock, blockId, dropPosition)
+          );
+
+      updatedDays[targetDayIndex] = {
+        ...updatedDays[targetDayIndex],
+        scheduleBlocks: shouldPreserveLunch
+          ? assembleBlocksWithLunchAtIndex(targetBlocksAfterDrop, targetLunchIndex)
+          : targetBlocksAfterDrop,
+      };
+
+      if (sourceDayIndex !== targetDayIndex && sceneToMove && !sceneToMove.isLunch && !sceneToMove.isCustom) {
+        const sourceDate = updatedDays[sourceDayIndex].date;
+        const targetDate = updatedDays[targetDayIndex].date;
+        const updatedStripboard = [...stripboardScenes];
+        const movedSceneIndex = updatedStripboard.findIndex((s) => sameScene(s, sceneToMove));
+        if (movedSceneIndex !== -1) {
+          updatedStripboard[movedSceneIndex].scheduledDate = targetDate;
+          setStripboardScenes(updatedStripboard);
         }
-        if (targetBlock.customItem) delete targetBlock.customItem;
-        targetBlock.customItem = customItemToMove;
-        if (displacedScene || displacedCustomItem) {
-          let emptyBlockIndex = targetBlocks.findIndex((block) => block.type === "scene" && !block.scene && !block.customItem);
-          if (emptyBlockIndex !== -1) {
-            if (displacedScene) {
-              targetBlocks[emptyBlockIndex].scene = normalizeSceneRef(displacedScene);
-              targetBlocks[emptyBlockIndex] = normalizeScheduleBlock(targetBlocks[emptyBlockIndex]);
-            }
-            if (displacedCustomItem) targetBlocks[emptyBlockIndex].customItem = displacedCustomItem;
-          } else {
-            if (displacedScene) {
-              sourceBlock.scene = normalizeSceneRef(displacedScene);
-              Object.assign(sourceBlock, normalizeScheduleBlock(sourceBlock));
-            }
-            if (displacedCustomItem) sourceBlock.customItem = displacedCustomItem;
-          }
+        const newScheduledScenes = { ...scheduledScenes };
+        if (newScheduledScenes[sourceDate]) {
+          newScheduledScenes[sourceDate] = newScheduledScenes[sourceDate].filter((scene) => !sameScene(scene, sceneToMove));
+          if (newScheduledScenes[sourceDate].length === 0) delete newScheduledScenes[sourceDate];
         }
-        setShootingDays(updatedDays);
+        if (!newScheduledScenes[targetDate]) newScheduledScenes[targetDate] = [];
+        if (!newScheduledScenes[targetDate].some((scene) => sameScene(scene, sceneToMove))) {
+          newScheduledScenes[targetDate].push(normalizeSceneRef(sceneToMove));
+        }
+        setScheduledScenes(newScheduledScenes);
+        if (onSyncScheduledScenes) onSyncScheduledScenes(newScheduledScenes);
+      }
+
+      setShootingDays(updatedDays);
+
+      syncLocks.current.shootingDays = true;
+      if (sourceDayIndex !== targetDayIndex) {
+        database
+          .updateTwoShootingDaySchedules(
+            selectedProject,
+            updatedDays[sourceDayIndex].id, updatedDays[sourceDayIndex].scheduleBlocks,
+            updatedDays[targetDayIndex].id, updatedDays[targetDayIndex].scheduleBlocks
+          )
+          .then(() => { syncLocks.current.shootingDays = false; })
+          .catch((error) => { console.error("❌ Atomic two-day update failed:", error); syncLocks.current.shootingDays = false; });
       } else {
-        if (targetBlock.type !== "scene") { setDraggedItem(null); return; }
-
-        const sceneToMove = sourceBlock.scene;
-        const displacedScene = targetBlock.scene;
-        sourceBlock.scene = null;
-        Object.assign(sourceBlock, normalizeScheduleBlock(sourceBlock));
-        targetBlock.scene = normalizeSceneRef(sceneToMove);
-        Object.assign(targetBlock, normalizeScheduleBlock(targetBlock));
-
-        if (displacedScene) {
-          let emptyBlockIndex = targetBlocks.findIndex((block) => block.type === "scene" && block.scene === null);
-          if (emptyBlockIndex !== -1) {
-            targetBlocks[emptyBlockIndex].scene = normalizeSceneRef(displacedScene);
-            targetBlocks[emptyBlockIndex] = normalizeScheduleBlock(targetBlocks[emptyBlockIndex]);
-          } else {
-            if (sourceDayIndex !== targetDayIndex) {
-              emptyBlockIndex = sourceBlocks.findIndex((block) => block.type === "scene" && block.scene === null);
-              if (emptyBlockIndex !== -1) {
-                sourceBlocks[emptyBlockIndex].scene = normalizeSceneRef(displacedScene);
-                sourceBlocks[emptyBlockIndex] = normalizeScheduleBlock(sourceBlocks[emptyBlockIndex]);
-              }
-              else {
-                sourceBlock.scene = normalizeSceneRef(displacedScene);
-                Object.assign(sourceBlock, normalizeScheduleBlock(sourceBlock));
-              }
-            } else {
-              sourceBlock.scene = normalizeSceneRef(displacedScene);
-              Object.assign(sourceBlock, normalizeScheduleBlock(sourceBlock));
-            }
-          }
-        }
-
-        if (sourceDayIndex !== targetDayIndex && sceneToMove && !sceneToMove.isLunch) {
-          const sourceDate = updatedDays[sourceDayIndex].date;
-          const targetDate = updatedDays[targetDayIndex].date;
-          const updatedStripboard = [...stripboardScenes];
-          const movedSceneIndex = updatedStripboard.findIndex((s) => sameScene(s, sceneToMove));
-          if (movedSceneIndex !== -1) {
-            updatedStripboard[movedSceneIndex].scheduledDate = targetDate;
-            setStripboardScenes(updatedStripboard);
-          }
-          const newScheduledScenes = { ...scheduledScenes };
-          if (newScheduledScenes[sourceDate]) {
-            newScheduledScenes[sourceDate] = newScheduledScenes[sourceDate].filter((scene) => !sameScene(scene, sceneToMove));
-            if (newScheduledScenes[sourceDate].length === 0) delete newScheduledScenes[sourceDate];
-          }
-          if (!newScheduledScenes[targetDate]) newScheduledScenes[targetDate] = [];
-          if (!newScheduledScenes[targetDate].some((scene) => sameScene(scene, sceneToMove))) {
-            newScheduledScenes[targetDate].push(normalizeSceneRef(sceneToMove));
-          }
-          setScheduledScenes(newScheduledScenes);
-          if (onSyncScheduledScenes) onSyncScheduledScenes(newScheduledScenes);
-        }
-
-        setShootingDays(updatedDays);
-
-        syncLocks.current.shootingDays = true;
-        if (sourceDayIndex !== targetDayIndex) {
-          database
-            .updateTwoShootingDaySchedules(
-              selectedProject,
-              updatedDays[sourceDayIndex].id, updatedDays[sourceDayIndex].scheduleBlocks,
-              updatedDays[targetDayIndex].id, updatedDays[targetDayIndex].scheduleBlocks
-            )
-            .then(() => { syncLocks.current.shootingDays = false; })
-            .catch((error) => { console.error("❌ Atomic two-day update failed:", error); syncLocks.current.shootingDays = false; });
-        } else {
-          database
-            .updateShootingDayScheduleBlocks(selectedProject, dayId, updatedDays[targetDayIndex].scheduleBlocks)
-            .then(() => { syncLocks.current.shootingDays = false; })
-            .catch((error) => { console.error("❌ Atomic schedule blocks update failed:", error); syncLocks.current.shootingDays = false; });
-        }
+        syncDayBlocks(dayId, updatedDays[targetDayIndex].scheduleBlocks);
       }
     }
 
     setDraggedItem(null);
+    setDropIndicator(null);
   };
 
   const removeScene = (dayId, blockId) => {
@@ -1185,8 +1335,10 @@ function StripboardScheduleModule({
     if (blockIndex === -1 || !blocks[blockIndex].scene) return;
 
     const scene = blocks[blockIndex].scene;
-    blocks[blockIndex].scene = null;
-    Object.assign(blocks[blockIndex], normalizeScheduleBlock(blocks[blockIndex]));
+    updatedDays[dayIndex] = {
+      ...updatedDays[dayIndex],
+      scheduleBlocks: normalizeOrderedBlocks(blocks.filter((block) => block.id !== blockId)),
+    };
     setShootingDays(updatedDays);
 
     const updatedStripboard = [...stripboardScenes];
@@ -1253,7 +1405,7 @@ function StripboardScheduleModule({
       }
       blocks.splice(blockIndex, 1);
       setShootingDays(updatedDays);
-      if (onSyncAllShootingDays) onSyncAllShootingDays();
+      syncDayBlocks(dayId, updatedDays[dayIndex].scheduleBlocks);
     }
   };
 
@@ -1280,11 +1432,18 @@ function StripboardScheduleModule({
       newTime = `${newHours}:${newMinutes.toString().padStart(2, "0")} ${newPeriod}`;
     }
 
-    const newBlock = { id: Date.now(), scene: null, time: newTime, type: "scene" };
+    const newBlock = {
+      id: crypto.randomUUID(),
+      scene: null,
+      time: newTime,
+      type: "scene",
+      preserveEmpty: true,
+    };
     const endOfDayIndex = blocks.findIndex((block) => block.isEndOfDay);
     if (endOfDayIndex !== -1) blocks.splice(endOfDayIndex, 0, newBlock);
     else blocks.push(newBlock);
     setShootingDays(updatedDays);
+    syncDayBlocks(dayId, updatedDays[dayIndex].scheduleBlocks);
   };
 
   const updateBlockTime = (dayId, blockId, newTime, syncFunction) => {
@@ -1521,6 +1680,7 @@ function StripboardScheduleModule({
       if (customText) blocks[blockIndex].customItem = customText;
       else delete blocks[blockIndex].customItem;
       setShootingDays(updatedDays);
+      syncDayBlocks(dayId, updatedDays[dayIndex].scheduleBlocks);
     }
   };
 
@@ -1537,10 +1697,19 @@ function StripboardScheduleModule({
   }, []);
 
   return (
-    <div style={{ padding: "20px", minHeight: "100vh", width: "100%", maxWidth: "100vw", fontFamily: "Arial, sans-serif", overflow: "hidden", boxSizing: "border-box" }}>
-      <div style={{ display: "flex", gap: "15px", width: "100%", overflow: "hidden", boxSizing: "border-box" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box" }}>
+            <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>STRIPBOARD SCHEDULE</h2>
+          </div>
+        </div>
+      </div>
+      {/* ── Content area ── */}
+      <div style={{ flex: 1, overflow: "hidden", display: "flex", gap: "15px", width: "100%", boxSizing: "border-box", fontFamily: "Arial, sans-serif" }}>
         {/* Available Scenes Panel */}
-        <div style={{ width: "300px", border: "1px solid #ccc", position: "sticky", top: "20px", alignSelf: "flex-start", maxHeight: "calc(100vh - 40px)", overflow: "hidden", flexShrink: 0, zIndex: 100, backgroundColor: "white" }}>
+        <div style={{ width: "300px", border: "1px solid #ccc", height: "100%", overflow: "hidden", flexShrink: 0, zIndex: 100, backgroundColor: "white", display: "flex", flexDirection: "column" }}>
           <div style={{ backgroundColor: "#4CAF50", color: "white", padding: "10px", fontWeight: "bold", textAlign: "center" }}>
             <div style={{ marginBottom: "8px" }}>Available Scenes ({availableScenes.length})</div>
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
@@ -1631,16 +1800,17 @@ function StripboardScheduleModule({
             <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", zIndex: 999 }} onClick={() => setShowStatusDropdown(false)} />
           )}
 
-          <div style={{ height: "calc(100vh - 120px)", overflowY: "auto", padding: "10px" }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: "10px" }}>
             {availableScenes.map((scene, index) => {
               const isScheduled = !!scene.scheduledDate;
               return (
-                <div key={scene.sceneNumber} style={{ padding: "8px", margin: "4px 0", backgroundColor: isScheduled ? "#e0e0e0" : getStatusColor(scene.status || "Not Scheduled"), border: "1px solid #ddd", borderRadius: "4px", fontSize: "12px", opacity: isScheduled ? 0.6 : 1, position: "relative" }}>
+                <div key={scene.id || `${scene.sceneNumber}-${index}`} style={{ padding: "8px", margin: "4px 0", backgroundColor: isScheduled ? "#e0e0e0" : getStatusColor(scene.status || "Not Scheduled"), border: "1px solid #ddd", borderLeft: !isScheduled && Boolean(scene.metadata?.replacementLetter) ? `3px solid ${INSERTED_BORDER_COLOR}` : "1px solid #ddd", borderRadius: "4px", fontSize: "12px", opacity: isScheduled ? 0.6 : 1, position: "relative" }}>
                   <div draggable={!isScheduled} onDragStart={(e) => !isScheduled && handleDragStart(e, scene, "available")}
+                    onDragEnd={handleDragEnd}
                     onDoubleClick={() => handleSceneDoubleClick(scene)} title="Double-click to view script"
                     style={{ cursor: isScheduled ? "not-allowed" : "grab", color: isScheduled ? "#666" : getStatusTextColor(scene.status || "Not Scheduled") }}>
                     <div style={{ fontWeight: "bold", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span>Scene {scene.sceneNumber}: {scene.metadata?.intExt || ""} - {scene.metadata?.location || ""}</span>
+                      <span>Scene {getSceneDisplayLabel(scene, displayLabelMap)}: {scene.metadata?.intExt || ""} - {scene.metadata?.location || ""}</span>
                       {isScheduled && (
                         <button onClick={(e) => { e.stopPropagation(); resetSceneToUnscheduled(scene.sceneNumber); }}
                           title="Reset scene to unscheduled"
@@ -1662,7 +1832,7 @@ function StripboardScheduleModule({
 
         {/* Day Blocks Container */}
         <div ref={scrollContainerRef} onScroll={handleScroll}
-          style={{ flex: 1, minWidth: 0, overflow: "auto", width: "calc(100% - 315px)", maxHeight: "calc(100vh - 40px)" }}>
+          style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
           {shootingDays.map((day) => (
             <DayBlock
               key={day.id}
@@ -1671,6 +1841,7 @@ function StripboardScheduleModule({
               onDrop={handleDrop}
               handleDragOver={handleDragOver}
               handleDragStart={handleDragStart}
+              handleDragEnd={handleDragEnd}
               removeScene={removeScene}
               removeBlock={removeBlock}
               addBlock={addBlock}
@@ -1683,8 +1854,10 @@ function StripboardScheduleModule({
               unlockDay={unlockDay}
               getSceneBlockColor={getSceneBlockColor}
               getSceneBlockTextColor={getSceneBlockTextColor}
+              displayLabelMap={displayLabelMap}
               updateDayCollapse={updateDayCollapse}
               handleSceneDoubleClick={handleSceneDoubleClick}
+              dropIndicator={dropIndicator}
               canEdit={canEdit}
             />
           ))}
@@ -1713,7 +1886,7 @@ function StripboardScheduleModule({
                         </button>
                       )}
                       <h3 style={{ margin: 0, fontSize: "16px" }}>
-                        Scene {activeScene.sceneNumber}
+                        Scene {getSceneDisplayLabel(activeScene, displayLabelMap)}
                         {scriptFullMode && ` (${scriptFullIndex + 1} of ${scenes.length})`}
                         {" - "}{activeScene.heading}
                       </h3>

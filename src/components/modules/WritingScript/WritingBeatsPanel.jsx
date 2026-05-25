@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { APP_TAB_BLUE } from "../../../utils/scenePresentation";
 
 // Color system mirrors Script Breakdown's BEAT_MENU_COLORS exactly.
 const BEAT_MENU_COLORS = {
@@ -48,7 +49,7 @@ function WritingBeatsPanel({
 
   const getDropBorderStyle = (itemId, position) => {
     if (dragState.overId !== itemId || dragState.position !== position) return undefined;
-    return "2px solid #316AC5";
+    return `2px solid ${APP_TAB_BLUE}`;
   };
 
   const handleDragStart = (event, itemId) => {

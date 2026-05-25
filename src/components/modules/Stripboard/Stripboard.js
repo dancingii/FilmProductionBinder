@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
+import { buildSceneDisplayLabelMap, getSceneDisplayLabel } from "../../../utils/sceneDisplayLabel";
+import { getSceneStatusPresentation, INSERTED_BORDER_COLOR, INSERTED_LABEL_COLOR } from "../../../utils/scenePresentation";
+import SceneDetailModal from "../../shared/SceneDetailModal";
 // ─── Column Definitions ──────────────────────────────────────────────────────
 const ALL_COLUMNS = [
-  { key: "script",           label: "Script",       defaultWidth: 52,  defaultVisible: true,  resizable: false },
+  { key: "script",           label: "",             defaultWidth: 22,  defaultVisible: true,  resizable: false },
   { key: "status",           label: "Status",       defaultWidth: 88,  defaultVisible: true,  resizable: true  },
   { key: "scene",            label: "Scene #",      defaultWidth: 52,  defaultVisible: true,  resizable: true  },
   { key: "ie",               label: "I/E",          defaultWidth: 42,  defaultVisible: true,  resizable: true  },
@@ -25,9 +28,10 @@ const PREFS_KEY   = "stripboard_prefs_v1";
 const FONT_SIZES  = [7, 8, 9, 10, 11, 12];
 
 const defaultPrefs = () => ({
-  visibleColumns: ALL_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key),
-  columnWidths:   Object.fromEntries(ALL_COLUMNS.map((c) => [c.key, c.defaultWidth])),
-  fontSize:       9,
+  visibleColumns:   ALL_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key),
+  columnWidths:     Object.fromEntries(ALL_COLUMNS.map((c) => [c.key, c.defaultWidth])),
+  fontSize:         9,
+  columnFontSizes:  {},
 });
 
 const loadPrefs = () => {
@@ -37,9 +41,10 @@ const loadPrefs = () => {
     const saved = JSON.parse(raw);
     const def   = defaultPrefs();
     return {
-      visibleColumns: saved.visibleColumns || def.visibleColumns,
-      columnWidths:   { ...def.columnWidths, ...(saved.columnWidths || {}) },
-      fontSize:       saved.fontSize || def.fontSize,
+      visibleColumns:  saved.visibleColumns || def.visibleColumns,
+      columnWidths:    { ...def.columnWidths, ...(saved.columnWidths || {}) },
+      fontSize:        saved.fontSize || def.fontSize,
+      columnFontSizes: saved.columnFontSizes || {},
     };
   } catch {
     return defaultPrefs();
@@ -72,10 +77,12 @@ function StripboardModule({
   const [selectedSceneForScript, setSelectedSceneForScript] = useState(null);
   const [scriptFullMode,     setScriptFullMode]      = useState(false);
   const [scriptFullIndex,    setScriptFullIndex]     = useState(0);
+  const [headerContextMenu,  setHeaderContextMenu]   = useState(null);
 
   const saveTimerRef      = useRef(null);
   const dragState         = useRef(null);
   const scrollContainerRef = useRef(null);
+  const displayLabelMap = useMemo(() => buildSceneDisplayLabelMap(scenes), [scenes]);
 
   // ── Restore scroll ──
   useEffect(() => {
@@ -145,6 +152,31 @@ function StripboardModule({
     const idx    = FONT_SIZES.indexOf(prefs.fontSize);
     const newIdx = Math.max(0, Math.min(FONT_SIZES.length - 1, idx + delta));
     updatePrefs({ ...prefs, fontSize: FONT_SIZES[newIdx] });
+  };
+
+  // ── Per-column font-size overrides ──
+  const adjustColumnFontSize = (colKey, delta) => {
+    const current = (prefs.columnFontSizes || {})[colKey] ?? prefs.fontSize;
+    const idx     = FONT_SIZES.indexOf(current);
+    const base    = idx >= 0 ? idx : FONT_SIZES.indexOf(prefs.fontSize);
+    const newSize = FONT_SIZES[Math.max(0, Math.min(FONT_SIZES.length - 1, base + delta))];
+    updatePrefs({ ...prefs, columnFontSizes: { ...(prefs.columnFontSizes || {}), [colKey]: newSize } });
+  };
+
+  const setColumnFontSizeAbsolute = (colKey, size) => {
+    if (size === null) {
+      // eslint-disable-next-line no-unused-vars
+      const { [colKey]: _removed, ...rest } = prefs.columnFontSizes || {};
+      updatePrefs({ ...prefs, columnFontSizes: rest });
+    } else {
+      updatePrefs({ ...prefs, columnFontSizes: { ...(prefs.columnFontSizes || {}), [colKey]: size } });
+    }
+  };
+
+  const resetColumnWidth = (colKey) => {
+    const col = ALL_COLUMNS.find((c) => c.key === colKey);
+    if (!col) return;
+    updatePrefs({ ...prefs, columnWidths: { ...prefs.columnWidths, [colKey]: col.defaultWidth } });
   };
 
   // ── Column resize ──
@@ -273,8 +305,7 @@ function StripboardModule({
 
   const getStatusColor = (status, isScheduled = false) => {
     if (isScheduled && (status === "Pickups" || status === "Reshoot")) return "#8fb8d4";
-    const map = { Scheduled: "#8fb8d4", Shot: "#8aba8a", Pickups: "#d4bc7a", Reshoot: "#d49494", Removed: "#c4a0c4" };
-    return map[status] || "#e8e8e8";
+    return getSceneStatusPresentation(status).backgroundColor || "#e8e8e8";
   };
 
   const getStatusBorder = (status, isScheduled = false) => {
@@ -331,28 +362,60 @@ function StripboardModule({
       setShowScriptPopup(false);
       setShowLocationPopup(null);
       setShowColumnsMenu(false);
+      setHeaderContextMenu(null);
     };
     document.addEventListener("keydown", onEsc);
     return () => document.removeEventListener("keydown", onEsc);
   }, []);
 
+  // ── Badge/token renderer for item-list columns ──
+  const renderItemBadges = (items, fs, emptyLabel = "—") => {
+    if (!items || items.length === 0) return <span style={{ color: "#ccc", fontSize: fs }}>{emptyLabel}</span>;
+    return (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "3px", alignContent: "flex-start" }}>
+        {items.map((item, i) => (
+          <span key={i} style={{
+            display: "inline-flex", alignItems: "center",
+            maxWidth: "100%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            fontSize: fs - 1, lineHeight: "1.2",
+            backgroundColor: "#f0f0f0", color: "#333",
+            borderRadius: "3px", padding: "1px 5px",
+            border: "1px solid #ddd",
+          }}>
+            {item}
+          </span>
+        ))}
+      </div>
+    );
+  };
+
   // ── Cell renderer ──
   const renderCell = (scene, index, colKey, sceneItems, sceneCastCrew) => {
-    const fs = prefs.fontSize;
+    const fs = (prefs.columnFontSizes || {})[colKey] ?? prefs.fontSize;
     switch (colKey) {
-      case "script":
+      case "script": {
+        const isIns = Boolean(scene.metadata?.replacementLetter);
+        if (!isIns) return null;
+        const letter = scene.metadata.replacementLetter;
         return (
-          <button onClick={() => handleSceneClick(scene)}
-            style={{ backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "2px", padding: "2px 5px", fontSize: fs - 1, cursor: "pointer", fontWeight: "bold", whiteSpace: "nowrap" }}>
-            Script
-          </button>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+            <span style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: "16px", height: "16px", borderRadius: "50%",
+              backgroundColor: INSERTED_BORDER_COLOR, color: "white",
+              fontSize: "9px", fontWeight: "bold", lineHeight: 1, flexShrink: 0,
+            }}>
+              {letter}
+            </span>
+          </div>
         );
+      }
 
       case "status":
         return (
           <select value={scene.status || "Not Scheduled"}
             onChange={(e) => onUpdateScene && onUpdateScene(index, "status", e.target.value)}
-            style={{ width: "100%", fontSize: fs - 1, padding: "1px 14px 1px 2px", border: "1px solid #ccc", borderRadius: "2px", backgroundColor: "white" }}>
+            style={{ width: "90%", maxWidth: "100%", fontSize: fs - 1, padding: "1px 14px 1px 2px", border: "1px solid #ccc", borderRadius: "2px", backgroundColor: "white", boxSizing: "border-box" }}>
             <option value="Not Scheduled">Unscheduled</option>
             <option value="Scheduled">Scheduled</option>
             <option value="Shot">Shot</option>
@@ -362,17 +425,14 @@ function StripboardModule({
           </select>
         );
 
-      case "scene":
+      case "scene": {
+        const isIns = Boolean(scene.metadata?.replacementLetter);
         return (
-          <div style={{ fontWeight: "bold", fontSize: fs }}>
-            {scene.sceneNumber}
-            <button
-              onClick={() => { setHeadingForm({ intExt: scene.metadata?.intExt || "EXT.", location: scene.metadata?.location || "", timeOfDay: scene.metadata?.timeOfDay || scene.manualTimeOfDay || "DAY", modifier: scene.metadata?.modifier || "" }); setEditingHeadingScene(index); }}
-              style={{ backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "2px", padding: "1px 4px", fontSize: fs - 2, cursor: "pointer", marginLeft: "3px", verticalAlign: "middle" }}>
-              ✎
-            </button>
+          <div style={{ fontWeight: "bold", fontSize: fs, color: isIns ? INSERTED_LABEL_COLOR : undefined }}>
+            {getSceneDisplayLabel(scene, displayLabelMap)}
           </div>
         );
+      }
 
       case "ie":
         return <div style={{ fontSize: fs }}>{scene.metadata?.intExt || ""}</div>;
@@ -402,11 +462,7 @@ function StripboardModule({
         return <div style={{ fontSize: fs }}>{scene.manualTimeOfDay || scene.metadata?.timeOfDay || "--"}</div>;
 
       case "cast":
-        return (
-          <div style={{ lineHeight: "1.2" }}>
-            {sceneCastCrew.map((p, i) => <div key={i} style={{ fontSize: fs, marginBottom: "1px" }}>{p.displayText}</div>)}
-          </div>
-        );
+        return renderItemBadges(sceneCastCrew.map((p) => p.displayText), fs);
 
         case "pageNum":
             return <div style={{ fontSize: fs, textAlign: "center" }}>{scene.pageNumber || "1"}</div>;
@@ -415,10 +471,10 @@ function StripboardModule({
         return <div style={{ fontSize: fs }}>{scene.pageLength || "1/8"}</div>;
 
       case "wardrobe":
-        return <div style={{ fontSize: fs, lineHeight: "1.3" }}>{sceneItems.wardrobe.join(", ")}</div>;
+        return renderItemBadges(sceneItems.wardrobe, fs);
 
       case "props":
-        return <div style={{ fontSize: fs, lineHeight: "1.3" }}>{sceneItems.props.join(", ")}</div>;
+        return renderItemBadges(sceneItems.props, fs);
 
       case "notes":
         return editingNotes === index ? (
@@ -438,10 +494,10 @@ function StripboardModule({
         );
 
       case "makeup":
-        return <div style={{ fontSize: fs, lineHeight: "1.3" }}>{sceneItems.makeup.join(", ") || <span style={{ color: "#ccc" }}>—</span>}</div>;
+        return renderItemBadges(sceneItems.makeup, fs);
 
       case "productionDesign":
-        return <div style={{ fontSize: fs, lineHeight: "1.3" }}>{sceneItems.productionDesign.join(", ") || <span style={{ color: "#ccc" }}>—</span>}</div>;
+        return renderItemBadges(sceneItems.productionDesign, fs);
 
         case "scheduledDate": {
             const shootDay = sceneShootDayMap[String(scene.sceneNumber)];
@@ -468,7 +524,7 @@ function StripboardModule({
   if (!scenes || scenes.length === 0) {
     return (
       <div style={{ padding: "20px", width: "100%", height: "calc(100vh - 40px)", overflowY: "auto", boxSizing: "border-box" }}>
-        <h2>Stripboard</h2>
+        <h2 style={{ letterSpacing: "0.08em" }}>STRIPBOARD</h2>
         <p>No scenes loaded. Please upload a script first.</p>
       </div>
     );
@@ -477,21 +533,23 @@ function StripboardModule({
   const statusCounts = getStatusCounts();
 
   return (
-    <div ref={scrollContainerRef} onScroll={handleScroll}
-      style={{ padding: "20px", width: "100%", height: "calc(100vh - 40px)", overflowY: "auto", boxSizing: "border-box" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
 
-      {/* ── Header + Toolbar ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
-        <h2 style={{ margin: 0 }}>Stripboard — Scene Breakdown</h2>
-
-        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-
-          {/* Saved toast — fixed position so it never shifts the toolbar */}
-          {savedToast && (
-            <div style={{ position: "fixed", bottom: "20px", right: "20px", backgroundColor: "#4CAF50", color: "white", fontSize: "12px", padding: "6px 14px", borderRadius: "4px", fontWeight: "bold", zIndex: 9999, boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>
-              ✓ Layout saved
-            </div>
-          )}
+      {/* ── Header bar ── */}
+      <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
+          <div style={{ flex: 1, display: "flex", gap: "8px", alignItems: "center", padding: "5px 12px", boxSizing: "border-box", flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0, fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>STRIPBOARD</h2>
+          <span style={{ color: "#333", fontWeight: "bold", fontSize: "12px" }}>Total: {statusCounts.total}</span>
+          <span style={{ fontSize: "12px", color: "#666",  backgroundColor: "#e0e0e0", padding: "2px 8px", borderRadius: "4px" }}>Unscheduled: {statusCounts["Not Scheduled"]}</span>
+          <span style={{ fontSize: "12px", color: "white", backgroundColor: "#2196F3", padding: "2px 8px", borderRadius: "4px" }}>Scheduled: {statusCounts.Scheduled}</span>
+          <span style={{ fontSize: "12px", color: "white", backgroundColor: "#4CAF50", padding: "2px 8px", borderRadius: "4px" }}>Shot: {statusCounts.Shot}</span>
+          <span style={{ fontSize: "12px", color: "black", backgroundColor: "#FFC107", padding: "2px 8px", borderRadius: "4px" }}>Pickups: {statusCounts.Pickups}</span>
+          <span style={{ fontSize: "12px", color: "white", backgroundColor: "#F44336", padding: "2px 8px", borderRadius: "4px" }}>Reshoots: {statusCounts.Reshoots}</span>
+          <span style={{ fontSize: "12px", color: "white", backgroundColor: "#9E9E9E", padding: "2px 8px", borderRadius: "4px" }}>Removed: {statusCounts.Removed}</span>
+          <span style={{ color: "#aaa", fontSize: "11px" }}>↔ Drag column edges to resize</span>
+          <span style={{ color: "#aaa", fontSize: "11px", marginLeft: "16px" }}>Right-click header to change column font size</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center", flexShrink: 0 }}>
 
           {/* Font size */}
           <div style={{ display: "flex", alignItems: "center", gap: "4px", backgroundColor: "#f5f5f5", border: "1px solid #ddd", borderRadius: "4px", padding: "3px 8px" }}>
@@ -514,8 +572,7 @@ function StripboardModule({
               <>
                 <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", zIndex: 998 }} onClick={() => setShowColumnsMenu(false)} />
                 <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, backgroundColor: "white", border: "1px solid #ddd", borderRadius: "6px", boxShadow: "0 4px 16px rgba(0,0,0,0.15)", zIndex: 999, minWidth: "210px", padding: "8px 0" }}>
-                <div style={{ padding: "4px 14px 8px", borderBottom: "1px solid #eee", fontSize: "11px", color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: "bold" }}>Show / Hide · Drag to Reorder</div>
-                  {/* Visible columns first (in current order), then hidden columns */}
+                  <div style={{ padding: "4px 14px 8px", borderBottom: "1px solid #eee", fontSize: "11px", color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: "bold" }}>Show / Hide · Drag to Reorder</div>
                   {[
                     ...prefs.visibleColumns.map((k) => ALL_COLUMNS.find((c) => c.key === k)).filter(Boolean),
                     ...ALL_COLUMNS.filter((c) => !prefs.visibleColumns.includes(c.key)),
@@ -528,16 +585,11 @@ function StripboardModule({
                         style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 10px 4px 14px", opacity: isVisible ? 1 : 0.5 }}
                         onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#f5f5f5")}
                         onMouseOut={(e)  => (e.currentTarget.style.backgroundColor = "transparent")}>
-                        {/* Reorder arrows — only shown for visible columns */}
                         <div style={{ display: "flex", flexDirection: "column", gap: "1px", flexShrink: 0 }}>
-                          <button
-                            onClick={() => moveColumn(col.key, -1)}
-                            disabled={!isVisible || visIdx === 0}
+                          <button onClick={() => moveColumn(col.key, -1)} disabled={!isVisible || visIdx === 0}
                             style={{ backgroundColor: "transparent", border: "none", padding: "0 2px", fontSize: "9px", cursor: (!isVisible || visIdx === 0) ? "default" : "pointer", color: (!isVisible || visIdx === 0) ? "#ddd" : "#666", lineHeight: 1 }}
                             title="Move left">▲</button>
-                          <button
-                            onClick={() => moveColumn(col.key, 1)}
-                            disabled={!isVisible || visIdx === prefs.visibleColumns.length - 1}
+                          <button onClick={() => moveColumn(col.key, 1)} disabled={!isVisible || visIdx === prefs.visibleColumns.length - 1}
                             style={{ backgroundColor: "transparent", border: "none", padding: "0 2px", fontSize: "9px", cursor: (!isVisible || visIdx === prefs.visibleColumns.length - 1) ? "default" : "pointer", color: (!isVisible || visIdx === prefs.visibleColumns.length - 1) ? "#ddd" : "#666", lineHeight: 1 }}
                             title="Move right">▼</button>
                         </div>
@@ -563,29 +615,26 @@ function StripboardModule({
             )}
           </div>
 
+          </div>
+          </div>
         </div>
       </div>
 
-      {/* ── Status bar ── */}
-      <div style={{ marginBottom: "12px", padding: "8px 12px", backgroundColor: "#f5f5f5", borderRadius: "5px", display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center", fontSize: "12px" }}>
-        <span style={{ color: "#333", fontWeight: "bold" }}>Total: {statusCounts.total}</span>
-        <span style={{ color: "#666",  backgroundColor: "#e0e0e0", padding: "3px 8px", borderRadius: "4px" }}>Unscheduled: {statusCounts["Not Scheduled"]}</span>
-        <span style={{ color: "white", backgroundColor: "#2196F3", padding: "3px 8px", borderRadius: "4px" }}>Scheduled: {statusCounts.Scheduled}</span>
-        <span style={{ color: "white", backgroundColor: "#4CAF50", padding: "3px 8px", borderRadius: "4px" }}>Shot: {statusCounts.Shot}</span>
-        <span style={{ color: "black", backgroundColor: "#FFC107", padding: "3px 8px", borderRadius: "4px" }}>Pickups: {statusCounts.Pickups}</span>
-        <span style={{ color: "white", backgroundColor: "#F44336", padding: "3px 8px", borderRadius: "4px" }}>Reshoots: {statusCounts.Reshoots}</span>
-        <span style={{ color: "white", backgroundColor: "#9E9E9E", padding: "3px 8px", borderRadius: "4px" }}>Removed: {statusCounts.Removed}</span>
-        <span style={{ color: "#aaa", fontSize: "11px", marginLeft: "auto" }}>↔ Drag column edges to resize</span>
-      </div>
+      {/* ── Scrollable table area (header sticky + rows scroll) ── */}
+      <div ref={scrollContainerRef} onScroll={handleScroll}
+        style={{ flex: 1, overflow: "auto", position: "relative" }}>
 
-      {/* ── Table ── */}
-      <div style={{ width: "100%", overflowX: "auto", maxWidth: "calc(100vw - 160px)" }}>
-
-        {/* Header */}
-        <div style={{ display: "grid", gridTemplateColumns: gridTemplate, gap: "5px", backgroundColor: "#4CAF50", color: "white", fontWeight: "bold", fontSize: prefs.fontSize - 1, borderBottom: "2px solid #388E3C", minWidth: `${minWidth}px`, userSelect: "none" }}>
+        {/* Sticky column header */}
+        <div style={{ position: "sticky", top: 0, zIndex: 2, display: "grid", gridTemplateColumns: gridTemplate, gap: "5px", backgroundColor: "#4CAF50", color: "white", fontWeight: "bold", fontSize: prefs.fontSize - 1, borderBottom: "2px solid #388E3C", minWidth: `${minWidth}px`, userSelect: "none" }}>
           {visibleCols.map((col) => (
-            <div key={col.key} style={{ position: "relative", padding: "7px 6px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={col.label}>
+            <div key={col.key}
+              onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setHeaderContextMenu({ colKey: col.key, x: e.clientX, y: e.clientY }); }}
+              style={{ position: "relative", padding: "7px 6px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", cursor: "default" }}
+              title={col.label}>
               {col.label}
+              {(prefs.columnFontSizes || {})[col.key] !== undefined && (
+                <span style={{ marginLeft: "4px", fontSize: "8px", opacity: 0.7, verticalAlign: "middle" }}>●</span>
+              )}
               {col.resizable && (
                 <div
                   onMouseDown={(e) => onResizeStart(e, col.key)}
@@ -608,7 +657,9 @@ function StripboardModule({
           const isScheduled   = !!scene.scheduledDate;
 
           return (
-            <div key={index} style={{ display: "grid", gridTemplateColumns: gridTemplate, gap: "5px", padding: "6px", backgroundColor: getStatusColor(scene.status || "Not Scheduled", isScheduled), outline: getStatusBorder(scene.status || "Not Scheduled", isScheduled), borderBottom: "1px solid #ddd", minHeight: "28px", alignItems: "start", minWidth: `${minWidth}px` }}>
+            <div key={index}
+              onContextMenu={(e) => { e.preventDefault(); setHeadingForm({ intExt: scene.metadata?.intExt || "EXT.", location: scene.metadata?.location || "", timeOfDay: scene.metadata?.timeOfDay || scene.manualTimeOfDay || "DAY", modifier: scene.metadata?.modifier || "" }); setEditingHeadingScene(index); }}
+              style={{ display: "grid", gridTemplateColumns: gridTemplate, gap: "5px", padding: "6px", backgroundColor: getStatusColor(scene.status || "Not Scheduled", isScheduled), outline: getStatusBorder(scene.status || "Not Scheduled", isScheduled), borderBottom: "1px solid #ddd", minHeight: "28px", alignItems: "start", minWidth: `${minWidth}px` }}>
               {visibleCols.map((col) => (
                 <div key={col.key} style={{ overflow: "hidden", minWidth: 0 }}>
                   {renderCell(scene, index, col.key, sceneItems, sceneCastCrew)}
@@ -619,6 +670,83 @@ function StripboardModule({
         })}
       </div>
 
+      {/* ── Saved toast ── */}
+      {savedToast && (
+        <div style={{ position: "fixed", bottom: "20px", right: "20px", backgroundColor: "#4CAF50", color: "white", fontSize: "12px", padding: "6px 14px", borderRadius: "4px", fontWeight: "bold", zIndex: 9999, boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>
+          ✓ Layout saved
+        </div>
+      )}
+
+      {/* ── Column header context menu ── */}
+      {headerContextMenu && (() => {
+        const col         = ALL_COLUMNS.find((c) => c.key === headerContextMenu.colKey);
+        const colKey      = headerContextMenu.colKey;
+        const hasOverride = (prefs.columnFontSizes || {})[colKey] !== undefined;
+        const colLabel    = col ? col.label || colKey : colKey;
+        const effectiveFs = (prefs.columnFontSizes || {})[colKey] ?? prefs.fontSize;
+        const fsIdx       = FONT_SIZES.indexOf(effectiveFs);
+        const atMin       = fsIdx <= 0;
+        const atMax       = fsIdx >= FONT_SIZES.length - 1;
+        const hoverOn     = (e) => (e.currentTarget.style.backgroundColor = "#f0f0f0");
+        const hoverOff    = (e) => (e.currentTarget.style.backgroundColor = "transparent");
+        return (
+          <>
+            <div style={{ position: "fixed", inset: 0, zIndex: 9990 }} onClick={() => setHeaderContextMenu(null)} />
+            <div
+              style={{ position: "fixed", top: headerContextMenu.y, left: headerContextMenu.x, zIndex: 9991, backgroundColor: "white", border: "1px solid #ddd", borderRadius: "6px", boxShadow: "0 4px 16px rgba(0,0,0,0.18)", minWidth: "200px", padding: "4px 0", overflow: "hidden" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div style={{ padding: "5px 14px 6px", fontSize: "11px", fontWeight: "bold", color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #eee" }}>
+                {colLabel} — Font Size
+              </div>
+
+              {/* −/+ stepper row */}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 14px" }}>
+                <button
+                  disabled={atMin}
+                  onClick={(e) => { e.stopPropagation(); adjustColumnFontSize(colKey, -1); }}
+                  style={{ width: "28px", height: "28px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: atMin ? "#f5f5f5" : "white", color: atMin ? "#ccc" : "#333", fontSize: "16px", fontWeight: "bold", cursor: atMin ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                >−</button>
+                <span style={{ flex: 1, textAlign: "center", fontSize: "13px", fontWeight: "bold", color: hasOverride ? "#1a56db" : "#555" }}>
+                  {effectiveFs}px{hasOverride ? "" : " (global)"}
+                </span>
+                <button
+                  disabled={atMax}
+                  onClick={(e) => { e.stopPropagation(); adjustColumnFontSize(colKey, 1); }}
+                  style={{ width: "28px", height: "28px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: atMax ? "#f5f5f5" : "white", color: atMax ? "#ccc" : "#333", fontSize: "16px", fontWeight: "bold", cursor: atMax ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                >+</button>
+              </div>
+
+              {/* Use Global */}
+              <div style={{ borderTop: "1px solid #f0f0f0", margin: "0" }} />
+              <button
+                style={{ backgroundColor: "transparent", border: "none", padding: "6px 14px", cursor: hasOverride ? "pointer" : "default", fontSize: "12px", textAlign: "left", width: "100%", display: "block", color: hasOverride ? "#1a56db" : "#aaa" }}
+                onMouseOver={(e) => { if (hasOverride) hoverOn(e); }}
+                onMouseOut={(e)  => { if (hasOverride) hoverOff(e); }}
+                onClick={() => { if (hasOverride) { setColumnFontSizeAbsolute(colKey, null); setHeaderContextMenu(null); } }}
+              >
+                ↩ Use Global Font Size{hasOverride ? "" : " (active)"}
+              </button>
+
+              {/* Reset column width */}
+              {col?.resizable && (
+                <>
+                  <div style={{ borderTop: "1px solid #f0f0f0", margin: "0" }} />
+                  <button
+                    style={{ backgroundColor: "transparent", border: "none", padding: "6px 14px", cursor: "pointer", fontSize: "12px", textAlign: "left", width: "100%", display: "block", color: "#666" }}
+                    onMouseOver={hoverOn} onMouseOut={hoverOff}
+                    onClick={() => { resetColumnWidth(colKey); setHeaderContextMenu(null); }}
+                  >
+                    Reset Column Width
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        );
+      })()}
+
       {/* ── Location popup ── */}
       {showLocationPopup && (
         <>
@@ -627,7 +755,7 @@ function StripboardModule({
             <h3 style={{ marginTop: 0 }}>Location Details</h3>
             <p><strong>Script Location:</strong> {showLocationPopup.location}</p>
             <p><strong>Type:</strong> {showLocationPopup.scene.metadata?.intExt}</p>
-            <p><strong>Scene:</strong> {showLocationPopup.scene.sceneNumber} — {showLocationPopup.scene.heading}</p>
+            <p><strong>Scene:</strong> {getSceneDisplayLabel(showLocationPopup.scene, displayLabelMap)} — {showLocationPopup.scene.heading}</p>
             <div style={{ marginTop: "15px" }}>
               <button onClick={() => { setShowLocationPopup(null); onLocationClick && onLocationClick(); }} style={{ backgroundColor: "#2196F3", color: "white", padding: "8px 16px", border: "none", borderRadius: "4px", cursor: "pointer", marginRight: "10px" }}>Go to Locations</button>
               <button onClick={() => setShowLocationPopup(null)} style={{ backgroundColor: "#ccc", padding: "8px 16px", border: "none", borderRadius: "4px", cursor: "pointer" }}>Close</button>
@@ -645,7 +773,7 @@ function StripboardModule({
               <div style={{ backgroundColor: "#2196F3", color: "white", padding: "15px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                   {scriptFullMode && <button onClick={() => setScriptFullIndex(Math.max(0, scriptFullIndex - 1))} disabled={scriptFullIndex === 0} style={{ backgroundColor: scriptFullIndex === 0 ? "#ccc" : "white", color: scriptFullIndex === 0 ? "#888" : "#2196F3", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: scriptFullIndex === 0 ? "not-allowed" : "pointer", fontWeight: "bold" }}>← Prev</button>}
-                  <h3 style={{ margin: 0, fontSize: "16px" }}>Scene {activeScene.sceneNumber}{scriptFullMode ? ` (${scriptFullIndex + 1} of ${scenes.length})` : ""} — {activeScene.heading}</h3>
+                  <h3 style={{ margin: 0, fontSize: "16px" }}>Scene {getSceneDisplayLabel(activeScene, displayLabelMap)}{scriptFullMode ? ` (${scriptFullIndex + 1} of ${scenes.length})` : ""} — {activeScene.heading}</h3>
                   {scriptFullMode && <button onClick={() => setScriptFullIndex(Math.min(scenes.length - 1, scriptFullIndex + 1))} disabled={scriptFullIndex === scenes.length - 1} style={{ backgroundColor: scriptFullIndex === scenes.length - 1 ? "#ccc" : "white", color: scriptFullIndex === scenes.length - 1 ? "#888" : "#2196F3", border: "none", padding: "6px 12px", borderRadius: "3px", cursor: scriptFullIndex === scenes.length - 1 ? "not-allowed" : "pointer", fontWeight: "bold" }}>Next →</button>}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -667,45 +795,16 @@ function StripboardModule({
         );
       })()}
 
-      {/* ── Edit Heading modal ── */}
       {editingHeadingScene !== null && (
-        <>
-          <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 999 }} onClick={() => setEditingHeadingScene(null)} />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", backgroundColor: "white", border: "2px solid #ccc", borderRadius: "8px", padding: "24px", boxShadow: "0 4px 20px rgba(0,0,0,0.3)", zIndex: 1000, minWidth: "420px" }}>
-            <h3 style={{ marginTop: 0, marginBottom: "20px" }}>Edit Scene {scenes[editingHeadingScene]?.sceneNumber} Heading</h3>
-            <div style={{ display: "flex", gap: "10px", marginBottom: "16px", alignItems: "center" }}>
-              <div>
-                <label style={{ fontSize: "11px", color: "#666", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>INT/EXT</label>
-                <select value={headingForm.intExt} onChange={(e) => setHeadingForm((p) => ({ ...p, intExt: e.target.value }))} style={{ padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", fontWeight: "bold" }}>
-                  <option value="INT.">INT.</option><option value="EXT.">EXT.</option><option value="I/E">I/E</option>
-                </select>
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: "11px", color: "#666", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Location</label>
-                <input type="text" value={headingForm.location} onChange={(e) => setHeadingForm((p) => ({ ...p, location: e.target.value.toUpperCase() }))} style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }} placeholder="LOCATION NAME" autoFocus />
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: "10px", marginBottom: "20px", alignItems: "center" }}>
-              <div>
-                <label style={{ fontSize: "11px", color: "#666", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Time of Day</label>
-                <select value={headingForm.timeOfDay} onChange={(e) => setHeadingForm((p) => ({ ...p, timeOfDay: e.target.value }))} style={{ padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", fontWeight: "bold" }}>
-                  <option value="DAY">DAY</option><option value="NIGHT">NIGHT</option><option value="DAWN">DAWN</option><option value="DUSK">DUSK</option><option value="OTHER">OTHER</option>
-                </select>
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: "11px", color: "#666", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Modifier</label>
-                <input type="text" value={headingForm.modifier} onChange={(e) => setHeadingForm((p) => ({ ...p, modifier: e.target.value.toUpperCase() }))} style={{ width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px", boxSizing: "border-box" }} placeholder="e.g. CONTINUOUS, LATER" />
-              </div>
-            </div>
-            <div style={{ backgroundColor: "#f5f5f5", padding: "10px 14px", borderRadius: "4px", marginBottom: "20px", fontSize: "13px", fontWeight: "bold", fontFamily: "monospace" }}>
-              {headingForm.intExt} {headingForm.location}{headingForm.timeOfDay ? ` - ${headingForm.timeOfDay}` : ""}{headingForm.modifier ? ` - ${headingForm.modifier}` : ""}
-            </div>
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-              <button onClick={() => setEditingHeadingScene(null)} style={{ padding: "8px 16px", border: "1px solid #ccc", borderRadius: "4px", cursor: "pointer", backgroundColor: "white", fontSize: "13px" }}>Cancel</button>
-              <button onClick={() => { if (onUpdateScene) onUpdateScene(editingHeadingScene, "heading", headingForm); setEditingHeadingScene(null); }} style={{ padding: "8px 20px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "13px", fontWeight: "bold" }}>✓ Save</button>
-            </div>
-          </div>
-        </>
+        <SceneDetailModal
+          scene={scenes[editingHeadingScene]}
+          displayLabel={getSceneDisplayLabel(scenes[editingHeadingScene], displayLabelMap)}
+          onClose={() => setEditingHeadingScene(null)}
+          headingForm={headingForm}
+          onHeadingFormChange={(updates) => setHeadingForm((p) => ({ ...p, ...updates }))}
+          onSave={(form) => { if (onUpdateScene) onUpdateScene(editingHeadingScene, "heading", form); setEditingHeadingScene(null); }}
+          onViewScript={() => { setEditingHeadingScene(null); handleSceneClick(scenes[editingHeadingScene]); }}
+        />
       )}
     </div>
   );
