@@ -529,7 +529,7 @@ function ReportsModule({
             </div>
           </div>
         </div>
-        <div style={{ flex: 1, overflowY: "auto", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", padding: "20px", textAlign: "center" }}>
+        <div style={{ flex: 1, overflowY: "auto", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", padding: "20px", textAlign: "center" }}>
           <p>No shooting days with scheduled scenes found.</p>
           <p>Please schedule scenes in the Stripboard Schedule module first.</p>
         </div>
@@ -558,7 +558,7 @@ function ReportsModule({
         </div>
       </div>
       {/* ── Content area ── */}
-      <div style={{ flex: 1, overflowY: "auto", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", padding: "20px" }}>
+      <div style={{ flex: 1, overflowY: "auto", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", padding: "20px" }}>
 
       {/* Day Selection */}
       <div

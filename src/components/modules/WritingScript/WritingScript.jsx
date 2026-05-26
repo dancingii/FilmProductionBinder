@@ -592,7 +592,7 @@ function BeatsList({ beats, onDeleteItem = null, onReorderItem = null, onOpenIte
 
   return (
     <div style={{ marginLeft: "20px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div style={{ width: "492px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden", flex: 1 }}>
+      <div style={{ width: "492px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden", flex: 1 }}>
         <div style={{ padding: "8px", borderBottom: "1px solid #e5e5e5", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
           <strong>Outline</strong>
           <span style={{ fontSize: "11px", color: "#777" }}>{beatCount} beats{actCount ? `, ${actCount} acts` : ""}</span>
@@ -662,7 +662,7 @@ function BeatsList({ beats, onDeleteItem = null, onReorderItem = null, onOpenIte
       {beatContextMenu && (
         <>
           <div style={{ position: "fixed", inset: 0, zIndex: 2999 }} onClick={() => setBeatContextMenu(null)} />
-          <div style={{ position: "fixed", left: beatContextMenu.x, top: beatContextMenu.y, zIndex: 3000, backgroundColor: "white", border: "1px solid #e0e0e0", borderRadius: "6px", boxShadow: "0 4px 16px rgba(0,0,0,0.18)", minWidth: "190px", overflow: "hidden", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px" }}>
+          <div style={{ position: "fixed", left: beatContextMenu.x, top: beatContextMenu.y, zIndex: 3000, backgroundColor: "white", border: "1px solid #e0e0e0", borderRadius: "6px", boxShadow: "0 4px 16px rgba(0,0,0,0.18)", minWidth: "190px", overflow: "hidden", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px" }}>
             <div style={{ padding: "6px 12px 5px", fontSize: "11px", color: "#999", borderBottom: "1px solid #f0f0f0", fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "220px" }}>
               {beatContextMenu.title || "Untitled Beat"}
             </div>
@@ -830,7 +830,7 @@ function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor,
 	  if (scenes.length === 0) {
 	    return (
 	      <div style={{ marginLeft: "20px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-	        <div style={{ flex: 1, width: "492px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden", padding: "18px", boxSizing: "border-box", color: "#555", lineHeight: 1.45 }}>
+	        <div style={{ flex: 1, width: "492px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden", padding: "18px", boxSizing: "border-box", color: "#555", lineHeight: 1.45 }}>
 	          {titlePageRow}
 	          <div style={{ fontWeight: "bold", fontSize: "14px", color: "#222", marginBottom: "8px" }}>No scenes yet</div>
 	          <div style={{ marginBottom: "14px" }}>Create a starter scene to begin writing.</div>
@@ -846,7 +846,7 @@ function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor,
 
 	  return (
 	    <div style={{ marginLeft: "20px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-	      <div ref={listRef} style={{ flex: 1, width: "492px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden" }}>
+	      <div ref={listRef} style={{ flex: 1, width: "492px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden" }}>
 	        {titlePageRow}
 	        {scenes.map((scene, index) => {
           const sceneKey = getSceneDragKey(scene, index);
@@ -906,7 +906,7 @@ function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor,
           <div style={{ position: "fixed", inset: 0, zIndex: 2999 }} onMouseDown={() => setSceneContextMenu(null)} />
           <div
             onMouseDown={(e) => e.stopPropagation()}
-            style={{ position: "fixed", left: sceneContextMenu.x, top: sceneContextMenu.y, zIndex: 3000, backgroundColor: "white", border: "1px solid #bbb", borderRadius: "4px", boxShadow: "0 4px 12px rgba(0,0,0,0.18)", minWidth: "142px", overflow: "hidden", padding: "4px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "11px" }}
+            style={{ position: "fixed", left: sceneContextMenu.x, top: sceneContextMenu.y, zIndex: 3000, backgroundColor: "white", border: "1px solid #bbb", borderRadius: "4px", boxShadow: "0 4px 12px rgba(0,0,0,0.18)", minWidth: "142px", overflow: "hidden", padding: "4px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "11px" }}
           >
             {Object.entries({ default: null, ...Object.fromEntries(Object.entries(SCENE_CUSTOM_COLORS).filter(([k]) => k !== "default").map(([k, v]) => [k, k])) }).map(([label, colorKey]) => {
               const color = SCENE_CUSTOM_COLORS[colorKey] || SCENE_CUSTOM_COLORS.default;
@@ -2734,7 +2734,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	              </div>
 	              <span
 	                title={writingDraftSaveStatus === "local" ? "Writing draft saved locally only; database save failed." : "Writing draft saves to the project database with local cache fallback."}
-	                style={{ width: "70px", minWidth: "70px", textAlign: "right", fontSize: "10px", color: getWritingDraftSaveStatusColor(writingDraftSaveStatus), fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", whiteSpace: "nowrap", overflow: "hidden", marginRight: "2px" }}
+	                style={{ width: "70px", minWidth: "70px", textAlign: "right", fontSize: "10px", color: getWritingDraftSaveStatusColor(writingDraftSaveStatus), fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", whiteSpace: "nowrap", overflow: "hidden", marginRight: "2px" }}
 	              >
 	                {writingDraftSaveStatus === "saving" ? "Saving…" : writingDraftSaveStatus === "unsaved" ? "Unsaved" : writingDraftSaveStatus === "error" ? "Save error" : writingDraftSaveStatus === "local" ? "Saved local" : "Saved DB"}
 	              </span>
@@ -2742,7 +2742,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	                value={writingEditorElementType}
 	                onChange={(e) => setWritingEditorElementType(e.target.value)}
 	                disabled={!writingEditorElementType}
-	                style={{ width: "132px", padding: "5px 8px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", opacity: writingEditorElementType ? 1 : 0.55, cursor: writingEditorElementType ? "pointer" : "default" }}
+	                style={{ width: "132px", padding: "5px 8px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", opacity: writingEditorElementType ? 1 : 0.55, cursor: writingEditorElementType ? "pointer" : "default" }}
 	              >
 	                <option value="">Element</option>
 	                {ELEMENT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
@@ -2764,14 +2764,14 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	                    });
 	                    setShowHighlightMenu(prev => !prev);
 	                  }}
-	                  style={{ padding: "3px 8px", minWidth: "74px", fontSize: "11px", border: `1px solid ${activeFormats.highlight ? APP_TAB_BLUE : "#ccc"}`, borderRadius: "4px", backgroundColor: activeFormats.highlight ? "#fffde7" : "#f7f7f7", color: activeFormats.highlight ? APP_TAB_BLUE : "#333", cursor: "pointer", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", whiteSpace: "nowrap" }}
+	                  style={{ padding: "3px 8px", minWidth: "74px", fontSize: "11px", border: `1px solid ${activeFormats.highlight ? APP_TAB_BLUE : "#ccc"}`, borderRadius: "4px", backgroundColor: activeFormats.highlight ? "#fffde7" : "#f7f7f7", color: activeFormats.highlight ? APP_TAB_BLUE : "#333", cursor: "pointer", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", whiteSpace: "nowrap" }}
 	                >
 	                  Highlight
 	                </button>
 	                {showHighlightMenu && highlightMenuRect && createPortal(
 	                  <div
 	                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-	                    style={{ position: "fixed", top: highlightMenuRect.top, left: highlightMenuRect.left, zIndex: WRITING_OVERLAY_Z_INDEX, minWidth: Math.max(132, highlightMenuRect.width), padding: "4px", border: "1px solid #bbb", borderRadius: "4px", backgroundColor: "white", boxShadow: "0 4px 12px rgba(0,0,0,0.16)", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}
+	                    style={{ position: "fixed", top: highlightMenuRect.top, left: highlightMenuRect.left, zIndex: WRITING_OVERLAY_Z_INDEX, minWidth: Math.max(132, highlightMenuRect.width), padding: "4px", border: "1px solid #bbb", borderRadius: "4px", backgroundColor: "white", boxShadow: "0 4px 12px rgba(0,0,0,0.16)", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}
 	                  >
 	                    <button
 	                      type="button"
@@ -2814,7 +2814,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	                  setShowSpellcheckModal(true);
 	                }}
 	                title="Open app spellcheck workflow."
-	                style={{ padding: "3px 7px", fontSize: "11px", border: `1px solid ${showSpellcheckModal ? APP_TAB_BLUE : "#ccc"}`, borderRadius: "4px", backgroundColor: showSpellcheckModal ? "#e8f0fe" : "#f7f7f7", color: showSpellcheckModal ? APP_TAB_BLUE : "#555", cursor: "pointer", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}
+	                style={{ padding: "3px 7px", fontSize: "11px", border: `1px solid ${showSpellcheckModal ? APP_TAB_BLUE : "#ccc"}`, borderRadius: "4px", backgroundColor: showSpellcheckModal ? "#e8f0fe" : "#f7f7f7", color: showSpellcheckModal ? APP_TAB_BLUE : "#555", cursor: "pointer", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}
 	              >
 	                Spellcheck
 	              </button>
@@ -2828,7 +2828,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 		                onClick={handleExportWritingPdf}
 		                disabled={isPdfExporting}
 		                title="Export Writing Script to PDF"
-		                style={{ padding: "3px 7px", fontSize: "11px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: "#f7f7f7", color: "#555", cursor: isPdfExporting ? "default" : "pointer", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", opacity: isPdfExporting ? 0.6 : 1, whiteSpace: "nowrap" }}
+		                style={{ padding: "3px 7px", fontSize: "11px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: "#f7f7f7", color: "#555", cursor: isPdfExporting ? "default" : "pointer", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", opacity: isPdfExporting ? 0.6 : 1, whiteSpace: "nowrap" }}
 		              >
 		                {isPdfExporting ? "Exporting…" : "Export PDF"}
 		              </button>
@@ -2837,13 +2837,13 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 		                  type="button"
 		                  onClick={openShareScriptModal}
 		                  title="Create or manage a public read-only script link"
-		                  style={{ padding: "3px 7px", fontSize: "11px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: "#f7f7f7", color: "#555", cursor: "pointer", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", whiteSpace: "nowrap" }}
+		                  style={{ padding: "3px 7px", fontSize: "11px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: "#f7f7f7", color: "#555", cursor: "pointer", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", whiteSpace: "nowrap" }}
 		                >
 		                  Share Script...
 		                </button>
 		              )}
 		            </div>
-            <span style={{ fontSize: "11px", color: "#555", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+            <span style={{ fontSize: "11px", color: "#555", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
               {writingWrittenPages.toFixed(1)} written · {writingRemainingPages.toFixed(1)} remaining · {writingWrittenPercent.toFixed(0)}%
             </span>
 
@@ -2999,7 +2999,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
       {showBeatImportDialog && (
         <>
           <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 22000 }} onClick={handleCancelBeatImport} />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "760px", maxWidth: "calc(100vw - 40px)", maxHeight: "82vh", overflow: "hidden", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", zIndex: 22001, fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", flexDirection: "column" }}>
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "760px", maxWidth: "calc(100vw - 40px)", maxHeight: "82vh", overflow: "hidden", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", zIndex: 22001, fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", flexDirection: "column" }}>
             <div style={{ padding: "18px 20px", borderBottom: "1px solid #e5e5e5", display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center" }}>
               <div>
                 <h2 style={{ margin: 0, fontSize: "18px" }}>Import Beat Sheet</h2>
@@ -3093,7 +3093,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
       {selectedBeatDetail && (
         <>
           <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.42)", zIndex: 21900 }} onClick={() => setSelectedBeatDetailId(null)} />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "640px", maxWidth: "calc(100vw - 40px)", maxHeight: "82vh", overflow: "hidden", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", zIndex: 21901, fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", flexDirection: "column" }}>
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "640px", maxWidth: "calc(100vw - 40px)", maxHeight: "82vh", overflow: "hidden", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", zIndex: 21901, fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", flexDirection: "column" }}>
             <div style={{ padding: "18px 20px", borderBottom: "1px solid #e5e5e5", display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center" }}>
               <div>
                 <h2 style={{ margin: 0, fontSize: "18px" }}>Beat Detail</h2>
@@ -3140,7 +3140,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	      {showMoodOverlaySettings && createPortal(
 	        <>
 	          <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", zIndex: WRITING_OVERLAY_Z_INDEX }} onClick={() => setShowMoodOverlaySettings(false)} />
-	          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "480px", maxWidth: "calc(100vw - 40px)", maxHeight: "86vh", overflowY: "auto", backgroundColor: "white", borderRadius: "10px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", padding: "22px", zIndex: WRITING_OVERLAY_Z_INDEX + 1, fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+	          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "480px", maxWidth: "calc(100vw - 40px)", maxHeight: "86vh", overflowY: "auto", backgroundColor: "white", borderRadius: "10px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", padding: "22px", zIndex: WRITING_OVERLAY_Z_INDEX + 1, fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
 	            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
 	              <h2 style={{ margin: 0, fontSize: "18px" }}>Writing Settings</h2>
 	              <button type="button" onClick={() => setShowMoodOverlaySettings(false)} style={{ border: "none", backgroundColor: "#eee", borderRadius: "50%", width: "28px", height: "28px", cursor: "pointer", fontWeight: "bold" }}>×</button>
@@ -3214,7 +3214,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	        return (
 	          <>
 	            <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", zIndex: WRITING_OVERLAY_Z_INDEX }} onClick={() => { setShowShareScriptModal(false); setShowShareWatermarkSettings(false); setShareWatermarkLinkId(null); }} />
-	            <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "520px", maxWidth: "calc(100vw - 40px)", backgroundColor: "white", borderRadius: "10px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", padding: "22px", zIndex: WRITING_OVERLAY_Z_INDEX + 1, fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+	            <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "520px", maxWidth: "calc(100vw - 40px)", backgroundColor: "white", borderRadius: "10px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", padding: "22px", zIndex: WRITING_OVERLAY_Z_INDEX + 1, fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
 	              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
 	                <div>
 	                  <h2 style={{ margin: 0, fontSize: "18px" }}>Share Script</h2>
@@ -3291,7 +3291,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	            {showShareWatermarkSettings && activeWatermarkLink && (
 	              <>
 	                <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.18)", zIndex: WRITING_OVERLAY_Z_INDEX + 2 }} onClick={() => { setShowShareWatermarkSettings(false); setShareWatermarkLinkId(null); }} />
-	                <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "480px", maxWidth: "calc(100vw - 40px)", maxHeight: "86vh", overflowY: "auto", backgroundColor: "white", borderRadius: "10px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", padding: "20px", zIndex: WRITING_OVERLAY_Z_INDEX + 3, fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+	                <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "480px", maxWidth: "calc(100vw - 40px)", maxHeight: "86vh", overflowY: "auto", backgroundColor: "white", borderRadius: "10px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", padding: "20px", zIndex: WRITING_OVERLAY_Z_INDEX + 3, fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
 	                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
 	                    <div>
 	                      <h3 style={{ margin: 0, fontSize: "16px" }}>Watermark Settings</h3>
@@ -3416,7 +3416,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	        return (
 	        <>
 	          <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", zIndex: WRITING_OVERLAY_Z_INDEX }} onClick={() => setShowMoodOverlayDetailSettings(false)} />
-	          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "500px", maxWidth: "calc(100vw - 40px)", backgroundColor: "white", borderRadius: "10px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", padding: "22px", zIndex: WRITING_OVERLAY_Z_INDEX + 1, fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+	          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "500px", maxWidth: "calc(100vw - 40px)", backgroundColor: "white", borderRadius: "10px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", padding: "22px", zIndex: WRITING_OVERLAY_Z_INDEX + 1, fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
 	            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
 	              <h2 style={{ margin: 0, fontSize: "18px" }}>Mood Overlay Settings</h2>
 	              <button type="button" onClick={() => setShowMoodOverlayDetailSettings(false)} style={{ border: "none", backgroundColor: "#eee", borderRadius: "50%", width: "28px", height: "28px", cursor: "pointer", fontWeight: "bold" }}>×</button>
@@ -3520,7 +3520,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	      {showTitlePageSettings && createPortal(
 	        <>
 	          <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: WRITING_OVERLAY_Z_INDEX }} onClick={() => setShowTitlePageSettings(false)} />
-	          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "560px", maxWidth: "calc(100vw - 40px)", maxHeight: "86vh", overflowY: "auto", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", padding: "20px", zIndex: WRITING_OVERLAY_Z_INDEX + 1, fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+	          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "560px", maxWidth: "calc(100vw - 40px)", maxHeight: "86vh", overflowY: "auto", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", padding: "20px", zIndex: WRITING_OVERLAY_Z_INDEX + 1, fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
 	            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
 	              <h2 style={{ margin: 0, fontSize: "18px" }}>Title Page Settings</h2>
 	              <button type="button" onClick={() => setShowTitlePageSettings(false)} style={{ border: "none", backgroundColor: "#eee", borderRadius: "50%", width: "28px", height: "28px", cursor: "pointer", fontWeight: "bold" }}>x</button>
@@ -3696,7 +3696,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
         {/* Right panel: Scenes + Beats */}
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative", zIndex: 1, backgroundColor: showMoodOverlay ? "transparent" : "white", minWidth: 0 }}>
           {/* Tab bar */}
-          <div style={{ marginLeft: "20px", width: "492px", display: "flex", flexShrink: 0, gap: "6px", padding: "0 0 5px", boxSizing: "border-box", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+          <div style={{ marginLeft: "20px", width: "492px", display: "flex", flexShrink: 0, gap: "6px", padding: "0 0 5px", boxSizing: "border-box", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
             <button type="button" onClick={() => setActiveSidePanelTab("scenes")} style={{ padding: "6px 12px", border: "1px solid #ccc", borderBottomColor: activeSidePanelTab === "scenes" ? APP_TAB_BLUE : "#ccc", backgroundColor: activeSidePanelTab === "scenes" ? APP_TAB_BLUE : "#f5f5f5", color: activeSidePanelTab === "scenes" ? "white" : "#222", cursor: "pointer", fontWeight: "bold", fontSize: "12px" }}>
               Scenes
             </button>
@@ -3758,7 +3758,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
             inset: 0,
             zIndex: WRITING_OVERLAY_Z_INDEX,
             backgroundColor: "rgba(0,0,0,0.28)",
-            fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
           }}
         >
           <div

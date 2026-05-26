@@ -171,7 +171,7 @@ function ProjectSelector({ user, onProjectSelected }) {
           justifyContent: "center",
           alignItems: "center",
           height: "calc(100vh - 44px)",
-          fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+          fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
         }}
       >
         <div style={{ fontSize: "18px", color: "#666" }}>
@@ -188,7 +188,7 @@ function ProjectSelector({ user, onProjectSelected }) {
           padding: "40px",
           maxWidth: "800px",
           margin: "0 auto",
-          fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+          fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
           marginTop: "60px",
         }}
       >
@@ -430,7 +430,7 @@ function ProjectSelector({ user, onProjectSelected }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter") projectAlert.onOk();
@@ -464,7 +464,7 @@ function ProjectSelector({ user, onProjectSelected }) {
                   color: "white",
                   fontWeight: "bold",
                   fontSize: "15px",
-                  fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+                  fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
                 }}
               >
                 {projectAlert.confirmLabel === "Delete" ? "Confirm Delete" : "Confirm"}
@@ -495,7 +495,7 @@ function ProjectSelector({ user, onProjectSelected }) {
                   lineHeight: "1.6",
                   whiteSpace: "pre-wrap",
                   color: "#333",
-                  fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+                  fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
                 }}
               >
                 {projectAlert.message}
@@ -511,7 +511,7 @@ function ProjectSelector({ user, onProjectSelected }) {
                       borderRadius: "4px",
                       cursor: "pointer",
                       fontSize: "13px",
-                      fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+                      fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
                       color: "#555",
                     }}
                   >
@@ -530,7 +530,7 @@ function ProjectSelector({ user, onProjectSelected }) {
                     cursor: "pointer",
                     fontSize: "13px",
                     fontWeight: "bold",
-                    fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+                    fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
                   }}
                 >
                   {projectAlert.confirmLabel || "OK"}

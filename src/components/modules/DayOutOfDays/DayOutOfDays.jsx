@@ -1990,7 +1990,7 @@ function DayOutOfDaysModule({
         </div>
       </div>
       {/* ── Content area ── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "20px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
         {/* Controls row: date info and matrix filters */}
         {hasProductionDates && (
           <div style={{ display: "flex", alignItems: "flex-start", gap: "15px", marginBottom: "20px" }}>

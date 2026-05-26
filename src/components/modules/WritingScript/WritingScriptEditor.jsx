@@ -3844,7 +3844,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
             fontSize: "10px",
             fontWeight: "bold",
             color: APP_TAB_BLUE,
@@ -3903,7 +3903,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
               border: "1px dashed #cfd8dc",
               borderRadius: "6px",
               color: "#607D8B",
-              fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
               fontSize: "13px",
               textAlign: "center",
               userSelect: "none",
@@ -4275,7 +4275,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
             boxShadow: "0 3px 12px rgba(0,0,0,0.18)",
             zIndex: WRITING_OVERLAY_Z_INDEX,
             overflow: "hidden",
-            fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
             fontSize: "12px",
           }}
         >
@@ -4320,7 +4320,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
             boxShadow: "0 3px 12px rgba(0,0,0,0.18)",
             zIndex: WRITING_OVERLAY_Z_INDEX,
             overflow: "hidden",
-            fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
             fontSize: "12px",
           }}
         >
@@ -4361,7 +4361,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
             boxShadow: "0 3px 12px rgba(0,0,0,0.18)",
             zIndex: WRITING_OVERLAY_Z_INDEX,
             overflow: "hidden",
-            fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
             fontSize: "12px",
           }}
         >
@@ -4403,7 +4403,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
             gap: "6px",
             alignItems: "center",
             zIndex: 500,
-            fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
             fontSize: "11px",
           }}
         >

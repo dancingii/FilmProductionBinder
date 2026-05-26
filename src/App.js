@@ -4633,7 +4633,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
               width: "120px",
               backgroundColor: "#FFE5B4",
               paddingTop: "10px",
-              fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
@@ -4724,7 +4724,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
               boxSizing: "border-box",
               backgroundColor: "#f5f5f5",
               // App-wide UI typography baseline. Do not change without an explicit user request.
-              fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
               padding: (writingActiveModule === "Script" || writingActiveModule === "MoodBoard") ? "10px" : "0",
             }}
           >
@@ -4748,7 +4748,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
               width: "120px",
               backgroundColor: "#FFE5B4",
               paddingTop: "10px",
-              fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
@@ -4962,7 +4962,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
               maxWidth: "calc(100vw - 120px)",
               padding: (normalizeModuleName(activeModule) === SCRIPT_BREAKDOWN_MODULE || normalizeModuleName(activeModule) === "Dashboard" || normalizeModuleName(activeModule) === "Stripboard" || normalizeModuleName(activeModule) === "StripboardSchedule" || normalizeModuleName(activeModule) === "Calendar" || normalizeModuleName(activeModule) === "Day Out of Days" || normalizeModuleName(activeModule) === "CallSheet" || normalizeModuleName(activeModule) === "ShotList" || normalizeModuleName(activeModule) === "ToDoList" || normalizeModuleName(activeModule) === "Timeline" || normalizeModuleName(activeModule) === "MoodBoard" || normalizeModuleName(activeModule) === "Props" || normalizeModuleName(activeModule) === "Cast & Crew" || normalizeModuleName(activeModule) === "Characters" || normalizeModuleName(activeModule) === "Locations" || normalizeModuleName(activeModule) === "Wardrobe" || normalizeModuleName(activeModule) === "Cost Report" || normalizeModuleName(activeModule) === "Reports" || normalizeModuleName(activeModule) === "Budget") ? "10px" : "0",
               // App-wide UI typography baseline. Do not change without an explicit user request.
-              fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
               boxSizing: "border-box",
               position: "fixed",
               top: "44px",
@@ -4991,7 +4991,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter") appAlert.onOk();
@@ -5027,7 +5027,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
                   color: "white",
                   fontWeight: "bold",
                   fontSize: "15px",
-                  fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+                  fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
                 }}
               >
                 {appAlert.confirmLabel === "Delete"
@@ -5061,7 +5061,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
                   lineHeight: "1.6",
                   whiteSpace: "pre-wrap",
                   color: "#333",
-                  fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+                  fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
                 }}
               >
                 {appAlert.message}
@@ -5084,7 +5084,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
                       cursor: "pointer",
                       fontSize: "13px",
                       fontFamily:
-                        "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+                        "'Century Gothic', 'Futura', 'Arial', sans-serif",
                       color: "#555",
                     }}
                   >
@@ -5107,7 +5107,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
                     fontSize: "13px",
                     fontWeight: "bold",
                     fontFamily:
-                      "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
+                      "'Century Gothic', 'Futura', 'Arial', sans-serif",
                   }}
                 >
                   {appAlert.confirmLabel || "OK"}
