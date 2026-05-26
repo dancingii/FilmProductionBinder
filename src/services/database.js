@@ -121,6 +121,88 @@ export const updateScriptShareLinkLabel = async (linkId, label) => {
 };
 
 // ============================================================================
+// MOODBOARD SHARE LINK FUNCTIONS
+// ============================================================================
+
+const generateMoodboardShareToken = () => {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join("");
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+};
+
+const MOODBOARD_SHARE_LINK_SELECT = "id, project_id, token, board_ids, share_snapshots, is_active, created_at, revoked_at, expires_at, label";
+
+export const listMoodboardShareLinks = async (projectId) => {
+  if (!projectId) return [];
+  const { data, error } = await supabase
+    .from("moodboard_share_links")
+    .select(MOODBOARD_SHARE_LINK_SELECT)
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const createMoodboardShareLink = async (projectId, boardIds = []) => {
+  if (!projectId) throw new Error("Cannot create a share link without a project id.");
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  const userId = userData?.user?.id;
+  if (!userId) throw new Error("You must be signed in to create a share link.");
+  const { data, error } = await supabase
+    .from("moodboard_share_links")
+    .insert({
+      project_id: projectId,
+      created_by: userId,
+      token: generateMoodboardShareToken(),
+      board_ids: Array.isArray(boardIds) ? boardIds : [],
+      is_active: true,
+    })
+    .select(MOODBOARD_SHARE_LINK_SELECT)
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const revokeMoodboardShareLink = async (linkId) => {
+  if (!linkId) throw new Error("Cannot revoke a share link without a link id.");
+  const { data, error } = await supabase
+    .from("moodboard_share_links")
+    .update({ is_active: false, revoked_at: new Date().toISOString() })
+    .eq("id", linkId)
+    .select(MOODBOARD_SHARE_LINK_SELECT)
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const updateMoodboardShareLinkLabel = async (linkId, label) => {
+  if (!linkId) throw new Error("Cannot update share link label without a link id.");
+  const safeLabel = String(label || "").trim().slice(0, 160);
+  const { data, error } = await supabase
+    .from("moodboard_share_links")
+    .update({ label: safeLabel || null })
+    .eq("id", linkId)
+    .select(MOODBOARD_SHARE_LINK_SELECT)
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const updateMoodboardShareLinkSnapshots = async (linkId, snapshots) => {
+  if (!linkId) throw new Error("Cannot update share snapshots without a link id.");
+  const { data, error } = await supabase
+    .from("moodboard_share_links")
+    .update({ share_snapshots: snapshots })
+    .eq("id", linkId)
+    .select(MOODBOARD_SHARE_LINK_SELECT)
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// ============================================================================
 // DATABASE LOAD FUNCTIONS
 // ============================================================================
 

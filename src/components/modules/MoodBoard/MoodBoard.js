@@ -1,6 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../../../supabase";
+import {
+  listMoodboardShareLinks,
+  createMoodboardShareLink,
+  revokeMoodboardShareLink,
+  updateMoodboardShareLinkLabel,
+  updateMoodboardShareLinkSnapshots,
+} from "../../../services/database";
+import { drawMoodBoardTextItem, preloadImagesForItems, renderPageToCanvas } from "./moodBoardRasterize";
 
 const GRID_SIZE = 10;
 const STORAGE_VERSION = 2;
@@ -641,6 +649,12 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   const boardPanelDragRef = useRef(null);
   const [boardPanelDragOverPageId, setBoardPanelDragOverPageId] = useState(null);
   const [expandedBoardIds, setExpandedBoardIds] = useState(() => new Set());
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [moodboardShareLinks, setMoodboardShareLinks] = useState([]);
+  const [shareStatus, setShareStatus] = useState("idle");
+  const [shareMessage, setShareMessage] = useState("");
+  const [shareSelectedBoardIds, setShareSelectedBoardIds] = useState(new Set());
+
   const [showSolidDropdown, setShowSolidDropdown] = useState(false);
   const [showEffectsDropdown, setShowEffectsDropdown] = useState(false);
   const solidDropdownRef = useRef(null);
@@ -1659,12 +1673,124 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     }
   };
 
+  const openShareModal = async () => {
+    setShareMessage("");
+    setShareSelectedBoardIds(new Set());
+    setShowShareModal(true);
+    setShareStatus("loading");
+    try {
+      const links = await listMoodboardShareLinks(selectedProject.id);
+      setMoodboardShareLinks(links);
+      setShareStatus("idle");
+    } catch {
+      setShareStatus("error");
+      setShareMessage("Could not load share links.");
+    }
+  };
+
+  const handleCreateMoodboardShareLink = async () => {
+    if (shareSelectedBoardIds.size === 0) {
+      setShareMessage("Select at least one board to share.");
+      return;
+    }
+    setShareStatus("saving");
+    setShareMessage("");
+    try {
+      const selectedBoardIdArr = Array.from(shareSelectedBoardIds);
+
+      // Block if any selected board has external (non-storage) images
+      const externalCount = canvasItems.filter(item => {
+        if (!selectedBoardIdArr.includes(item.boardId)) return false;
+        if (item.type !== "image" || item.hidden) return false;
+        const imgData = images.find(img => img.id === item.imageId);
+        return imgData?.url && !isStoredImageUrl(imgData.url);
+      }).length;
+      if (externalCount > 0) {
+        setShareStatus("error");
+        setShareMessage(`Cannot share: ${externalCount} image(s) use external URLs. Convert them to Storage first.`);
+        return;
+      }
+
+      // Create the link record first to get the token
+      const link = await createMoodboardShareLink(selectedProject.id, selectedBoardIdArr);
+
+      // Rasterize each board/page and upload to Supabase Storage
+      setShareMessage("Rasterizing boards…");
+      const snapshots = [];
+      const selectedBoards = boards.filter(b => selectedBoardIdArr.includes(b.id));
+
+      for (const board of selectedBoards) {
+        const bPages = board.pages || [];
+        const boardItems = canvasItems.filter(item => item.boardId === board.id && !item.hidden);
+        const loadedImgMap = await preloadImagesForItems(boardItems, images);
+
+        for (const page of bPages) {
+          const pageItems = boardItems.filter(item => item.pageId === page.id);
+          const cvs = await renderPageToCanvas(page, pageItems, images, loadedImgMap);
+
+          const blob = await new Promise(res => cvs.toBlob(res, "image/png"));
+          const filePath = `${link.token}/${board.id}_${page.id}.png`;
+          const { error: uploadErr } = await supabase.storage
+            .from("moodboard-share-snapshots")
+            .upload(filePath, blob, { contentType: "image/png", upsert: true });
+          if (uploadErr) throw uploadErr;
+
+          const { data: urlData } = supabase.storage
+            .from("moodboard-share-snapshots")
+            .getPublicUrl(filePath);
+
+          snapshots.push({
+            boardId: board.id,
+            boardName: board.name || "Board",
+            pageId: page.id,
+            pageName: page.name || `Page ${bPages.indexOf(page) + 1}`,
+            imageUrl: urlData.publicUrl,
+            width: page.width,
+            height: page.height,
+          });
+        }
+      }
+
+      const updatedLink = await updateMoodboardShareLinkSnapshots(link.id, snapshots);
+      setMoodboardShareLinks(prev => [updatedLink, ...prev]);
+      setShareStatus("idle");
+      setShareSelectedBoardIds(new Set());
+      const url = `${window.location.origin}/share/moodboard/${link.token}`;
+      try { await navigator.clipboard.writeText(url); setShareMessage("Link created and copied!"); }
+      catch { setShareMessage("Link created. Copy the URL above."); }
+    } catch (err) {
+      setShareStatus("error");
+      setShareMessage("Could not create share link: " + (err?.message || "unknown error"));
+    }
+  };
+
+  const handleRevokeMoodboardShareLink = async (linkId) => {
+    setShareStatus("saving");
+    try {
+      const updated = await revokeMoodboardShareLink(linkId);
+      setMoodboardShareLinks(prev => prev.map(l => l.id === linkId ? updated : l));
+      setShareStatus("idle");
+    } catch {
+      setShareStatus("error");
+      setShareMessage("Could not revoke link.");
+    }
+  };
+
+  const handleUpdateMoodboardShareLinkLabel = async (linkId, label) => {
+    try {
+      const updated = await updateMoodboardShareLinkLabel(linkId, label);
+      setMoodboardShareLinks(prev => prev.map(l => l.id === linkId ? updated : l));
+    } catch {
+      // silent — label update is best-effort
+    }
+  };
+
   const exportBoardToPdf = async () => {
     if (exportingPdf || !activeBoard || boardPages.length === 0) return;
     setExportingPdf(true);
     setStatusMessage("Preparing PDF export...");
     try {
-      // Load jsPDF only — no html2canvas needed
+      // Load jsPDF only; text item rasterization is handled by the shared MoodBoard renderer.
       if (!window.jspdf) {
         await new Promise((resolve, reject) => {
           const s = document.createElement("script");
@@ -1676,11 +1802,11 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
 
       const { jsPDF } = window.jspdf;
       const firstPage = boardPages[0];
+      const PX_TO_PT = 72 / 96;
       const pdf = new jsPDF({
         orientation: firstPage.width > firstPage.height ? "landscape" : "portrait",
-        unit: "px",
-        format: [firstPage.width, firstPage.height],
-        hotfixes: ["px_scaling"],
+        unit: "pt",
+        format: [firstPage.width * PX_TO_PT, firstPage.height * PX_TO_PT],
       });
 
       // Canvas text rendering uses system/document fonts directly — no Google Fonts fetch needed.
@@ -1844,80 +1970,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
               }
 
           } else if (item.type === "text") {
-            // Background
-            if (item.backgroundColor && item.backgroundColor !== "transparent") {
-              ctx.fillStyle = item.backgroundColor;
-              ctx.fillRect(item.x, item.y, item.width, item.height);
-            }
-
-            // Text blur
-            const textBlur = item.textBlur ?? 0;
-            if (textBlur > 0) ctx.filter = `blur(${textBlur}px)`;
-
-            // Text — wrap manually to match the DOM layout
-            const fontWeight = item.fontWeight || "normal";
-            const fontSize = item.fontSize || 16;
-            const fontFamily = item.fontFamily || "Arial";
-            const letterSpacing = item.letterSpacing || 0;
-            const padding = 6;
-            const maxW = item.width - padding * 2;
-
-            const textAlign = item.textAlign || "left";
-            ctx.fillStyle = item.color || "#000000";
-            ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}, sans-serif`;
-            ctx.textBaseline = "alphabetic";
-            ctx.textAlign = textAlign;
-
-            // Letter spacing via per-char drawing
-            const drawTextWithSpacing = (text, x, y) => {
-              if (letterSpacing === 0) {
-                ctx.fillText(text, x, y);
-                return;
-              }
-              let cx = x;
-              for (const ch of text) {
-                ctx.fillText(ch, cx, y);
-                cx += ctx.measureText(ch).width + letterSpacing;
-              }
-            };
-
-            // Word wrap — normalize whitespace to match CSS rendering
-            const rawLines = item.text.split("\n");
-            const wrappedLines = [];
-            for (const raw of rawLines) {
-              const normalized = raw.replace(/\s+/g, " ").trim();
-              if (!normalized) { wrappedLines.push(""); continue; }
-              const words = normalized.split(" ").filter(w => w.length > 0);
-              let current = "";
-              for (const word of words) {
-                const test = current ? current + " " + word : word;
-                const w = ctx.measureText(test).width + (letterSpacing * (test.length - 1));
-                if (w > maxW && current) {
-                  wrappedLines.push(current);
-                  current = word;
-                } else {
-                  current = test;
-                }
-              }
-              if (current) wrappedLines.push(current);
-            }
-
-            const trueLineHeight = fontSize * (item.lineHeight ?? 1.1);
-            const baselineOffset = fontSize * 0.8;
-
-            const textX = textAlign === "center"
-              ? item.x + item.width / 2
-              : textAlign === "right"
-              ? item.x + item.width - padding
-              : item.x + padding;
-
-            let ty = item.y + padding + baselineOffset;
-            for (const line of wrappedLines) {
-              drawTextWithSpacing(line, textX, ty);
-              ty += trueLineHeight;
-              if (ty > item.y + item.height + trueLineHeight) break;
-            }
-            if (textBlur > 0) ctx.filter = "none";
+            await drawMoodBoardTextItem(ctx, item);
           } else if (item.type === "solid") {
             ctx.fillStyle = item.solidColor || "#cccccc";
             if (item.solidShape === "ellipse") {
@@ -1963,8 +2016,8 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
         }
 
         const dataUrl = cvs.toDataURL("image/png");
-        if (i > 0) pdf.addPage([page.width, page.height], page.width > page.height ? "landscape" : "portrait");
-        pdf.addImage(dataUrl, "PNG", 0, 0, page.width, page.height);
+        if (i > 0) pdf.addPage([page.width * PX_TO_PT, page.height * PX_TO_PT], page.width > page.height ? "landscape" : "portrait");
+        pdf.addImage(dataUrl, "PNG", 0, 0, page.width * PX_TO_PT, page.height * PX_TO_PT);
       }
 
       pdf.save(`${activeBoard.name || "MoodBoard"}.pdf`);
@@ -2591,6 +2644,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           width: item.type === "grain" ? "100%" : item.width,
           height: item.type === "grain" ? "100%" : item.height,
           zIndex: item.zIndex,
+          pointerEvents: item.type === "grain" ? "none" : undefined,
           outline: isSelected ? "2px solid #2196F3" : "none",
           boxShadow: isSelected ? "0 0 0 3px rgba(33,150,243,0.15)" : "none",
           backgroundColor: item.type === "text" ? item.backgroundColor : item.type === "solid" && item.solidShape !== "ellipse" ? item.solidColor : "transparent",
@@ -3000,17 +3054,17 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
               const boardPageList = board.pages || [];
               return (
                 <React.Fragment key={board.id}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px", backgroundColor: isActive ? "#e3f2fd" : "white", borderBottom: "1px solid #eee" }}>
+                  <div onClick={() => setActiveBoardId(board.id)} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px", backgroundColor: isActive ? "#e3f2fd" : "white", borderBottom: "1px solid #eee", cursor: "pointer" }}>
                     <button
-                      onClick={() => setExpandedBoardIds(prev => {
+                      onClick={(e) => { e.stopPropagation(); setExpandedBoardIds(prev => {
                         const next = new Set(prev);
                         if (next.has(board.id)) next.delete(board.id); else next.add(board.id);
                         return next;
-                      })}
+                      }); }}
                       title={isExpanded ? "Collapse pages" : "Show pages"}
                       style={{ fontSize: "10px", cursor: "pointer", border: "none", background: "transparent", padding: "0 2px", color: "#555", flexShrink: 0 }}
                     >{isExpanded ? "▼" : "▶"}</button>
-                    <input value={board.name} onChange={(event) => renameBoard(board.id, event.target.value)} onFocus={() => setActiveBoardId(board.id)} disabled={!canEdit || isViewOnly} style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", fontWeight: isActive ? "bold" : "normal", fontSize: "12px", outline: "none", overflow: "hidden", textOverflow: "ellipsis" }} />
+                    <input value={board.name} onChange={(event) => renameBoard(board.id, event.target.value)} onFocus={() => setActiveBoardId(board.id)} onClick={(e) => e.stopPropagation()} disabled={!canEdit || isViewOnly} style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", fontWeight: isActive ? "bold" : "normal", fontSize: "12px", outline: "none", overflow: "hidden", textOverflow: "ellipsis", cursor: "text" }} />
                     {(board.createdBy || userDisplayName) && (
                       <span style={{ fontSize: "9px", color: "#aaa", whiteSpace: "nowrap", marginRight: "2px", maxWidth: "50px", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {(board.createdBy || userDisplayName).includes("@")
@@ -3018,9 +3072,8 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                           : (board.createdBy || userDisplayName)}
                       </span>
                     )}
-                    <button onClick={() => setActiveBoardId(board.id)} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap", padding: "2px 4px" }}>Open</button>
-                    <button onClick={() => addPageToBoard(board.id, true)} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap", padding: "2px 4px" }}>+Pg</button>
-                    <button onClick={() => deleteBoard(board.id)} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, padding: "2px 4px" }}>×</button>
+                    <button onClick={(e) => { e.stopPropagation(); addPageToBoard(board.id, true); }} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap", padding: "2px 4px" }}>+Pg</button>
+                    <button onClick={(e) => { e.stopPropagation(); deleteBoard(board.id); }} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, padding: "2px 4px" }}>×</button>
                   </div>
                   {isExpanded && boardPageList.map((pg, pgIdx) => {
                     const isActivePg = activePage?.id === pg.id && isActive;
@@ -3067,8 +3120,10 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
             })}
           </div>
           <div style={{ display: "flex", gap: "6px", marginTop: "6px", flexShrink: 0 }}>
-            <button onClick={duplicateBoard} disabled={!canEdit || isViewOnly} style={{ flex: 1, fontSize: "11px", cursor: "pointer" }}>Duplicate Board</button>
-            <button onClick={() => { setPresentMode(true); setPresentPageIndex(0); }} style={{ flex: 1, fontSize: "11px", cursor: "pointer" }}>Present</button>
+            <button onClick={duplicateBoard} disabled={!canEdit || isViewOnly} style={{ flex: 1, minWidth: 0, fontSize: "11px", cursor: "pointer", padding: "4px 3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Duplicate Board</button>
+            {canEdit && !isViewOnly && (
+              <button onClick={openShareModal} style={{ flex: 1, minWidth: 0, fontSize: "11px", cursor: "pointer", padding: "4px 3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Share…</button>
+            )}
           </div>
         </div>
 
@@ -3992,6 +4047,160 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           }}
         >
           {textDragPreview.text}
+        </div>,
+        document.body
+      )}
+
+      {/* MoodBoard share modal */}
+      {showShareModal && createPortal(
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 20000, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowShareModal(false); setShareMessage(""); } }}
+        >
+          <div style={{ position: "absolute", inset: 0, backgroundColor: "rgba(0,0,0,0.45)" }} />
+          <div
+            style={{
+              position: "relative", backgroundColor: "white", borderRadius: "8px",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.22)", padding: "24px", width: "480px", maxWidth: "95vw",
+              maxHeight: "85vh", overflowY: "auto", boxSizing: "border-box",
+              fontFamily: "'Questrial','Futura','Arial',sans-serif",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px" }}>
+              <h2 style={{ margin: 0, fontSize: "18px" }}>Share Mood Boards</h2>
+              <button
+                onClick={() => { setShowShareModal(false); setShareMessage(""); }}
+                style={{ border: "none", backgroundColor: "#eee", borderRadius: "50%", width: "28px", height: "28px", cursor: "pointer", fontWeight: "bold", fontSize: "16px", lineHeight: 1 }}
+              >×</button>
+            </div>
+
+            {/* Board selector for new link */}
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "12px", fontWeight: "bold", color: "#555", marginBottom: "8px" }}>
+                Select boards to include in new link:
+              </div>
+              <div style={{ border: "1px solid #ddd", borderRadius: "4px", overflow: "hidden" }}>
+                {boards.map(board => (
+                  <label
+                    key={board.id}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "10px",
+                      padding: "8px 12px", borderBottom: "1px solid #f0f0f0",
+                      cursor: "pointer", backgroundColor: shareSelectedBoardIds.has(board.id) ? "#e3f2fd" : "white",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={shareSelectedBoardIds.has(board.id)}
+                      onChange={e => {
+                        setShareSelectedBoardIds(prev => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(board.id); else next.delete(board.id);
+                          return next;
+                        });
+                      }}
+                      style={{ accentColor: "#2196F3", width: "15px", height: "15px", flexShrink: 0 }}
+                    />
+                    <span style={{ fontSize: "13px", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{board.name}</span>
+                    <span style={{ fontSize: "10px", color: "#aaa", whiteSpace: "nowrap" }}>
+                      {(board.pages || []).length} page{(board.pages || []).length !== 1 ? "s" : ""}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={handleCreateMoodboardShareLink}
+              disabled={shareStatus === "saving" || shareStatus === "loading"}
+              style={{
+                width: "100%", padding: "9px", marginBottom: "6px",
+                backgroundColor: shareStatus === "saving" ? "#e0e0e0" : "#2196F3",
+                color: shareStatus === "saving" ? "#999" : "white",
+                border: "none", borderRadius: "4px", cursor: shareStatus === "saving" ? "default" : "pointer",
+                fontWeight: "bold", fontSize: "13px",
+              }}
+            >
+              {shareStatus === "saving" ? "Creating…" : "Create Share Link"}
+            </button>
+
+            {shareMessage && (
+              <div style={{ fontSize: "12px", color: shareStatus === "error" ? "#c0392b" : "#2196F3", marginBottom: "14px", textAlign: "center" }}>
+                {shareMessage}
+              </div>
+            )}
+
+            {/* Existing active links */}
+            {shareStatus === "loading" && (
+              <div style={{ textAlign: "center", color: "#aaa", fontSize: "13px", padding: "16px 0" }}>Loading links…</div>
+            )}
+            {shareStatus !== "loading" && moodboardShareLinks.filter(l => l?.is_active).length > 0 && (
+              <div>
+                <div style={{ fontSize: "12px", fontWeight: "bold", color: "#555", marginBottom: "8px", marginTop: "16px" }}>
+                  Active share links
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {moodboardShareLinks.filter(l => l?.is_active).map(link => {
+                    const shareUrl = link?.token ? `${window.location.origin}/share/moodboard/${link.token}` : "";
+                    const sharedBoardNames = (link.board_ids || []).map(bid => {
+                      const b = boards.find(b => b.id === bid);
+                      return b ? b.name : bid;
+                    }).join(", ");
+                    return (
+                      <div key={link.id} style={{ border: "1px solid #e0e0e0", borderRadius: "6px", padding: "12px", backgroundColor: "#fafafa" }}>
+                        <div style={{ display: "flex", gap: "6px", marginBottom: "6px" }}>
+                          <input
+                            value={link.label ?? ""}
+                            placeholder="Label (optional)"
+                            onChange={e => setMoodboardShareLinks(prev => prev.map(l => l.id === link.id ? { ...l, label: e.target.value } : l))}
+                            onBlur={e => handleUpdateMoodboardShareLinkLabel(link.id, e.target.value)}
+                            style={{ flex: 1, fontSize: "12px", padding: "4px 8px", border: "1px solid #ddd", borderRadius: "3px" }}
+                          />
+                          <button
+                            onClick={() => handleRevokeMoodboardShareLink(link.id)}
+                            disabled={shareStatus === "saving"}
+                            style={{ padding: "4px 10px", fontSize: "11px", backgroundColor: "#fff0f0", color: "#c0392b", border: "1px solid #f5c6cb", borderRadius: "3px", cursor: "pointer" }}
+                          >Revoke</button>
+                        </div>
+                        {sharedBoardNames && (
+                          <div style={{ fontSize: "10px", color: "#888", marginBottom: "6px" }}>
+                            Boards: {sharedBoardNames}
+                          </div>
+                        )}
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <input
+                            readOnly
+                            value={shareUrl}
+                            onFocus={e => e.target.select()}
+                            style={{ flex: 1, fontSize: "11px", padding: "4px 8px", border: "1px solid #ddd", borderRadius: "3px", backgroundColor: "#f5f5f5", color: "#333", overflow: "hidden", textOverflow: "ellipsis" }}
+                          />
+                          <button
+                            onClick={async () => {
+                              try { await navigator.clipboard.writeText(shareUrl); setShareMessage("Copied!"); }
+                              catch { setShareMessage(shareUrl); }
+                            }}
+                            style={{ padding: "4px 10px", fontSize: "11px", backgroundColor: "#e3f2fd", color: "#1565C0", border: "1px solid #90CAF9", borderRadius: "3px", cursor: "pointer", whiteSpace: "nowrap" }}
+                          >Copy</button>
+                        </div>
+                        <div style={{ fontSize: "10px", color: "#bbb", marginTop: "5px" }}>
+                          Created {new Date(link.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={() => { setShowShareModal(false); setShareMessage(""); }}
+              style={{ width: "100%", marginTop: "18px", padding: "9px", backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}
+            >
+              Done
+            </button>
+          </div>
         </div>,
         document.body
       )}
