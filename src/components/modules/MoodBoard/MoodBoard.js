@@ -525,7 +525,7 @@ const MOODBOARD_TOOLBAR_BTN = {
   padding: "3px 7px",
   fontSize: "10px",
   fontWeight: "bold",
-  fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+  fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
   cursor: "pointer",
   borderRadius: "3px",
   border: "1px solid #ccc",
@@ -2944,7 +2944,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   };
   if (!isLoaded) {
     return (
-      <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "#f0f0f0", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+      <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "#f0f0f0", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>
         <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white", minHeight: "38px" }} />
         <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
           <div style={{ width: LEFT_PANEL_WIDTH, flexShrink: 0, backgroundColor: "#f8f8f8", borderRight: "1px solid #ccc" }} />
@@ -2956,7 +2956,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   }
 
   return (
-    <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "#f0f0f0", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+    <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "#f0f0f0", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>
       <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
         <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
           <div style={{ flex: 1, display: "flex", gap: "6px", alignItems: "center", padding: "4px 12px", boxSizing: "border-box" }}>
@@ -3286,8 +3286,8 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           >SOLID ▾</button>
           {showSolidDropdown && (
             <div style={{ position: "absolute", top: "28px", left: 0, width: "130px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999 }}>
-              <button onClick={() => { addSolidToCanvas("rect"); setShowSolidDropdown(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "8px 10px", border: "none", borderBottom: "1px solid #eee", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>Rectangle</button>
-              <button onClick={() => { addSolidToCanvas("ellipse"); setShowSolidDropdown(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "8px 10px", border: "none", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>Ellipse</button>
+              <button onClick={() => { addSolidToCanvas("rect"); setShowSolidDropdown(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "8px 10px", border: "none", borderBottom: "1px solid #eee", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>Rectangle</button>
+              <button onClick={() => { addSolidToCanvas("ellipse"); setShowSolidDropdown(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "8px 10px", border: "none", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>Ellipse</button>
             </div>
           )}
         </div>
@@ -3299,11 +3299,11 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           >EFFECTS ▾</button>
           {showEffectsDropdown && (
             <div style={{ position: "absolute", top: "28px", left: 0, width: "140px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999 }}>
-              <button onClick={() => { addGrainLayer(); setShowEffectsDropdown(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "8px 10px", border: "none", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>Grain Layer</button>
+              <button onClick={() => { addGrainLayer(); setShowEffectsDropdown(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "8px 10px", border: "none", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>Grain Layer</button>
             </div>
           )}
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", fontWeight: "bold", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", fontWeight: "bold", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>
           <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} /> GRID SNAP
           <select value={gridSize} onChange={(e) => setGridSize(Number(e.target.value))} style={{ padding: "2px 4px", fontSize: "10px", border: "1px solid #ccc", borderRadius: "3px" }}>
             <option value={2}>2px</option>
@@ -3313,7 +3313,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
             <option value={40}>40px</option>
           </select>
         </label>
-        <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", fontWeight: "bold", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", fontWeight: "bold", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>
           CANVAS ZOOM
           <input type="range" min="0.1" max="1.5" step="0.01" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} style={{ width: "70px" }} />
           <span style={{ minWidth: "36px", display: "inline-block", textAlign: "right", fontSize: "10px" }}>{Math.round(zoom * 100)}%</span>
@@ -3327,7 +3327,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
               <>
                 <span style={{ fontSize: "11px", fontWeight: "bold", color: "#555" }}>{selectedItems.length > 1 ? `${selectedItems.length} ITEMS` : primarySelectedItem.type.toUpperCase()}</span>
                 {primarySelectedItem.type !== "text" && (
-                  <label style={{ fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>Opacity <input type="range" min="0.1" max="1" step="0.05" value={primarySelectedItem.opacity ?? 1} onChange={(event) => updateSelectedItems({ opacity: Number(event.target.value) })} style={{ width: "60px" }} /></label>
+                  <label style={{ fontSize: "10px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>Opacity <input type="range" min="0.1" max="1" step="0.05" value={primarySelectedItem.opacity ?? 1} onChange={(event) => updateSelectedItems({ opacity: Number(event.target.value) })} style={{ width: "60px" }} /></label>
                 )}
                 {primarySelectedItem.type === "image" && selectedItems.length === 1 && (
                   <>
@@ -3349,7 +3349,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                           updateCanvasItem(primarySelectedItem.id, { width: newW, height: newH, x: Math.round(cx - newW / 2), y: Math.round(cy - newH / 2), _baseWidth: base });
                         };
                         return (
-                          <div style={{ position: "absolute", top: "28px", left: 0, width: "190px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999, padding: "8px 10px", display: "flex", flexDirection: "column", gap: "6px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+                          <div style={{ position: "absolute", top: "28px", left: 0, width: "190px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999, padding: "8px 10px", display: "flex", flexDirection: "column", gap: "6px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>
                             <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
                               <span style={{ fontSize: "11px" }}>Scale</span>
                               <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
@@ -3373,9 +3373,9 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                               </div>
                               {showFitSubmenu && (
                                 <div style={{ position: "absolute", left: "calc(100% + 4px)", top: 0, width: "100px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 10000, padding: "4px 0" }}>
-                                  <button onClick={() => { fitImageWidth(); setShowFitDropdown(false); setShowFitSubmenu(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", borderBottom: "1px solid #eee", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>Fit Width</button>
-                                  <button onClick={() => { fitImageHeight(); setShowFitDropdown(false); setShowFitSubmenu(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", borderBottom: "1px solid #eee", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>Fit Height</button>
-                                  <button onClick={() => { fitImageCanvas(); setShowFitDropdown(false); setShowFitSubmenu(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>Fit Canvas</button>
+                                  <button onClick={() => { fitImageWidth(); setShowFitDropdown(false); setShowFitSubmenu(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", borderBottom: "1px solid #eee", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>Fit Width</button>
+                                  <button onClick={() => { fitImageHeight(); setShowFitDropdown(false); setShowFitSubmenu(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", borderBottom: "1px solid #eee", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>Fit Height</button>
+                                  <button onClick={() => { fitImageCanvas(); setShowFitDropdown(false); setShowFitSubmenu(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>Fit Canvas</button>
                                 </div>
                               )}
                             </div>
@@ -3383,7 +3383,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                         );
                       })()}
                     </div>
-                    <label style={{ fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <label style={{ fontSize: "10px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
                       Rotate
                       <input
                         type="range" min="-180" max="180" step="1"
@@ -3394,7 +3394,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                       <input type="number" min="-180" max="180" step="1"
                         value={primarySelectedItem.rotation ?? 0}
                         onChange={(e) => { const v = Number(e.target.value); if (!isNaN(v)) updateCanvasItem(primarySelectedItem.id, { rotation: v }); }}
-                        style={{ width: "42px", padding: "2px 4px", fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", border: "1px solid #ccc", borderRadius: "3px" }}
+                        style={{ width: "42px", padding: "2px 4px", fontSize: "10px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", border: "1px solid #ccc", borderRadius: "3px" }}
                       />°
                       <button onClick={() => updateCanvasItem(primarySelectedItem.id, { rotation: 0 })} style={{ ...MOODBOARD_TOOLBAR_BTN, padding: "3px 6px" }} title="Reset rotation to 0°">↺</button>
                     </label>
@@ -3469,7 +3469,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                           setSelBounds(null);
                         };
                         return (
-                          <div style={{ position: "absolute", top: "28px", left: 0, width: "188px", boxSizing: "border-box", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999, padding: "8px 10px", display: "flex", flexDirection: "column", gap: "7px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", overflow: "hidden" }}>
+                          <div style={{ position: "absolute", top: "28px", left: 0, width: "188px", boxSizing: "border-box", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999, padding: "8px 10px", display: "flex", flexDirection: "column", gap: "7px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", overflow: "hidden" }}>
                             {/* Shape — hover row reveals submenu, never causes menu resize */}
                             <div
                               style={{ position: "relative" }}
@@ -3484,11 +3484,11 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                                 <div style={{ position: "absolute", left: "calc(100% + 4px)", top: 0, width: "110px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 10000, padding: "4px 0" }}>
                                   <button
                                     onClick={() => { setPendingShapeType("rect"); if (hasDraft) setSelDraft(p => ({ ...p, selectionType: "rect" })); }}
-                                    style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", borderBottom: "1px solid #eee", background: activeShape === "rect" ? "#e3f2fd" : "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}
+                                    style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", borderBottom: "1px solid #eee", background: activeShape === "rect" ? "#e3f2fd" : "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}
                                   >Rectangular</button>
                                   <button
                                     onClick={() => { setPendingShapeType("ellipse"); if (hasDraft) setSelDraft(p => ({ ...p, selectionType: "ellipse" })); }}
-                                    style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", background: activeShape === "ellipse" ? "#e3f2fd" : "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}
+                                    style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", background: activeShape === "ellipse" ? "#e3f2fd" : "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}
                                   >Elliptical</button>
                                 </div>
                               )}
@@ -3550,12 +3550,12 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                 )}
                 {primarySelectedItem.type === "solid" && selectedItems.length === 1 && (
                   <>
-                    <label style={{ fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <label style={{ fontSize: "10px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
                       <input type="color" value={primarySelectedItem.solidColor || "#cccccc"} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { solidColor: e.target.value })} style={{ width: "22px", height: "22px", padding: 0, border: "1px solid #ccc", borderRadius: "3px", cursor: "pointer" }} />
                       Color
                     </label>
                     {primarySelectedItem.solidShape !== "ellipse" && (
-                      <label style={{ fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                      <label style={{ fontSize: "10px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
                         Radius
                         <input type="range" min="0" max="200" step="1" value={primarySelectedItem.cornerRadius ?? 0} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { cornerRadius: Number(e.target.value) })} style={{ width: "55px" }} />
                         <span style={{ fontSize: "9px", minWidth: "18px" }}>{primarySelectedItem.cornerRadius ?? 0}</span>
@@ -3565,19 +3565,19 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                 )}
                 {primarySelectedItem.type === "grain" && selectedItems.length === 1 && (
                   <>
-                    <label style={{ fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <label style={{ fontSize: "10px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
                       Amount
                       <input type="range" min="0" max="1" step="0.05" value={primarySelectedItem.grainAmount ?? 0.6} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { grainAmount: Number(e.target.value) })} style={{ width: "60px" }} />
                     </label>
-                    <label style={{ fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <label style={{ fontSize: "10px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
                       Size
                       <input type="range" min="1" max="3" step="0.25" value={primarySelectedItem.grainSize ?? 1} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { grainSize: Number(e.target.value) })} style={{ width: "55px" }} />
                     </label>
-                    <label style={{ fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <label style={{ fontSize: "10px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
                       Soft
                       <input type="range" min="0" max="10" step="0.5" value={primarySelectedItem.grainSoftening ?? 0} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { grainSoftening: Number(e.target.value) })} style={{ width: "55px" }} />
                     </label>
-                    <label style={{ fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <label style={{ fontSize: "10px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
                       Color
                       <input type="range" min="0" max="3" step="0.1" value={primarySelectedItem.grainSaturation ?? 1} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { grainSaturation: Number(e.target.value) })} style={{ width: "55px" }} />
                     </label>
@@ -3635,7 +3635,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                         >{label}</button>
                       ))}
                     </div>
-                    <label style={{ fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <label style={{ fontSize: "11px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
                       <input type="color" value={primarySelectedItem.color} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { color: event.target.value })} style={{ width: "22px", height: "22px", padding: 0, border: "1px solid #ccc", borderRadius: "3px", cursor: "pointer" }} />
                       <span style={{ fontSize: "10px", color: "#666", whiteSpace: "nowrap" }}>Opacity</span>
                       <input type="range" min="0.1" max="1" step="0.05" value={primarySelectedItem.opacity ?? 1} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { opacity: Number(event.target.value) })} style={{ width: "48px" }} />
@@ -3648,12 +3648,12 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                       >¶</button>
                       {showTextSpacingDropdown && (
                         <div style={{ position: "absolute", top: "28px", left: 0, minWidth: "200px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999, padding: "10px 12px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                          <label style={{ fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <label style={{ fontSize: "11px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "6px" }}>
                             <span style={{ width: "52px" }}>Tracking</span>
                             <input type="range" min="-5" max="30" step="0.5" value={primarySelectedItem.letterSpacing ?? 0} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { letterSpacing: Number(e.target.value) })} style={{ width: "80px" }} />
                             <span style={{ fontSize: "10px", width: "28px", textAlign: "right" }}>{primarySelectedItem.letterSpacing ?? 0}</span>
                           </label>
-                          <label style={{ fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <label style={{ fontSize: "11px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "6px" }}>
                             <span style={{ width: "52px" }}>Leading</span>
                             <input type="range" min="0.7" max="3" step="0.05" value={primarySelectedItem.lineHeight ?? 1.1} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { lineHeight: Number(e.target.value) })} style={{ width: "80px" }} />
                             <span style={{ fontSize: "10px", width: "28px", textAlign: "right" }}>{(primarySelectedItem.lineHeight ?? 1.1).toFixed(2)}</span>
@@ -3661,7 +3661,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                         </div>
                       )}
                     </div>
-                    <label style={{ fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <label style={{ fontSize: "10px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
                       Blur
                       <input type="range" min="0" max="5" step="0.25" value={primarySelectedItem.textBlur ?? 0} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { textBlur: Number(e.target.value) })} style={{ width: "50px" }} />
                       <input type="number" min="0" max="50" step="0.25" value={primarySelectedItem.textBlur ?? 0} onChange={(e) => { const v = Number(e.target.value); if (!isNaN(v) && v >= 0) updateCanvasItem(primarySelectedItem.id, { textBlur: v }); }} style={{ ...MOODBOARD_TOOLBAR_BTN, width: "38px", padding: "2px 4px", textAlign: "center" }} />

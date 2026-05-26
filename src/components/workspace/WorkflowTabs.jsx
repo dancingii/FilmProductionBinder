@@ -42,7 +42,7 @@ function WorkflowTabs({ activeWorkflow, onWorkflowChange }) {
               opacity: 1,
               boxShadow: "none",
               boxSizing: "border-box",
-              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+              fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
               fontSize: "12px",
               fontWeight: "bold",
               lineHeight: "14px",

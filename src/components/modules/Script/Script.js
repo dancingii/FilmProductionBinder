@@ -385,7 +385,7 @@ function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor,
   if (scenes.length === 0) {
     return (
       <div style={{ marginLeft: "20px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <div style={{ flex: 1, width: "492px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden", padding: "18px", boxSizing: "border-box", color: "#555", lineHeight: 1.45 }}>
+        <div style={{ flex: 1, width: "492px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden", padding: "18px", boxSizing: "border-box", color: "#555", lineHeight: 1.45 }}>
           <div style={{ fontWeight: "bold", fontSize: "14px", color: "#222", marginBottom: "8px" }}>No scenes yet</div>
           <div style={{ marginBottom: "14px" }}>Upload a script to begin breakdown.</div>
         </div>
@@ -395,7 +395,7 @@ function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor,
 
   return (
     <div style={{ marginLeft: "20px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div ref={listRef} style={{ flex: 1, width: "492px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden" }}>
+      <div ref={listRef} style={{ flex: 1, width: "492px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden" }}>
 	        {scenes.map((scene, index) => {
 	          const sceneKey = getSceneDragKey(scene, index);
 	          const statusPresentation = getSceneStatusColor(scene.sceneNumber);
@@ -461,7 +461,7 @@ function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor,
         return (
           <>
             <div style={{ position: "fixed", inset: 0, zIndex: 2999 }} onClick={() => setSceneContextMenu(null)} />
-            <div style={{ position: "fixed", left: x, top: y, zIndex: 3000, backgroundColor: "white", border: "1px solid #e0e0e0", borderRadius: "6px", boxShadow: "0 4px 16px rgba(0,0,0,0.18)", minWidth: "200px", overflow: "hidden", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", fontSize: "12px" }}>
+            <div style={{ position: "fixed", left: x, top: y, zIndex: 3000, backgroundColor: "white", border: "1px solid #e0e0e0", borderRadius: "6px", boxShadow: "0 4px 16px rgba(0,0,0,0.18)", minWidth: "200px", overflow: "hidden", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", fontSize: "12px" }}>
               <div style={{ padding: "6px 12px 5px", fontSize: "11px", color: "#999", borderBottom: "1px solid #f0f0f0", fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "220px" }}>
                 Scene {getSceneDisplayLabel(ms, displayLabelMap)}{ms.heading ? `: ${ms.heading}` : ""}
               </div>
@@ -2517,7 +2517,7 @@ const ContinuousScript = React.memo(function ContinuousScript({
                               backgroundColor: "rgba(0,138,252,0.1)",
                               color: "#2196F3",
                               border: "1px solid rgba(0,138,252,0.28)",
-                              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+                              fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
                               fontSize: "9px",
                               fontWeight: "bold",
                               pointerEvents: "none",
@@ -2571,7 +2571,7 @@ const ContinuousScript = React.memo(function ContinuousScript({
                               border: "1px solid #d0d0d0",
                               borderRadius: "4px",
                               boxShadow: "0 4px 14px rgba(0,0,0,0.16)",
-                              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+                              fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
                               fontSize: "12px",
                               overflow: "hidden",
                             }}
@@ -2631,7 +2631,7 @@ const ContinuousScript = React.memo(function ContinuousScript({
               boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
               minWidth: "180px",
               overflow: "hidden",
-              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+              fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
               fontSize: "13px",
             }}
           >
@@ -3874,7 +3874,7 @@ function Script({
                     onClick={handleExportBreakdownPdf}
                     disabled={isPdfExporting}
                     title="Export Script Breakdown to PDF"
-                    style={{ padding: "4px 9px", fontSize: "11px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: "#f7f7f7", color: "#555", cursor: isPdfExporting ? "default" : "pointer", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", opacity: isPdfExporting ? 0.6 : 1, whiteSpace: "nowrap" }}
+                    style={{ padding: "4px 9px", fontSize: "11px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: "#f7f7f7", color: "#555", cursor: isPdfExporting ? "default" : "pointer", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", opacity: isPdfExporting ? 0.6 : 1, whiteSpace: "nowrap" }}
                   >
                     {isPdfExporting ? "Exporting…" : "Export PDF"}
                   </button>
@@ -3977,7 +3977,7 @@ function Script({
             style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.42)", zIndex: 21800 }}
             onClick={() => { setShowInsertSourceModal(false); setPendingInsertIndex(null); }}
           />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "360px", maxWidth: "calc(100vw - 40px)", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", zIndex: 21801, fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", padding: "28px" }}>
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "360px", maxWidth: "calc(100vw - 40px)", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 12px 40px rgba(0,0,0,0.35)", zIndex: 21801, fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", padding: "28px" }}>
             <h3 style={{ margin: "0 0 6px", fontSize: "17px" }}>Insert Scene</h3>
             <p style={{ margin: "0 0 22px", fontSize: "13px", color: "#666" }}>Choose how to add the new scene.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>

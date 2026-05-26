@@ -204,7 +204,7 @@ function Dashboard({
   const totalPages = eighthsToDisplayFormat(totalEighths);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>
       {/* Header bar — same structure as Script Breakdown */}
       <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
         <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
@@ -742,7 +742,7 @@ function Dashboard({
               maxHeight: "90vh",
               overflowY: "auto",
               boxSizing: "border-box",
-              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+              fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
             }}
           >
             <h2 style={{ margin: "0 0 20px", fontSize: "17px", letterSpacing: "0.08em", fontWeight: "bold" }}>PROJECT SETTINGS</h2>

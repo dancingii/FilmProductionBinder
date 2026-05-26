@@ -232,7 +232,7 @@ function AuthWrapper({ children }) {
             boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
             width: "100%",
             maxWidth: "400px",
-            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+            fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
           }}
         >
           <h2
@@ -595,7 +595,7 @@ function AuthWrapper({ children }) {
             width: "600px",
             maxHeight: "80vh",
             overflow: "auto",
-            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+            fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
           }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -869,7 +869,7 @@ function AuthWrapper({ children }) {
           left: 0,
           right: 0,
           zIndex: 10000,
-          fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+          fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
           boxSizing: "border-box",
         }}
       >

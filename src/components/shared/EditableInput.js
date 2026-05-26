@@ -62,7 +62,7 @@ const EditableInput = React.memo(
             overflow: "hidden",
             whiteSpace: "normal",
             overflowWrap: "break-word",
-            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+            fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
             lineHeight: "1.2",
           };
         case "todo":

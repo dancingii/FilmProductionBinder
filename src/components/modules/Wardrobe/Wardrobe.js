@@ -77,7 +77,7 @@ const EditableField = React.memo(
               borderRadius: "4px",
               padding: "4px",
               fontSize: "12px",
-              fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+              fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
               resize: "none",
               outline: "none",
             }}
@@ -106,7 +106,7 @@ const EditableField = React.memo(
             cursor: "pointer",
             backgroundColor: "transparent",
             fontSize: "12px",
-            fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+            fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
             overflow: "hidden",
             textOverflow: "ellipsis",
             wordWrap: "break-word",
@@ -1318,7 +1318,7 @@ function WardrobeModule({
         ref={scrollContainerRef}
         style={{
           padding: "20px",
-          fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+          fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
           height: "calc(100vh - 44px)",
           overflowY: "auto",
           boxSizing: "border-box",
@@ -1409,7 +1409,7 @@ function WardrobeModule({
       </div>
 
       {/* ── Content area ── */}
-      <div ref={scrollContainerRef} style={{ flex: 1, overflowY: "auto", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+      <div ref={scrollContainerRef} style={{ flex: 1, overflowY: "auto", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>
         {/* Character View */}
         {viewMode === "characters" && (
           <>

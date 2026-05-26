@@ -1707,7 +1707,7 @@ function StripboardScheduleModule({
         </div>
       </div>
       {/* ── Content area ── */}
-      <div style={{ flex: 1, overflow: "hidden", display: "flex", gap: "15px", width: "100%", boxSizing: "border-box", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+      <div style={{ flex: 1, overflow: "hidden", display: "flex", gap: "15px", width: "100%", boxSizing: "border-box", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>
         {/* Available Scenes Panel */}
         <div style={{ width: "300px", border: "1px solid #ccc", height: "100%", overflow: "hidden", flexShrink: 0, zIndex: 100, backgroundColor: "white", display: "flex", flexDirection: "column" }}>
           <div style={{ backgroundColor: "#4CAF50", color: "white", padding: "10px", fontWeight: "bold", textAlign: "center" }}>

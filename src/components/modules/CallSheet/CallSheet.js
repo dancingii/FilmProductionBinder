@@ -1288,7 +1288,7 @@ function CallSheetModule({
           </div>
         </div>
         {/* ── Content area ── */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "20px", boxSizing: "border-box", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px", boxSizing: "border-box", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>
           <p>No shooting days scheduled. Please add shooting days in the Schedule module first.</p>
         </div>
       </div>
@@ -1334,7 +1334,7 @@ function CallSheetModule({
       </div>
 
       {/* ── Content area ── */}
-      <div style={{ flex: 1, overflow: "auto", padding: "20px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", boxSizing: "border-box" }}>
+      <div style={{ flex: 1, overflow: "auto", padding: "20px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", boxSizing: "border-box" }}>
         {/* Call Sheet */}
         <div style={{ transform: "scale(1.3)", transformOrigin: "top center", marginBottom: "30%" }}>
         <div data-call-sheet="true" style={{ backgroundColor: "white", border: "2px solid black", fontSize: "10px", width: "8.5in", minHeight: "11in", maxWidth: "8.5in", margin: "0 auto", boxSizing: "border-box", padding: "0.25in" }}>
@@ -1372,7 +1372,7 @@ function CallSheetModule({
                 value={currentDayNotes}
                 onChange={(e) => setDayNotes(e.target.value)}
                 placeholder="Enter notes for this shooting day..."
-                style={{ width: "calc(100% - 8px)", height: "40px", border: "1px solid #ccc", borderRadius: "3px", padding: "4px", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", resize: "none" }}
+                style={{ width: "calc(100% - 8px)", height: "40px", border: "1px solid #ccc", borderRadius: "3px", padding: "4px", fontSize: "11px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", resize: "none" }}
               />
             </div>
             <div style={{ display: "flex", alignItems: "center", border: "2px solid black", margin: "10px", fontWeight: "bold", fontSize: "14px" }}>

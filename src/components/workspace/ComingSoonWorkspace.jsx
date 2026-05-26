@@ -13,7 +13,7 @@ function ComingSoonWorkspace({ title = "Workflow" }) {
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: "#f7f9fc",
-        fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+        fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
         boxSizing: "border-box",
         overflow: "hidden",
       }}

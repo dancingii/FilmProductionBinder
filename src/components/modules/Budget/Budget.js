@@ -1433,7 +1433,7 @@ function BudgetModule({ budgetData, setBudgetData, onSyncBudgetData }) {
         </div>
       </div>
       {/* ── Content area ── */}
-      <div style={{ flex: 1, overflowY: "auto", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif", padding: "20px" }}>
+      <div style={{ flex: 1, overflowY: "auto", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", padding: "20px" }}>
 
       {/* Budget Summary */}
       <div
