@@ -87,7 +87,7 @@ function WritingBeatsPanel({
           width: "492px",
           border: "2px inset #ccc",
           backgroundColor: "white",
-          fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
+          fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
           fontSize: "12px",
           overflowY: "auto",
           overflowX: "hidden",
@@ -298,7 +298,7 @@ function WritingBeatsPanel({
               boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
               minWidth: "190px",
               overflow: "hidden",
-              fontFamily: "'Century Gothic','Futura',Arial,sans-serif",
+              fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
               fontSize: "12px",
             }}
           >

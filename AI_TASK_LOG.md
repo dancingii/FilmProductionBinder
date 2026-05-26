@@ -3490,6 +3490,83 @@ Added an explicit FDX paragraph text helper that joins direct `<Text>` children 
 **Remaining Issues:**
 Manual browser re-import of `CD Draft2.fdx` is still recommended to verify the Airspeed Horsa examples in the full app flow. This fix preserves styled/adorned words as plain text only; bold/italic/underline/strikethrough import into editable/exportable rich-text runs remains a separate future sprint.
 
+### 2026-05-25 — Codex — Script Share Internal Link Labels
+
+**Task:**
+Add authenticated app-only labels to active public Writing script share links.
+
+**Files Changed:**
+- src/services/database.js
+- src/components/modules/WritingScript/WritingScript.jsx
+
+**Summary:**
+Added `label` to the authenticated share-link select payload and created `updateScriptShareLinkLabel(linkId, label)` to update only `script_share_links.label`. The Share Script popup now lists each active public link with a compact optional Label field that saves on blur/Enter. Labels are internal management notes only and do not affect tokens, copied URLs, public validation, or the public viewer.
+
+**Verification:**
+- Build: `npm run build` passed.
+- Tests: not run.
+- Manual browser testing: pending/not available in this environment.
+
+**Remaining Issues:**
+Manual browser verification is still recommended for editing labels, refreshing the popup, copying links, and revoking links.
+
+### 2026-05-25 — Codex — Removed Writing Mood Overlay Image-Fade Attempt
+
+**Task:**
+Surgically remove the attempted Writing Mood Overlay image crossfade-duration setting because it regressed the existing inactivity opacity ramp.
+
+**Files Changed:**
+- src/components/modules/WritingScript/WritingScript.jsx
+
+**Summary:**
+Removed the `imageFadeDurationSeconds` setting, the “Image fade” control, the dynamic image-layer keyframe percentages, and the follow-up opacity-ramp dependency/guard changes. Restored the Mood Overlay sections in `WritingScript.jsx` to the committed known-good baseline while preserving unrelated share-link label work.
+
+**Verification:**
+- Build: `npm run build` passed.
+- Tests: not run.
+- Manual browser testing: pending/not available in this environment.
+
+**Remaining Issues:**
+Manual browser verification is still recommended to confirm the Mood Overlay inactivity fade-up behavior is back to its pre-image-fade behavior.
+
+### 2026-05-25 — Codex — Writing Mood Overlay Repeat Fade-Up Lifecycle Fix
+
+**Task:**
+Fix the existing Mood Overlay inactivity opacity lifecycle so activity/inactivity cycles can repeat instead of only working once.
+
+**Files Changed:**
+- src/components/modules/WritingScript/WritingScript.jsx
+
+**Summary:**
+Fixed the activity reset path so it no longer clears `moodOverlayTimerRef` or increments the timer generation token. Activity now resets the activity timestamp and visible opacity while leaving the existing opacity interval alive, allowing later inactivity fade-up cycles to run repeatedly. Did not reintroduce the removed Image fade setting or alter image crossfade keyframes.
+
+**Verification:**
+- Build: `npm run build` passed.
+- Tests: not run.
+- Manual browser testing: pending/not available in this environment.
+
+**Remaining Issues:**
+Manual browser verification is still recommended to confirm repeated Mood Overlay active/inactive cycles in the Writing module.
+
+### 2026-05-25 — Codex — Writing Mood Overlay Image Crossfade Duration
+
+**Task:**
+Safely re-enable an Image fade control for Mood Overlay image-to-image crossfades without changing the global active/inactive opacity lifecycle.
+
+**Files Changed:**
+- src/components/modules/WritingScript/WritingScript.jsx
+
+**Summary:**
+Added `imageFadeDurationSeconds` back to normalized Mood Overlay settings and exposed it as an “Image fade” seconds control. The setting is used only by a small image-layer keyframe helper that adjusts `writingMoodFadeA/B` crossfade percentages. The global overlay opacity lifecycle remains driven by `moodOverlayOpacity`, activity timestamps, inactivity delay, and existing `fadeDurationSeconds`; the opacity effect dependencies are scoped to opacity lifecycle fields so image fade changes do not restart that timer.
+
+**Verification:**
+- Build: `npm run build` passed.
+- Tests: not run.
+- Manual browser testing: pending/not available in this environment.
+
+**Remaining Issues:**
+Manual browser verification is still recommended for repeated active/inactive opacity cycles plus short/long image crossfade timing. Mood Overlay should be extracted into dedicated components/hooks before further behavior expansion.
+
 ### 2026-05-25 — Codex — Call Sheet Sides Target Selection Fix
 
 **Task:**

@@ -252,7 +252,7 @@ export default function PublicScriptShareViewer() {
 
   if (status === "loading") {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f3f5f7", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif", color: "#607D8B" }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f3f5f7", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", color: "#607D8B" }}>
         Loading shared script...
       </div>
     );
@@ -260,7 +260,7 @@ export default function PublicScriptShareViewer() {
 
   if (status !== "ready") {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f3f5f7", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif", color: "#455A64", padding: "24px", boxSizing: "border-box" }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f3f5f7", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", color: "#455A64", padding: "24px", boxSizing: "border-box" }}>
         <div style={{ maxWidth: "420px", padding: "28px", backgroundColor: "white", border: "1px solid #d7dde2", borderRadius: "8px", boxShadow: "0 4px 18px rgba(0,0,0,0.08)", textAlign: "center" }}>
           <h1 style={{ margin: "0 0 10px", fontSize: "20px" }}>This script link is unavailable.</h1>
           <p style={{ margin: 0, fontSize: "13px", lineHeight: 1.5 }}>The link may have been revoked, expired, or entered incorrectly.</p>
@@ -270,7 +270,7 @@ export default function PublicScriptShareViewer() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f3f5f7", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}>
+    <div style={{ minHeight: "100vh", backgroundColor: "#f3f5f7", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
       <header style={{ position: "sticky", top: 0, zIndex: 10, padding: "12px 20px", backgroundColor: "white", borderBottom: "1px solid #d7dde2", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
         <div style={{ maxWidth: "8.5in", margin: "0 auto", display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "16px" }}>
           <div>

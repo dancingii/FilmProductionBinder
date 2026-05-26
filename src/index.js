@@ -1,5 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import "./styles.css";
+import { loadFpbUiFont } from "./utils/fpbUiFont";
+
+loadFpbUiFont();
 
 import App from "./App";
 import AuthWrapper from "./components/auth/AuthWrapper";

@@ -50,7 +50,7 @@ const styles = {
     overflow: "hidden",
     backgroundColor: "#ffffff",
     color: "#222222",
-    fontFamily: "Arial, sans-serif",
+    fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
     overscrollBehaviorY: "none",
   },
   header: {
@@ -165,7 +165,7 @@ const styles = {
     fontSize: "14px",
     marginBottom: "12px",
     boxSizing: "border-box",
-    fontFamily: "Arial, sans-serif",
+    fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
   },
   textarea: {
     width: "100%",
@@ -177,7 +177,7 @@ const styles = {
     fontSize: "14px",
     marginBottom: "12px",
     boxSizing: "border-box",
-    fontFamily: "Arial, sans-serif",
+    fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
     minHeight: "80px",
     resize: "vertical",
   },
@@ -549,7 +549,7 @@ function MobileProjectSelector({ user, onSelectProject, onSignOut, initialProjec
               borderRadius: "6px",
               fontSize: "13px",
               cursor: "pointer",
-              fontFamily: "Arial, sans-serif",
+              fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
             }}
           >
             Sign Out
@@ -780,7 +780,7 @@ const MOBILE_PB_STYLE = {
   fontSize: "10pt",
   color: "#999",
   textAlign: "right",
-  fontFamily: "\'Century Gothic\', \'Futura\', Arial, sans-serif",
+  fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
 };
 
 function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = {} }) {
@@ -1203,7 +1203,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
               fontWeight: "bold",
               padding: "6px 7px",
               lineHeight: 1,
-              fontFamily: "Arial, sans-serif",
+              fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
             }}
           >
             More
@@ -1225,7 +1225,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
               fontWeight: "bold",
               padding: "6px 7px",
               lineHeight: 1,
-              fontFamily: "Arial, sans-serif",
+              fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
             }}
           >
             Sides
@@ -1280,7 +1280,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                   color: "#222",
                   padding: "6px 7px",
                   textAlign: "left",
-                  fontFamily: "Arial, sans-serif",
+                  fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
                   cursor: "pointer",
                 }}
               >
@@ -1371,7 +1371,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
               border: "1px solid #d0d7de",
               boxShadow: "0 12px 28px rgba(0,0,0,0.24)",
               overflow: "hidden",
-              fontFamily: "Arial, sans-serif",
+              fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
             }}
           >
             <div
@@ -1399,7 +1399,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                   fontWeight: "bold",
                   padding: "5px 8px",
                   lineHeight: 1,
-                  fontFamily: "Arial, sans-serif",
+                  fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
                 }}
               >
                 Close
@@ -1423,7 +1423,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                       borderRadius: "4px",
                       padding: "7px 8px",
                       fontSize: "12px",
-                      fontFamily: "Arial, sans-serif",
+                      fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
                     }}
                   />
                   <button
@@ -1437,7 +1437,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                       fontSize: "12px",
                       fontWeight: "bold",
                       padding: "7px 8px",
-                      fontFamily: "Arial, sans-serif",
+                      fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
                     }}
                   >
                     Clear
@@ -1459,7 +1459,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                         width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
                         background: selectedCharacterFilters.length > 0 ? "#e5f2ff" : "#fafafa",
                         border: "none", padding: "7px 9px", cursor: "pointer",
-                        fontFamily: "Arial, sans-serif",
+                        fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
                       }}
                     >
                       <span style={{ fontSize: "11px", color: "#444", fontWeight: "bold" }}>
@@ -1475,7 +1475,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                         {selectedCharacterFilters.length > 0 && (
                           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "4px" }}>
                             <button type="button" onClick={() => setSelectedCharacterFilters([])}
-                              style={{ border: "none", background: "none", color: "#2196F3", fontSize: "11px", cursor: "pointer", padding: "0", fontFamily: "Arial, sans-serif" }}>
+                              style={{ border: "none", background: "none", color: "#2196F3", fontSize: "11px", cursor: "pointer", padding: "0", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
                               Clear
                             </button>
                           </div>
@@ -1494,7 +1494,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                                       checked ? prev.filter((c) => c !== name) : [...prev, name]
                                     )}
                                     style={{ accentColor: "#2196F3", width: "14px", height: "14px", flexShrink: 0 }} />
-                                  <span style={{ fontSize: "12px", fontFamily: "Arial, sans-serif", color: "#222" }}>{name}</span>
+                                  <span style={{ fontSize: "12px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", color: "#222" }}>{name}</span>
                                 </label>
                               );
                             })}
@@ -1508,7 +1508,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                     <select
                       value={scheduleFilter}
                       onChange={(event) => setScheduleFilter(event.target.value)}
-                      style={{ border: "1px solid #d7d7d7", borderRadius: "4px", padding: "7px 8px", fontSize: "12px", fontFamily: "Arial, sans-serif" }}
+                      style={{ border: "1px solid #d7d7d7", borderRadius: "4px", padding: "7px 8px", fontSize: "12px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}
                     >
                       <option value="all">All Scenes</option>
                       <option value="currentDay">Current Day / Today</option>
@@ -1534,7 +1534,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                       fontSize: "12px",
                       fontWeight: "bold",
                       padding: "7px 8px",
-                      fontFamily: "Arial, sans-serif",
+                      fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
                     }}
                   >
                     Clear Search / Filters / Sides
@@ -1560,7 +1560,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                     fontWeight: "bold",
                     letterSpacing: "0.08em",
                     textTransform: "uppercase",
-                    fontFamily: "Arial, sans-serif",
+                    fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
                   }}
                 >
                   Sides Behavior
@@ -1577,7 +1577,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                         </span>
                         {sidesCharacters.length > 0 && (
                           <button type="button" onClick={() => setSidesCharacters([])}
-                            style={{ border: "none", background: "none", color: "#2196F3", fontSize: "11px", cursor: "pointer", padding: "0", fontFamily: "Arial, sans-serif" }}>
+                            style={{ border: "none", background: "none", color: "#2196F3", fontSize: "11px", cursor: "pointer", padding: "0", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
                             Clear
                           </button>
                         )}
@@ -1594,7 +1594,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                                 <input type="checkbox" checked={checked}
                                   onChange={() => setSidesCharacters((prev) => checked ? prev.filter((c) => c !== name) : [...prev, name])}
                                   style={{ accentColor: "#2196F3", width: "14px", height: "14px", flexShrink: 0 }} />
-                                <span style={{ fontSize: "12px", fontFamily: "Arial, sans-serif", color: "#222" }}>{name}</span>
+                                <span style={{ fontSize: "12px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", color: "#222" }}>{name}</span>
                               </label>
                             );
                           })}
@@ -1606,7 +1606,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                     <label style={{ display: "grid", gap: "3px", fontSize: "11px", color: "#666", fontWeight: "bold" }}>
                       Shooting Day
                       <select value={sidesShootingDay} onChange={(e) => setSidesShootingDay(e.target.value)}
-                        style={{ border: "1px solid #d7d7d7", borderRadius: "4px", padding: "7px 8px", fontSize: "12px", fontFamily: "Arial, sans-serif", fontWeight: "normal" }}>
+                        style={{ border: "1px solid #d7d7d7", borderRadius: "4px", padding: "7px 8px", fontSize: "12px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", fontWeight: "normal" }}>
                         <option value="">Any Day</option>
                         {(shootingDays || []).map((day) => (
                           <option key={day.id || day.date} value={day.date}>
@@ -1620,7 +1620,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
                     <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
                       <input type="checkbox" checked={sidesUseCurrentDay} onChange={() => setSidesUseCurrentDay((v) => !v)}
                         style={{ accentColor: "#2196F3", width: "14px", height: "14px", flexShrink: 0 }} />
-                      <span style={{ fontSize: "12px", fontFamily: "Arial, sans-serif", color: "#444" }}>Current Day / Today</span>
+                      <span style={{ fontSize: "12px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", color: "#444" }}>Current Day / Today</span>
                     </label>
 
                     {/* Helper note when no criteria selected */}
@@ -1683,7 +1683,7 @@ function MobileScriptModule({ scenes = [], shootingDays = [], scheduledScenes = 
               {visibleScenes.length === 0 ? (
                 <div
                   style={{
-                    fontFamily: "Arial, sans-serif",
+                    fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
                     fontSize: "13px",
                     lineHeight: 1.5,
                     color: "#666",
@@ -6016,7 +6016,7 @@ function MobileCallSheetModule({
             border: "2px solid black",
             boxSizing: "border-box",
             padding: "0.2in",
-            fontFamily: "Arial, sans-serif",
+            fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
             overflow: "hidden",
           }}
         >

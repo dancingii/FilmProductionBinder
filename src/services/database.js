@@ -35,7 +35,7 @@ const generateScriptShareToken = () => {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 };
 
-const SCRIPT_SHARE_LINK_SELECT = "id, project_id, token, source, is_active, created_at, revoked_at, expires_at, watermark_settings";
+const SCRIPT_SHARE_LINK_SELECT = "id, project_id, token, source, is_active, created_at, revoked_at, expires_at, watermark_settings, label";
 
 export const listScriptShareLinks = async (projectId) => {
   if (!projectId) return [];
@@ -95,6 +95,22 @@ export const updateScriptShareWatermarkSettings = async (linkId, watermarkSettin
     .from("script_share_links")
     .update({
       watermark_settings: watermarkSettings || null,
+    })
+    .eq("id", linkId)
+    .select(SCRIPT_SHARE_LINK_SELECT)
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const updateScriptShareLinkLabel = async (linkId, label) => {
+  if (!linkId) throw new Error("Cannot update share link label without a link id.");
+  const safeLabel = String(label || "").trim().slice(0, 160);
+  const { data, error } = await supabase
+    .from("script_share_links")
+    .update({
+      label: safeLabel || null,
     })
     .eq("id", linkId)
     .select(SCRIPT_SHARE_LINK_SELECT)

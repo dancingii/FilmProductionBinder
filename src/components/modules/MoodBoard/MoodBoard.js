@@ -162,6 +162,16 @@ function getSourceLabel(type) {
   return "Link";
 }
 
+const CANVAS_BLEND_OPS = new Set([
+  "multiply","screen","overlay","darken","lighten",
+  "color-dodge","color-burn","hard-light","soft-light",
+  "difference","exclusion","hue","saturation","color","luminosity",
+]);
+function toCanvasBlendMode(mode) {
+  if (!mode || mode === "normal") return "source-over";
+  return CANVAS_BLEND_OPS.has(mode) ? mode : "source-over";
+}
+
 function isStoredImageUrl(url) {
   if (!url) return false;
   if (url.startsWith("data:") || url.startsWith("blob:")) return true;
@@ -223,6 +233,99 @@ function getEffectiveSelection(item) {
     return { selectionType: item.maskType === "ellipse" ? "ellipse" : "rect", selX: 0, selY: 0, selW: 1, selH: 1, selFeather: item.selFeather ?? item.maskFeather ?? 0 };
   }
   return null;
+}
+
+const DEBUG_MOODBOARD_PDF_MASKS = false;
+
+function getPdfObjectFitDrawRect(imageW, imageH, boxW, boxH, objectFit = "contain") {
+  const scale = objectFit === "cover"
+    ? Math.max(boxW / imageW, boxH / imageH)
+    : Math.min(boxW / imageW, boxH / imageH);
+  const drawW = imageW * scale;
+  const drawH = imageH * scale;
+  return {
+    drawX: (boxW - drawW) / 2,
+    drawY: (boxH - drawH) / 2,
+    drawW,
+    drawH,
+  };
+}
+
+function createMoodBoardPdfMaskCanvas(itemW, itemH, selection) {
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = Math.max(1, Math.round(itemW));
+  maskCanvas.height = Math.max(1, Math.round(itemH));
+  const maskCtx = maskCanvas.getContext("2d");
+  const selX = selection.selX ?? 0;
+  const selY = selection.selY ?? 0;
+  const selW = selection.selW ?? 1;
+  const selH = selection.selH ?? 1;
+  const feather = Math.max(0, selection.selFeather ?? 0);
+  const x = selX * itemW;
+  const y = selY * itemH;
+  const w = selW * itemW;
+  const h = selH * itemH;
+
+  maskCtx.fillStyle = "white";
+  if (selection.selectionType === "ellipse") {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const rx = Math.max(1, w / 2);
+    const ry = Math.max(1, h / 2);
+    maskCtx.save();
+    maskCtx.translate(cx, cy);
+    maskCtx.scale(rx, ry);
+    if (feather > 0) {
+      const innerStop = Math.max(0, Math.min(0.995, 1 - feather / Math.max(1, Math.min(rx, ry))));
+      const gradient = maskCtx.createRadialGradient(0, 0, 0, 0, 0, 1);
+      gradient.addColorStop(0, "white");
+      gradient.addColorStop(innerStop, "white");
+      gradient.addColorStop(1, "rgba(255,255,255,0)");
+      maskCtx.fillStyle = gradient;
+    }
+    maskCtx.beginPath();
+    maskCtx.arc(0, 0, 1, 0, Math.PI * 2);
+    maskCtx.fill();
+    maskCtx.restore();
+    return maskCanvas;
+  }
+
+  if (feather <= 0) {
+    maskCtx.fillRect(x, y, w, h);
+    return maskCanvas;
+  }
+
+  const left = x;
+  const right = x + w;
+  const top = y;
+  const bottom = y + h;
+  const safeFeatherX = Math.min(feather, Math.max(0, w / 2));
+  const safeFeatherY = Math.min(feather, Math.max(0, h / 2));
+
+  const horizontalGradient = maskCtx.createLinearGradient(left, 0, right, 0);
+  horizontalGradient.addColorStop(0, "rgba(255,255,255,0)");
+  horizontalGradient.addColorStop(safeFeatherX > 0 ? safeFeatherX / Math.max(1, w) : 0, "white");
+  horizontalGradient.addColorStop(safeFeatherX > 0 ? 1 - safeFeatherX / Math.max(1, w) : 1, "white");
+  horizontalGradient.addColorStop(1, "rgba(255,255,255,0)");
+  maskCtx.fillStyle = horizontalGradient;
+  maskCtx.fillRect(left, top, w, h);
+
+  const verticalMask = document.createElement("canvas");
+  verticalMask.width = maskCanvas.width;
+  verticalMask.height = maskCanvas.height;
+  const verticalCtx = verticalMask.getContext("2d");
+  const verticalGradient = verticalCtx.createLinearGradient(0, top, 0, bottom);
+  verticalGradient.addColorStop(0, "rgba(255,255,255,0)");
+  verticalGradient.addColorStop(safeFeatherY > 0 ? safeFeatherY / Math.max(1, h) : 0, "white");
+  verticalGradient.addColorStop(safeFeatherY > 0 ? 1 - safeFeatherY / Math.max(1, h) : 1, "white");
+  verticalGradient.addColorStop(1, "rgba(255,255,255,0)");
+  verticalCtx.fillStyle = verticalGradient;
+  verticalCtx.fillRect(left, top, w, h);
+
+  maskCtx.globalCompositeOperation = "destination-in";
+  maskCtx.drawImage(verticalMask, 0, 0);
+  maskCtx.globalCompositeOperation = "source-over";
+  return maskCanvas;
 }
 
 function normalizeImportedState(parsed) {
@@ -363,11 +466,66 @@ function RollImage({ image, canEdit, isViewOnly, onDragStart, onDragEnd, onDragO
 
 const MOODBOARD_SESSION_CACHE = new Map();
 
+// Grain tile cache — per-pixel 512×512 noise; size is controlled via CSS background-size scaling
+const GRAIN_TILE_CACHE = new Map();
+const GRAIN_TILE_SIZE = 512;
+
+function generateGrainTileCanvas(seed, amount, saturation, color) {
+  const sat = saturation ?? 1;
+  const col = color || "#2e2e2e";
+  const key = `${seed}_${amount}_${sat}_${col}`;
+  if (GRAIN_TILE_CACHE.has(key)) return GRAIN_TILE_CACHE.get(key);
+  const dim = GRAIN_TILE_SIZE;
+  const cvs = document.createElement("canvas");
+  cvs.width = dim; cvs.height = dim;
+  const ctx = cvs.getContext("2d");
+  const tmp = document.createElement("canvas"); tmp.width = 1; tmp.height = 1;
+  const tctx = tmp.getContext("2d"); tctx.fillStyle = col; tctx.fillRect(0, 0, 1, 1);
+  const [cr, cg, cb] = tctx.getImageData(0, 0, 1, 1).data;
+  let s = (seed | 0) >>> 0;
+  const rand = () => {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 0x100000000;
+  };
+  const imgData = ctx.createImageData(dim, dim);
+  const d = imgData.data;
+  const maxAlpha = (amount ?? 0.6) * 255;
+  // sat=0 → monochrome; sat=1 → ±60 per-channel color noise; sat=3 → ±180
+  const colorRange = sat * 60;
+  for (let i = 0; i < dim * dim * 4; i += 4) {
+    const luma = rand();
+    if (colorRange < 0.5) {
+      d[i] = cr; d[i + 1] = cg; d[i + 2] = cb;
+    } else {
+      d[i]   = Math.max(0, Math.min(255, Math.round(cr + (rand() - 0.5) * 2 * colorRange)));
+      d[i+1] = Math.max(0, Math.min(255, Math.round(cg + (rand() - 0.5) * 2 * colorRange)));
+      d[i+2] = Math.max(0, Math.min(255, Math.round(cb + (rand() - 0.5) * 2 * colorRange)));
+    }
+    d[i + 3] = Math.round(luma * maxAlpha);
+  }
+  ctx.putImageData(imgData, 0, 0);
+  GRAIN_TILE_CACHE.set(key, cvs);
+  return cvs;
+}
+
+const GRAIN_DATAURL_CACHE = new Map();
+function getGrainDataUrl(seed, amount, saturation, color) {
+  const sat = saturation ?? 1;
+  const col = color || "#2e2e2e";
+  const key = `${seed}_${amount}_${sat}_${col}`;
+  if (GRAIN_DATAURL_CACHE.has(key)) return GRAIN_DATAURL_CACHE.get(key);
+  const url = generateGrainTileCanvas(seed, amount, saturation, color).toDataURL();
+  GRAIN_DATAURL_CACHE.set(key, url);
+  return url;
+}
+
 const MOODBOARD_TOOLBAR_BTN = {
   padding: "3px 7px",
   fontSize: "10px",
   fontWeight: "bold",
-  fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif",
+  fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
   cursor: "pointer",
   borderRadius: "3px",
   border: "1px solid #ccc",
@@ -483,6 +641,10 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   const boardPanelDragRef = useRef(null);
   const [boardPanelDragOverPageId, setBoardPanelDragOverPageId] = useState(null);
   const [expandedBoardIds, setExpandedBoardIds] = useState(() => new Set());
+  const [showSolidDropdown, setShowSolidDropdown] = useState(false);
+  const [showEffectsDropdown, setShowEffectsDropdown] = useState(false);
+  const solidDropdownRef = useRef(null);
+  const effectsDropdownRef = useRef(null);
   const dbSaveTimerRef = useRef(null);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
   useEffect(() => { gridSizeRef.current = gridSize; }, [gridSize]);
@@ -758,7 +920,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   useEffect(() => { selModeRef.current = selMode; }, [selMode]);
 
   useEffect(() => {
-    if (!showFontDropdown && !showTextSpacingDropdown && !showFitDropdown && !showSelectDropdown) return;
+    if (!showFontDropdown && !showTextSpacingDropdown && !showFitDropdown && !showSelectDropdown && !showSolidDropdown && !showEffectsDropdown) return;
     const handleOutside = (e) => {
       if (showFontDropdown && fontDropdownRef.current && !fontDropdownRef.current.contains(e.target)) {
         setShowFontDropdown(false);
@@ -772,6 +934,12 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
       if (showSelectDropdown && !selModeRef.current && selectDropdownRef.current && !selectDropdownRef.current.contains(e.target)) {
         setShowSelectDropdown(false);
       }
+      if (showSolidDropdown && solidDropdownRef.current && !solidDropdownRef.current.contains(e.target)) {
+        setShowSolidDropdown(false);
+      }
+      if (showEffectsDropdown && effectsDropdownRef.current && !effectsDropdownRef.current.contains(e.target)) {
+        setShowEffectsDropdown(false);
+      }
     };
     const handleEsc = (e) => {
       if (e.key === "Escape") {
@@ -779,6 +947,8 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
         setShowTextSpacingDropdown(false);
         setShowFitDropdown(false);
         setShowSelectDropdown(false);
+        setShowSolidDropdown(false);
+        setShowEffectsDropdown(false);
       }
     };
     document.addEventListener("mousedown", handleOutside);
@@ -787,7 +957,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
       document.removeEventListener("mousedown", handleOutside);
       document.removeEventListener("keydown", handleEsc);
     };
-  }, [showFontDropdown, showTextSpacingDropdown, showFitDropdown, showSelectDropdown]);
+  }, [showFontDropdown, showTextSpacingDropdown, showFitDropdown, showSelectDropdown, showSolidDropdown, showEffectsDropdown]);
 
   const activeBoard = useMemo(() => {
     if (!boards.length) return null;
@@ -1226,11 +1396,79 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
       letterSpacing: 0,
       lineHeight: 1.1,
       textAlign: "left",
+      textBlur: 0,
       opacity: 1,
       locked: false,
       hidden: false,
       zIndex: (activeBoardItems.reduce((max, i) => Math.max(max, i.zIndex || 1), 0)) + 1,
       name: "Text",
+    };
+    setCanvasItems((prev) => [...prev, item]);
+    setSelectedItemIds([item.id]);
+  };
+
+  const addSolidToCanvas = (shape) => {
+    if (!activeBoard) return;
+    const selectedItem = selectedItemIds.length > 0
+      ? canvasItems.find(ci => ci.id === selectedItemIds[0])
+      : null;
+    const targetPage = selectedItem
+      ? boardPages.find(p => p.id === selectedItem.pageId)
+      : activePage;
+    if (!targetPage) return;
+    const item = {
+      id: makeId("solid"),
+      type: "solid",
+      boardId: activeBoard.id,
+      pageId: targetPage.id,
+      solidShape: shape,
+      solidColor: "#cccccc",
+      cornerRadius: 0,
+      x: 200,
+      y: 200,
+      width: 300,
+      height: 200,
+      opacity: 1,
+      blendMode: "normal",
+      locked: false,
+      hidden: false,
+      zIndex: (activeBoardItems.reduce((max, i) => Math.max(max, i.zIndex || 1), 0)) + 1,
+      name: shape === "ellipse" ? "Ellipse" : "Rectangle",
+    };
+    setCanvasItems((prev) => [...prev, item]);
+    setSelectedItemIds([item.id]);
+  };
+
+  const addGrainLayer = () => {
+    if (!activeBoard) return;
+    const selectedItem = selectedItemIds.length > 0
+      ? canvasItems.find(ci => ci.id === selectedItemIds[0])
+      : null;
+    const targetPage = selectedItem
+      ? boardPages.find(p => p.id === selectedItem.pageId)
+      : activePage;
+    if (!targetPage) return;
+    const item = {
+      id: makeId("grain"),
+      type: "grain",
+      boardId: activeBoard.id,
+      pageId: targetPage.id,
+      grainAmount: 0.6,
+      grainSize: 1,
+      grainSoftening: 0,
+      grainSaturation: 1,
+      grainSeed: Math.floor(Math.random() * 100000),
+      grainColor: "#2e2e2e",
+      x: 0,
+      y: 0,
+      width: targetPage.width,
+      height: targetPage.height,
+      opacity: 0.35,
+      blendMode: "normal",
+      locked: false,
+      hidden: false,
+      zIndex: (activeBoardItems.reduce((max, i) => Math.max(max, i.zIndex || 1), 0)) + 1,
+      name: "Grain Layer",
     };
     setCanvasItems((prev) => [...prev, item]);
     setSelectedItemIds([item.id]);
@@ -1445,23 +1683,9 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
         hotfixes: ["px_scaling"],
       });
 
-      // Load custom fonts into canvas context via FontFace API
-      setStatusMessage("Loading fonts...");
-      const fontLoadPromises = FONT_OPTIONS.map(async (font) => {
-        try {
-          const googleName = font.name.replace(/ /g, "+");
-          const cssUrl = `https://fonts.googleapis.com/css2?family=${googleName}:wght@400;700;900&display=swap`;
-          // Fetch CSS to get actual font file URL
-          const cssRes = await fetch(cssUrl);
-          const cssText = await cssRes.text();
-          const urlMatch = cssText.match(/url\((https:\/\/fonts\.gstatic\.com[^)]+)\)/);
-          if (!urlMatch) return;
-          const ff = new FontFace(font.name, `url(${urlMatch[1]})`);
-          await ff.load();
-          document.fonts.add(ff);
-        } catch {} // silently skip fonts that fail to load
-      });
-      await Promise.allSettled(fontLoadPromises);
+      // Canvas text rendering uses system/document fonts directly — no Google Fonts fetch needed.
+      // Fetching and adding fonts via document.fonts.add() mutates global DOM state and
+      // causes live app text to reflowing, which is the visible side effect during export.
       await document.fonts.ready;
 
       // Load all images as HTMLImageElement objects upfront
@@ -1496,9 +1720,6 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
         });
       }));
 
-      // Wait for fonts
-      await document.fonts.ready;
-
       for (let i = 0; i < boardPages.length; i++) {
         const page = boardPages[i];
         setStatusMessage(`Rendering page ${i + 1} of ${boardPages.length}...`);
@@ -1520,7 +1741,8 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           for (const item of pageItems) {
             ctx.save();
             ctx.globalAlpha = item.opacity ?? 1;
-  
+            ctx.globalCompositeOperation = toCanvasBlendMode(item.blendMode);
+
             if (item.rotation) {
               const cx = item.x + item.width / 2;
               const cy = item.y + item.height / 2;
@@ -1528,41 +1750,98 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
               ctx.rotate((item.rotation * Math.PI) / 180);
               ctx.translate(-cx, -cy);
             }
-  
+
             if (item.type === "image") {
-            const imgData = images.find(img => img.id === item.imageId);
-            const imgEl = imgData ? loadedImgMap[imgData.url] : null;
-            if (imgEl) {
-              const objectFit = item.objectFit || "contain";
-              const iw = imgEl.naturalWidth;
-              const ih = imgEl.naturalHeight;
-              const bw = item.width;
-              const bh = item.height;
-              let sx = 0, sy = 0, sw = iw, sh = ih;
-              let dx = item.x, dy = item.y, dw = bw, dh = bh;
+              const imgData = images.find(img => img.id === item.imageId);
+              const imgEl = imgData ? loadedImgMap[imgData.url] : null;
+              if (imgEl) {
+                const iw = imgEl.naturalWidth;
+                const ih = imgEl.naturalHeight;
+                if (iw > 0 && ih > 0) {
+                  const itemW = item.width;
+                  const itemH = item.height;
+                  const sel = getEffectiveSelection(item);
+                  const hasCropOffset = item.cropRenderW != null && item.cropRenderH != null;
+                  const cropRenderW = hasCropOffset ? item.cropRenderW : itemW;
+                  const cropRenderH = hasCropOffset ? item.cropRenderH : itemH;
+                  const cropRenderOffsetX = hasCropOffset ? (item.cropRenderOffsetX || 0) : 0;
+                  const cropRenderOffsetY = hasCropOffset ? (item.cropRenderOffsetY || 0) : 0;
+                  const fitRect = getPdfObjectFitDrawRect(iw, ih, cropRenderW, cropRenderH, item.objectFit || "contain");
+                  const drawX = cropRenderOffsetX + fitRect.drawX;
+                  const drawY = cropRenderOffsetY + fitRect.drawY;
+                  const drawW = fitRect.drawW;
+                  const drawH = fitRect.drawH;
 
-              if (objectFit === "cover") {
-                const scale = Math.max(bw / iw, bh / ih);
-                const scaledW = iw * scale;
-                const scaledH = ih * scale;
-                sx = (iw - bw / scale) / 2;
-                sy = (ih - bh / scale) / 2;
-                sw = bw / scale;
-                sh = bh / scale;
-              } else {
-                // contain
-                const scale = Math.min(bw / iw, bh / ih);
-                dw = iw * scale;
-                dh = ih * scale;
-                dx = item.x + (bw - dw) / 2;
-                dy = item.y + (bh - dh) / 2;
+                  const imageCanvas = document.createElement("canvas");
+                  imageCanvas.width = Math.max(1, Math.round(itemW));
+                  imageCanvas.height = Math.max(1, Math.round(itemH));
+                  const imageCtx = imageCanvas.getContext("2d");
+                  imageCtx.drawImage(imgEl, drawX, drawY, drawW, drawH);
+
+                  const hasNonTrivialSelection = !!sel && (
+                    sel.selectionType === "ellipse" ||
+                    (sel.selFeather ?? 0) > 0 ||
+                    sel.selX > 0.001 ||
+                    sel.selY > 0.001 ||
+                    sel.selW < 0.999 ||
+                    sel.selH < 0.999
+                  );
+
+                  if (DEBUG_MOODBOARD_PDF_MASKS && (
+                    sel ||
+                    hasCropOffset ||
+                    item.maskType ||
+                    item.cropLeft ||
+                    item.cropRight ||
+                    item.cropTop ||
+                    item.cropBottom
+                  )) {
+                    console.log("[MoodBoard PDF mask]", {
+                      id: item.id,
+                      imageId: item.imageId,
+                      pageId: item.pageId,
+                      x: item.x,
+                      y: item.y,
+                      width: item.width,
+                      height: item.height,
+                      cropRenderW: item.cropRenderW,
+                      cropRenderH: item.cropRenderH,
+                      cropRenderOffsetX: item.cropRenderOffsetX,
+                      cropRenderOffsetY: item.cropRenderOffsetY,
+                      selectionType: item.selectionType,
+                      selX: item.selX,
+                      selY: item.selY,
+                      selW: item.selW,
+                      selH: item.selH,
+                      selFeather: item.selFeather,
+                      maskType: item.maskType,
+                      maskFeather: item.maskFeather,
+                      cropLeft: item.cropLeft,
+                      cropRight: item.cropRight,
+                      cropTop: item.cropTop,
+                      cropBottom: item.cropBottom,
+                      effectiveSelection: sel,
+                      exportCase: hasCropOffset
+                        ? (sel?.selectionType === "ellipse" ? "collapsed cropRender ellipse mask" : hasNonTrivialSelection ? "collapsed cropRender feathered rect mask" : "collapsed cropRender rect/unmasked")
+                        : hasNonTrivialSelection
+                        ? (sel.selectionType === "ellipse" ? "legacy ellipse mask" : "legacy rect mask")
+                        : "unmasked",
+                      drawX,
+                      drawY,
+                      drawW,
+                      drawH,
+                    });
+                  }
+
+                  if (hasNonTrivialSelection) {
+                    const maskCanvas = createMoodBoardPdfMaskCanvas(itemW, itemH, sel);
+                    imageCtx.globalCompositeOperation = "destination-in";
+                    imageCtx.drawImage(maskCanvas, 0, 0);
+                    imageCtx.globalCompositeOperation = "source-over";
+                  }
+                  ctx.drawImage(imageCanvas, item.x, item.y);
+                }
               }
-
-              ctx.beginPath();
-              ctx.rect(item.x, item.y, item.width, item.height);
-              ctx.clip();
-              ctx.drawImage(imgEl, sx, sy, sw, sh, dx, dy, dw, dh);
-            }
 
           } else if (item.type === "text") {
             // Background
@@ -1571,12 +1850,14 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
               ctx.fillRect(item.x, item.y, item.width, item.height);
             }
 
+            // Text blur
+            const textBlur = item.textBlur ?? 0;
+            if (textBlur > 0) ctx.filter = `blur(${textBlur}px)`;
+
             // Text — wrap manually to match the DOM layout
             const fontWeight = item.fontWeight || "normal";
             const fontSize = item.fontSize || 16;
             const fontFamily = item.fontFamily || "Arial";
-            const lineHeightMult = item.lineHeight ?? 1.1;
-            const lineHeight = fontSize * lineHeightMult;
             const letterSpacing = item.letterSpacing || 0;
             const padding = 6;
             const maxW = item.width - padding * 2;
@@ -1601,11 +1882,9 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
             };
 
             // Word wrap — normalize whitespace to match CSS rendering
-            // CSS collapses multiple spaces into one and ignores leading/trailing
             const rawLines = item.text.split("\n");
             const wrappedLines = [];
             for (const raw of rawLines) {
-              // Collapse multiple spaces, trim — matches CSS white-space: normal behavior
               const normalized = raw.replace(/\s+/g, " ").trim();
               if (!normalized) { wrappedLines.push(""); continue; }
               const words = normalized.split(" ").filter(w => w.length > 0);
@@ -1637,6 +1916,46 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
               drawTextWithSpacing(line, textX, ty);
               ty += trueLineHeight;
               if (ty > item.y + item.height + trueLineHeight) break;
+            }
+            if (textBlur > 0) ctx.filter = "none";
+          } else if (item.type === "solid") {
+            ctx.fillStyle = item.solidColor || "#cccccc";
+            if (item.solidShape === "ellipse") {
+              ctx.beginPath();
+              ctx.ellipse(
+                item.x + item.width / 2, item.y + item.height / 2,
+                item.width / 2, item.height / 2,
+                0, 0, Math.PI * 2
+              );
+              ctx.fill();
+            } else {
+              const cr = item.cornerRadius ?? 0;
+              if (cr > 0 && typeof ctx.roundRect === "function") {
+                ctx.beginPath();
+                ctx.roundRect(item.x, item.y, item.width, item.height, [Math.min(cr, Math.min(item.width, item.height) / 2)]);
+                ctx.fill();
+              } else {
+                ctx.fillRect(item.x, item.y, item.width, item.height);
+              }
+            }
+          } else if (item.type === "grain") {
+            const tileCanvas = generateGrainTileCanvas(
+              item.grainSeed || 0,
+              item.grainAmount ?? 0.6,
+              item.grainSaturation ?? 1,
+              item.grainColor || "#2e2e2e"
+            );
+            const pattern = ctx.createPattern(tileCanvas, "repeat");
+            if (pattern) {
+              const grainScale = item.grainSize ?? 1;
+              if (grainScale !== 1) {
+                try { pattern.setTransform(new DOMMatrix().scale(grainScale)); } catch (_) {}
+              }
+              const blurPx = (item.grainSoftening ?? 0) * 0.15;
+              if (blurPx > 0) ctx.filter = `blur(${blurPx}px)`;
+              ctx.fillStyle = pattern;
+              ctx.fillRect(0, 0, page.width, page.height);
+              ctx.filter = "none";
             }
           }
 
@@ -1735,7 +2054,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     const maxZ = activeBoardItems.reduce((max, i) => Math.max(max, i.zIndex || 1), 0);
     const copies = selectedItems.map((item, idx) => ({
       ...item,
-      id: makeId(item.type === "text" ? "text" : "canvas_img"),
+      id: makeId(item.type === "text" ? "text" : item.type === "solid" ? "solid" : item.type === "grain" ? "grain" : "canvas_img"),
       x: snap(item.x + 40),
       y: snap(item.y + 40),
       zIndex: maxZ + idx + 1,
@@ -2247,6 +2566,8 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
 
   const renderLayerName = (item) => {
     if (item.type === "text") return item.text?.trim()?.slice(0, 30) || "Text";
+    if (item.type === "solid") return item.name || (item.solidShape === "ellipse" ? "Ellipse" : "Rectangle");
+    if (item.type === "grain") return item.name || "Grain Layer";
     const image = images.find((img) => img.id === item.imageId);
     return image?.title || item.name || "Image";
   };
@@ -2265,17 +2586,19 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
         key={item.id}
         style={{
           position: "absolute",
-          left: item.x,
-          top: item.y,
-          width: item.width,
-          height: item.height,
+          left: item.type === "grain" ? 0 : item.x,
+          top: item.type === "grain" ? 0 : item.y,
+          width: item.type === "grain" ? "100%" : item.width,
+          height: item.type === "grain" ? "100%" : item.height,
           zIndex: item.zIndex,
           outline: isSelected ? "2px solid #2196F3" : "none",
           boxShadow: isSelected ? "0 0 0 3px rgba(33,150,243,0.15)" : "none",
-          backgroundColor: item.type === "text" ? item.backgroundColor : "transparent",
+          backgroundColor: item.type === "text" ? item.backgroundColor : item.type === "solid" && item.solidShape !== "ellipse" ? item.solidColor : "transparent",
+          borderRadius: item.type === "solid" && item.solidShape !== "ellipse" && (item.cornerRadius ?? 0) > 0 ? `${item.cornerRadius}px` : undefined,
+          overflow: item.type === "solid" && item.solidShape !== "ellipse" && (item.cornerRadius ?? 0) > 0 ? "hidden" : undefined,
           opacity: isTextDragPreviewSource ? Math.min(item.opacity ?? 1, 0.18) : item.opacity ?? 1,
           mixBlendMode: item.blendMode || "normal",
-          cursor: locked ? "default" : "move",
+          cursor: locked || item.type === "grain" ? "default" : "move",
           userSelect: "none",
           boxSizing: "border-box",
           transform: item.rotation ? `rotate(${item.rotation}deg)` : undefined,
@@ -2285,7 +2608,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           if (e.button === 1) return; // let middle click bubble to scroll container
           e.stopPropagation();
           if (item.type === "text" && editingTextId === item.id && e.target.tagName === "TEXTAREA") return;
-          if (!locked) startDrag(e, item);
+          if (!locked && item.type !== "grain") startDrag(e, item);
         }}
         onClick={(e) => {
           e.stopPropagation();
@@ -2475,6 +2798,16 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
             </>
           );
         })()}
+        {item.type === "solid" && item.solidShape === "ellipse" && (
+          <div style={{ width: "100%", height: "100%", backgroundColor: item.solidColor || "#cccccc", borderRadius: "50%", pointerEvents: "none" }} />
+        )}
+        {item.type === "grain" && (() => {
+          const dataUrl = getGrainDataUrl(item.grainSeed || 0, item.grainAmount ?? 0.6, item.grainSaturation ?? 1, item.grainColor || "#2e2e2e");
+          const bgSize = `${GRAIN_TILE_SIZE * (item.grainSize ?? 1)}px`;
+          const blurPx = (item.grainSoftening ?? 0) * 0.15;
+          const filter = blurPx > 0 ? `blur(${blurPx}px)` : undefined;
+          return <div style={{ position: "absolute", inset: 0, backgroundImage: `url(${dataUrl})`, backgroundRepeat: "repeat", backgroundSize: bgSize, filter, pointerEvents: "none" }} />;
+        })()}
         {item.type === "text" && isSelected && !locked && (
           <div
             onPointerDown={(e) => { e.stopPropagation(); startDrag(e, item); }}
@@ -2531,6 +2864,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                 paddingTop: "6px",
                 paddingBottom: "6px", paddingLeft: "6px", paddingRight: "6px",
                 boxSizing: "border-box", overflow: "hidden",
+                filter: (item.textBlur ?? 0) > 0 ? `blur(${item.textBlur}px)` : undefined,
                 pointerEvents: editingTextId === item.id ? "auto" : "none",
                 cursor: editingTextId === item.id ? "text" : "default",
                 userSelect: editingTextId === item.id ? "text" : "none",
@@ -2540,7 +2874,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           </>
         )}
 
-        {isSelected && !locked && selMode !== item.id && HANDLE_DIRS.map(handle => {
+        {isSelected && !locked && selMode !== item.id && item.type !== "grain" && HANDLE_DIRS.map(handle => {
           const half = 4;
           const s = {};
           if (handle.includes("n")) s.top = -half; else if (handle.includes("s")) s.bottom = -half; else s.top = `calc(50% - ${half}px)`;
@@ -2610,7 +2944,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   };
   if (!isLoaded) {
     return (
-      <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "#f0f0f0", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+      <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "#f0f0f0", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
         <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white", minHeight: "38px" }} />
         <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
           <div style={{ width: LEFT_PANEL_WIDTH, flexShrink: 0, backgroundColor: "#f8f8f8", borderRight: "1px solid #ccc" }} />
@@ -2622,7 +2956,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   }
 
   return (
-    <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "#f0f0f0", fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
+    <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "#f0f0f0", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
       <div style={{ display: "flex", flexShrink: 0, borderBottom: "1px solid #eee", backgroundColor: "white" }}>
         <div style={{ flex: 1, display: "flex", minHeight: "38px", boxSizing: "border-box" }}>
           <div style={{ flex: 1, display: "flex", gap: "6px", alignItems: "center", padding: "4px 12px", boxSizing: "border-box" }}>
@@ -2659,7 +2993,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
             <input value={newBoardName} onChange={(event) => setNewBoardName(event.target.value)} placeholder="New board name" disabled={!canEdit || isViewOnly} style={{ flex: 1, padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px" }} />
             <button onClick={addBoard} disabled={!canEdit || isViewOnly} style={{ padding: "6px 9px", cursor: "pointer" }}>+</button>
           </div>
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", border: "1px inset #ddd", backgroundColor: "white" }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", border: "1px inset #ddd", backgroundColor: "white" }}>
             {boards.map((board) => {
               const isActive = activeBoard?.id === board.id;
               const isExpanded = expandedBoardIds.has(board.id);
@@ -2676,17 +3010,17 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                       title={isExpanded ? "Collapse pages" : "Show pages"}
                       style={{ fontSize: "10px", cursor: "pointer", border: "none", background: "transparent", padding: "0 2px", color: "#555", flexShrink: 0 }}
                     >{isExpanded ? "▼" : "▶"}</button>
-                    <input value={board.name} onChange={(event) => renameBoard(board.id, event.target.value)} onFocus={() => setActiveBoardId(board.id)} disabled={!canEdit || isViewOnly} style={{ flex: 1, border: "none", background: "transparent", fontWeight: isActive ? "bold" : "normal", fontSize: "12px", outline: "none" }} />
+                    <input value={board.name} onChange={(event) => renameBoard(board.id, event.target.value)} onFocus={() => setActiveBoardId(board.id)} disabled={!canEdit || isViewOnly} style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", fontWeight: isActive ? "bold" : "normal", fontSize: "12px", outline: "none", overflow: "hidden", textOverflow: "ellipsis" }} />
                     {(board.createdBy || userDisplayName) && (
-                      <span style={{ fontSize: "9px", color: "#aaa", whiteSpace: "nowrap", marginRight: "2px" }}>
+                      <span style={{ fontSize: "9px", color: "#aaa", whiteSpace: "nowrap", marginRight: "2px", maxWidth: "50px", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {(board.createdBy || userDisplayName).includes("@")
                           ? (board.createdBy || userDisplayName).split("@")[0]
                           : (board.createdBy || userDisplayName)}
                       </span>
                     )}
-                    <button onClick={() => setActiveBoardId(board.id)} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap", padding: "2px 5px" }}>Open</button>
-                    <button onClick={() => addPageToBoard(board.id, true)} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap", padding: "2px 5px", minWidth: "44px" }}>+ Page</button>
-                    <button onClick={() => deleteBoard(board.id)} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, padding: "2px 5px" }}>×</button>
+                    <button onClick={() => setActiveBoardId(board.id)} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap", padding: "2px 4px" }}>Open</button>
+                    <button onClick={() => addPageToBoard(board.id, true)} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap", padding: "2px 4px" }}>+Pg</button>
+                    <button onClick={() => deleteBoard(board.id)} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, padding: "2px 4px" }}>×</button>
                   </div>
                   {isExpanded && boardPageList.map((pg, pgIdx) => {
                     const isActivePg = activePage?.id === pg.id && isActive;
@@ -2943,11 +3277,33 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
       {/* Canvas controls row */}
       <div style={{ flexShrink: 0, backgroundColor: "#f8f8f8", borderBottom: "1px solid #e0e0e0", padding: "4px 8px", display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap", boxSizing: "border-box" }}>
-        <button onClick={addPage} disabled={!canEdit || isViewOnly} style={MOODBOARD_TOOLBAR_BTN}>ADD PAGE</button>
         <button onClick={addTextToCanvas} disabled={!canEdit || isViewOnly} style={MOODBOARD_TOOLBAR_BTN}>ADD TEXT</button>
-        <button onClick={duplicateSelectedItems} disabled={!selectedItems.length || !canEdit || isViewOnly} style={MOODBOARD_TOOLBAR_BTN}>DUPLICATE</button>
-        <button onClick={deleteSelectedItems} disabled={!selectedItems.length || !canEdit || isViewOnly} style={MOODBOARD_TOOLBAR_BTN}>DELETE</button>
-        <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", fontWeight: "bold", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}>
+        <div ref={solidDropdownRef} style={{ position: "relative" }}>
+          <button
+            onClick={() => { setShowSolidDropdown(p => !p); setShowEffectsDropdown(false); }}
+            disabled={!canEdit || isViewOnly}
+            style={{ ...MOODBOARD_TOOLBAR_BTN, backgroundColor: showSolidDropdown ? "#e3f2fd" : "#f0f0f0" }}
+          >SOLID ▾</button>
+          {showSolidDropdown && (
+            <div style={{ position: "absolute", top: "28px", left: 0, width: "130px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999 }}>
+              <button onClick={() => { addSolidToCanvas("rect"); setShowSolidDropdown(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "8px 10px", border: "none", borderBottom: "1px solid #eee", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>Rectangle</button>
+              <button onClick={() => { addSolidToCanvas("ellipse"); setShowSolidDropdown(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "8px 10px", border: "none", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>Ellipse</button>
+            </div>
+          )}
+        </div>
+        <div ref={effectsDropdownRef} style={{ position: "relative" }}>
+          <button
+            onClick={() => { setShowEffectsDropdown(p => !p); setShowSolidDropdown(false); }}
+            disabled={!canEdit || isViewOnly}
+            style={{ ...MOODBOARD_TOOLBAR_BTN, backgroundColor: showEffectsDropdown ? "#e3f2fd" : "#f0f0f0" }}
+          >EFFECTS ▾</button>
+          {showEffectsDropdown && (
+            <div style={{ position: "absolute", top: "28px", left: 0, width: "140px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999 }}>
+              <button onClick={() => { addGrainLayer(); setShowEffectsDropdown(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "8px 10px", border: "none", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>Grain Layer</button>
+            </div>
+          )}
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", fontWeight: "bold", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
           <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} /> GRID SNAP
           <select value={gridSize} onChange={(e) => setGridSize(Number(e.target.value))} style={{ padding: "2px 4px", fontSize: "10px", border: "1px solid #ccc", borderRadius: "3px" }}>
             <option value={2}>2px</option>
@@ -2957,21 +3313,21 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
             <option value={40}>40px</option>
           </select>
         </label>
-        <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", fontWeight: "bold", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", fontWeight: "bold", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
           CANVAS ZOOM
           <input type="range" min="0.1" max="1.5" step="0.01" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} style={{ width: "70px" }} />
           <span style={{ minWidth: "36px", display: "inline-block", textAlign: "right", fontSize: "10px" }}>{Math.round(zoom * 100)}%</span>
         </label>
         <button onClick={fitToWidth} style={{ ...MOODBOARD_TOOLBAR_BTN }}>FIT</button>
       </div>
-      <div style={{ flexShrink: 0, backgroundColor: "white", borderBottom: "1px solid #ccc", boxSizing: "border-box", overflow: "visible", position: "relative", zIndex: 50 }}>
-          <div style={{ minHeight: "48px", display: "flex", alignItems: "center", gap: "8px", padding: "6px 10px", backgroundColor: "#fafafa", boxSizing: "border-box", flexWrap: "wrap", position: "relative" }}>
+      <div style={{ flexShrink: 0, height: "48px", backgroundColor: "white", borderBottom: "1px solid #ccc", boxSizing: "border-box", overflow: "visible", position: "relative", zIndex: 50 }}>
+          <div style={{ height: "48px", display: "flex", alignItems: "center", gap: "8px", padding: "0 10px", backgroundColor: "#fafafa", boxSizing: "border-box", overflow: "visible", position: "relative" }}>
             <strong style={{ fontSize: "14px", marginRight: "8px", maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeBoard?.name}</strong>
             {primarySelectedItem && (
               <>
                 <span style={{ fontSize: "11px", fontWeight: "bold", color: "#555" }}>{selectedItems.length > 1 ? `${selectedItems.length} ITEMS` : primarySelectedItem.type.toUpperCase()}</span>
                 {primarySelectedItem.type !== "text" && (
-                  <label style={{ fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>Opacity <input type="range" min="0.1" max="1" step="0.05" value={primarySelectedItem.opacity ?? 1} onChange={(event) => updateSelectedItems({ opacity: Number(event.target.value) })} style={{ width: "60px" }} /></label>
+                  <label style={{ fontSize: "10px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>Opacity <input type="range" min="0.1" max="1" step="0.05" value={primarySelectedItem.opacity ?? 1} onChange={(event) => updateSelectedItems({ opacity: Number(event.target.value) })} style={{ width: "60px" }} /></label>
                 )}
                 {primarySelectedItem.type === "image" && selectedItems.length === 1 && (
                   <>
@@ -2993,7 +3349,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                           updateCanvasItem(primarySelectedItem.id, { width: newW, height: newH, x: Math.round(cx - newW / 2), y: Math.round(cy - newH / 2), _baseWidth: base });
                         };
                         return (
-                          <div style={{ position: "absolute", top: "28px", left: 0, width: "190px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999, padding: "8px 10px", display: "flex", flexDirection: "column", gap: "6px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}>
+                          <div style={{ position: "absolute", top: "28px", left: 0, width: "190px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999, padding: "8px 10px", display: "flex", flexDirection: "column", gap: "6px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>
                             <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
                               <span style={{ fontSize: "11px" }}>Scale</span>
                               <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
@@ -3017,9 +3373,9 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                               </div>
                               {showFitSubmenu && (
                                 <div style={{ position: "absolute", left: "calc(100% + 4px)", top: 0, width: "100px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 10000, padding: "4px 0" }}>
-                                  <button onClick={() => { fitImageWidth(); setShowFitDropdown(false); setShowFitSubmenu(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", borderBottom: "1px solid #eee", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}>Fit Width</button>
-                                  <button onClick={() => { fitImageHeight(); setShowFitDropdown(false); setShowFitSubmenu(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", borderBottom: "1px solid #eee", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}>Fit Height</button>
-                                  <button onClick={() => { fitImageCanvas(); setShowFitDropdown(false); setShowFitSubmenu(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}>Fit Canvas</button>
+                                  <button onClick={() => { fitImageWidth(); setShowFitDropdown(false); setShowFitSubmenu(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", borderBottom: "1px solid #eee", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>Fit Width</button>
+                                  <button onClick={() => { fitImageHeight(); setShowFitDropdown(false); setShowFitSubmenu(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", borderBottom: "1px solid #eee", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>Fit Height</button>
+                                  <button onClick={() => { fitImageCanvas(); setShowFitDropdown(false); setShowFitSubmenu(false); }} style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", background: "white", cursor: "pointer", fontSize: "11px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}>Fit Canvas</button>
                                 </div>
                               )}
                             </div>
@@ -3027,7 +3383,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                         );
                       })()}
                     </div>
-                    <label style={{ fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <label style={{ fontSize: "10px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
                       Rotate
                       <input
                         type="range" min="-180" max="180" step="1"
@@ -3038,7 +3394,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                       <input type="number" min="-180" max="180" step="1"
                         value={primarySelectedItem.rotation ?? 0}
                         onChange={(e) => { const v = Number(e.target.value); if (!isNaN(v)) updateCanvasItem(primarySelectedItem.id, { rotation: v }); }}
-                        style={{ width: "42px", padding: "2px 4px", fontSize: "10px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif", border: "1px solid #ccc", borderRadius: "3px" }}
+                        style={{ width: "42px", padding: "2px 4px", fontSize: "10px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", border: "1px solid #ccc", borderRadius: "3px" }}
                       />°
                       <button onClick={() => updateCanvasItem(primarySelectedItem.id, { rotation: 0 })} style={{ ...MOODBOARD_TOOLBAR_BTN, padding: "3px 6px" }} title="Reset rotation to 0°">↺</button>
                     </label>
@@ -3113,7 +3469,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                           setSelBounds(null);
                         };
                         return (
-                          <div style={{ position: "absolute", top: "28px", left: 0, width: "188px", boxSizing: "border-box", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999, padding: "8px 10px", display: "flex", flexDirection: "column", gap: "7px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif", overflow: "hidden" }}>
+                          <div style={{ position: "absolute", top: "28px", left: 0, width: "188px", boxSizing: "border-box", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999, padding: "8px 10px", display: "flex", flexDirection: "column", gap: "7px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", overflow: "hidden" }}>
                             {/* Shape — hover row reveals submenu, never causes menu resize */}
                             <div
                               style={{ position: "relative" }}
@@ -3128,11 +3484,11 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                                 <div style={{ position: "absolute", left: "calc(100% + 4px)", top: 0, width: "110px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 10000, padding: "4px 0" }}>
                                   <button
                                     onClick={() => { setPendingShapeType("rect"); if (hasDraft) setSelDraft(p => ({ ...p, selectionType: "rect" })); }}
-                                    style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", borderBottom: "1px solid #eee", background: activeShape === "rect" ? "#e3f2fd" : "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}
+                                    style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", borderBottom: "1px solid #eee", background: activeShape === "rect" ? "#e3f2fd" : "white", cursor: "pointer", fontSize: "11px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}
                                   >Rectangular</button>
                                   <button
                                     onClick={() => { setPendingShapeType("ellipse"); if (hasDraft) setSelDraft(p => ({ ...p, selectionType: "ellipse" })); }}
-                                    style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", background: activeShape === "ellipse" ? "#e3f2fd" : "white", cursor: "pointer", fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif" }}
+                                    style={{ width: "100%", display: "block", textAlign: "left", padding: "6px 10px", border: "none", background: activeShape === "ellipse" ? "#e3f2fd" : "white", cursor: "pointer", fontSize: "11px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif" }}
                                   >Elliptical</button>
                                 </div>
                               )}
@@ -3192,6 +3548,42 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                     </div>
                   </>
                 )}
+                {primarySelectedItem.type === "solid" && selectedItems.length === 1 && (
+                  <>
+                    <label style={{ fontSize: "10px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                      <input type="color" value={primarySelectedItem.solidColor || "#cccccc"} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { solidColor: e.target.value })} style={{ width: "22px", height: "22px", padding: 0, border: "1px solid #ccc", borderRadius: "3px", cursor: "pointer" }} />
+                      Color
+                    </label>
+                    {primarySelectedItem.solidShape !== "ellipse" && (
+                      <label style={{ fontSize: "10px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                        Radius
+                        <input type="range" min="0" max="200" step="1" value={primarySelectedItem.cornerRadius ?? 0} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { cornerRadius: Number(e.target.value) })} style={{ width: "55px" }} />
+                        <span style={{ fontSize: "9px", minWidth: "18px" }}>{primarySelectedItem.cornerRadius ?? 0}</span>
+                      </label>
+                    )}
+                  </>
+                )}
+                {primarySelectedItem.type === "grain" && selectedItems.length === 1 && (
+                  <>
+                    <label style={{ fontSize: "10px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                      Amount
+                      <input type="range" min="0" max="1" step="0.05" value={primarySelectedItem.grainAmount ?? 0.6} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { grainAmount: Number(e.target.value) })} style={{ width: "60px" }} />
+                    </label>
+                    <label style={{ fontSize: "10px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                      Size
+                      <input type="range" min="1" max="3" step="0.25" value={primarySelectedItem.grainSize ?? 1} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { grainSize: Number(e.target.value) })} style={{ width: "55px" }} />
+                    </label>
+                    <label style={{ fontSize: "10px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                      Soft
+                      <input type="range" min="0" max="10" step="0.5" value={primarySelectedItem.grainSoftening ?? 0} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { grainSoftening: Number(e.target.value) })} style={{ width: "55px" }} />
+                    </label>
+                    <label style={{ fontSize: "10px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                      Color
+                      <input type="range" min="0" max="3" step="0.1" value={primarySelectedItem.grainSaturation ?? 1} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { grainSaturation: Number(e.target.value) })} style={{ width: "55px" }} />
+                    </label>
+                    <input type="color" value={primarySelectedItem.grainColor || "#2e2e2e"} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { grainColor: e.target.value })} style={{ width: "22px", height: "22px", padding: 0, border: "1px solid #ccc", borderRadius: "3px", cursor: "pointer" }} title="Grain base color" />
+                  </>
+                )}
                 {primarySelectedItem.type === "text" && selectedItems.length === 1 && (
                   <>
                     <div ref={fontDropdownRef} style={{ position: "relative" }}>
@@ -3243,7 +3635,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                         >{label}</button>
                       ))}
                     </div>
-                    <label style={{ fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <label style={{ fontSize: "11px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
                       <input type="color" value={primarySelectedItem.color} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { color: event.target.value })} style={{ width: "22px", height: "22px", padding: 0, border: "1px solid #ccc", borderRadius: "3px", cursor: "pointer" }} />
                       <span style={{ fontSize: "10px", color: "#666", whiteSpace: "nowrap" }}>Opacity</span>
                       <input type="range" min="0.1" max="1" step="0.05" value={primarySelectedItem.opacity ?? 1} onChange={(event) => updateCanvasItem(primarySelectedItem.id, { opacity: Number(event.target.value) })} style={{ width: "48px" }} />
@@ -3256,12 +3648,12 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                       >¶</button>
                       {showTextSpacingDropdown && (
                         <div style={{ position: "absolute", top: "28px", left: 0, minWidth: "200px", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999, padding: "10px 12px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                          <label style={{ fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <label style={{ fontSize: "11px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "6px" }}>
                             <span style={{ width: "52px" }}>Tracking</span>
                             <input type="range" min="-5" max="30" step="0.5" value={primarySelectedItem.letterSpacing ?? 0} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { letterSpacing: Number(e.target.value) })} style={{ width: "80px" }} />
                             <span style={{ fontSize: "10px", width: "28px", textAlign: "right" }}>{primarySelectedItem.letterSpacing ?? 0}</span>
                           </label>
-                          <label style={{ fontSize: "11px", fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <label style={{ fontSize: "11px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "6px" }}>
                             <span style={{ width: "52px" }}>Leading</span>
                             <input type="range" min="0.7" max="3" step="0.05" value={primarySelectedItem.lineHeight ?? 1.1} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { lineHeight: Number(e.target.value) })} style={{ width: "80px" }} />
                             <span style={{ fontSize: "10px", width: "28px", textAlign: "right" }}>{(primarySelectedItem.lineHeight ?? 1.1).toFixed(2)}</span>
@@ -3269,6 +3661,17 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                         </div>
                       )}
                     </div>
+                    <label style={{ fontSize: "10px", fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif", display: "flex", alignItems: "center", gap: "4px" }}>
+                      Blur
+                      <input type="range" min="0" max="5" step="0.25" value={primarySelectedItem.textBlur ?? 0} onChange={(e) => updateCanvasItem(primarySelectedItem.id, { textBlur: Number(e.target.value) })} style={{ width: "50px" }} />
+                      <input type="number" min="0" max="50" step="0.25" value={primarySelectedItem.textBlur ?? 0} onChange={(e) => { const v = Number(e.target.value); if (!isNaN(v) && v >= 0) updateCanvasItem(primarySelectedItem.id, { textBlur: v }); }} style={{ ...MOODBOARD_TOOLBAR_BTN, width: "38px", padding: "2px 4px", textAlign: "center" }} />
+                    </label>
+                  </>
+                )}
+                {canEdit && !isViewOnly && (
+                  <>
+                    <button onClick={duplicateSelectedItems} style={{ ...MOODBOARD_TOOLBAR_BTN, marginLeft: "6px" }}>DUPLICATE</button>
+                    <button onClick={deleteSelectedItems} style={{ ...MOODBOARD_TOOLBAR_BTN, color: "#c62828" }}>DELETE</button>
                   </>
                 )}
               </>
@@ -3394,7 +3797,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                           {/* Drag handle */}
                           <span style={{ color: "#ccc", cursor: "grab", flexShrink: 0 }}>⠿</span>
                           {/* Type badge */}
-                          <span style={{ flexShrink: 0, fontSize: "9px", fontWeight: "bold", backgroundColor: item.type === "text" ? "#E3F2FD" : "#F3E5F5", color: item.type === "text" ? "#1565C0" : "#6A1B9A", padding: "1px 4px", borderRadius: "2px" }}>{item.type === "text" ? "T" : "IMG"}</span>
+                          <span style={{ flexShrink: 0, fontSize: "9px", fontWeight: "bold", backgroundColor: item.type === "text" ? "#E3F2FD" : item.type === "solid" ? "#E8F5E9" : item.type === "grain" ? "#FFF3E0" : "#F3E5F5", color: item.type === "text" ? "#1565C0" : item.type === "solid" ? "#2E7D32" : item.type === "grain" ? "#E65100" : "#6A1B9A", padding: "1px 4px", borderRadius: "2px" }}>{item.type === "text" ? "T" : item.type === "solid" ? "■" : item.type === "grain" ? "~" : "IMG"}</span>
                           {/* Editable name */}
                           {renamingLayerId === item.id ? (
                             <input
@@ -3479,6 +3882,18 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                 <div key={item.id} style={{ position: "absolute", left: item.x, top: item.y, width: item.width, height: item.height, zIndex: item.zIndex, opacity: item.opacity ?? 1, mixBlendMode: item.blendMode || "normal", backgroundColor: item.type === "text" ? item.backgroundColor : "transparent", transform: item.rotation ? `rotate(${item.rotation}deg)` : undefined, transformOrigin: "center center" }}>
                   {item.type === "image" && img && <img src={img.url} alt="" style={{ width: "100%", height: "100%", objectFit: item.objectFit || "contain" }} />}
                   {item.type === "text" && <div style={{ color: item.color, fontFamily: item.fontFamily, fontSize: item.fontSize, fontWeight: item.fontWeight, lineHeight: item.lineHeight ?? 1.1, letterSpacing: item.letterSpacing ? `${item.letterSpacing}px` : "normal", textAlign: item.textAlign || "left", padding: 6, whiteSpace: "pre-wrap" }}>{item.text}</div>}
+                  {item.type === "solid" && (
+                    item.solidShape === "ellipse"
+                      ? <div style={{ width: "100%", height: "100%", backgroundColor: item.solidColor || "#ccc", borderRadius: "50%" }} />
+                      : <div style={{ width: "100%", height: "100%", backgroundColor: item.solidColor || "#ccc" }} />
+                  )}
+                  {item.type === "grain" && (() => {
+                    const dataUrl = getGrainDataUrl(item.grainSeed || 0, item.grainAmount ?? 0.6, item.grainSaturation ?? 1, item.grainColor || "#2e2e2e");
+                    const bgSize = `${GRAIN_TILE_SIZE * (item.grainSize ?? 1)}px`;
+                    const blurPx = (item.grainSoftening ?? 0) * 0.15;
+                    const filter = blurPx > 0 ? `blur(${blurPx}px)` : undefined;
+                    return <div style={{ width: "100%", height: "100%", backgroundImage: `url(${dataUrl})`, backgroundRepeat: "repeat", backgroundSize: bgSize, filter }} />;
+                  })()}
                 </div>
               );
             })}

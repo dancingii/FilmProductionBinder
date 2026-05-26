@@ -78,7 +78,7 @@ function SceneDetailModal({
           borderRadius: "8px",
           boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
           zIndex: zIndex + 1,
-          fontFamily: "'Century Gothic', 'Futura', Arial, sans-serif",
+          fontFamily: "'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif",
           display: "flex",
           flexDirection: "column",
         }}

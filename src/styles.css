@@ -1,6 +1,13 @@
-.App {
-  font-family: sans-serif;
-  text-align: center;
+html,
+body,
+#root {
+  font-family: 'FPB Century Gothic', 'Century Gothic', 'Futura', 'Arial', sans-serif;
+}
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 /* Thin scrollbar for timeline tracks */
