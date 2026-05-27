@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../supabase";
 import ScreenplayPagePreview from "./ScreenplayPagePreview";
 
@@ -61,26 +61,82 @@ const escapeSvgText = (value) => String(value || "")
   .replace(/</g, "&lt;")
   .replace(/>/g, "&gt;");
 
+const getWatermarkLines = (text) => {
+  const source = String(text || "SHARED SCRIPT").slice(0, 240);
+  const explicitLines = source.split(/\n+/).map(line => line.trim()).filter(Boolean);
+  if (explicitLines.length > 1) return explicitLines;
+
+  const maxLineChars = 34;
+  if (source.length <= maxLineChars) return [source];
+
+  const words = source.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = "";
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxLineChars && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines.length ? lines : ["SHARED SCRIPT"];
+};
+
+const estimateWatermarkTile = (lines, config = DEFAULT_PUBLIC_SHARE_WATERMARK) => {
+  const fontSize = config.fontSizePx;
+  const letterSpacing = 6;
+  const lineHeight = Math.round(fontSize * 1.18);
+  const textWidth = Math.max(
+    fontSize * 6,
+    ...lines.map(line => (line.length * fontSize * 0.62) + Math.max(0, line.length - 1) * letterSpacing)
+  );
+  const textHeight = Math.max(lineHeight, lines.length * lineHeight);
+  const angle = Math.abs((config.rotationDeg || 0) * Math.PI / 180);
+  const rotatedWidth = (textWidth * Math.cos(angle)) + (textHeight * Math.sin(angle));
+  const rotatedHeight = (textWidth * Math.sin(angle)) + (textHeight * Math.cos(angle));
+  const padding = Math.max(80, fontSize * 1.6);
+
+  return {
+    width: Math.ceil(rotatedWidth + padding * 2),
+    height: Math.ceil(rotatedHeight + padding * 2),
+    lineHeight,
+  };
+};
+
 const buildWatermarkDataUrl = (text, config = DEFAULT_PUBLIC_SHARE_WATERMARK) => {
-  const safeText = escapeSvgText(String(text || config.text || "SHARED SCRIPT").slice(0, 240));
+  const lines = getWatermarkLines(text || config.text || "SHARED SCRIPT");
+  const tile = estimateWatermarkTile(lines, config);
+  const centerX = tile.width / 2;
+  const centerY = tile.height / 2;
+  const firstLineY = centerY - ((lines.length - 1) * tile.lineHeight / 2);
+  const tspans = lines.map((line, index) => (
+    `<tspan x="${centerX}" y="${firstLineY + index * tile.lineHeight}">${escapeSvgText(line)}</tspan>`
+  )).join("");
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="520" height="380" viewBox="0 0 520 380">
+    <svg xmlns="http://www.w3.org/2000/svg" width="${tile.width}" height="${tile.height}" viewBox="0 0 ${tile.width} ${tile.height}">
       <text
-        x="260"
-        y="190"
         text-anchor="middle"
         dominant-baseline="middle"
-        transform="rotate(${config.rotationDeg} 260 190)"
+        transform="rotate(${config.rotationDeg} ${centerX} ${centerY})"
         fill="#6f7b85"
         fill-opacity="${config.opacity}"
         font-family="Arial, Helvetica, sans-serif"
         font-size="${config.fontSizePx}"
         font-weight="700"
         letter-spacing="6"
-      >${safeText}</text>
+      >${tspans}</text>
     </svg>
   `;
-  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+  return {
+    backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(svg)}")`,
+    tileWidth: tile.width,
+    tileHeight: tile.height,
+  };
 };
 
 const getWatermarkText = (projectName = "", settings = DEFAULT_PUBLIC_SHARE_WATERMARK) => {
@@ -94,12 +150,21 @@ function PublicScriptWatermark({ projectName = "", watermarkSettings = null }) {
   if (!settings.enabled) return null;
 
   const watermarkText = getWatermarkText(projectName, settings);
+  const watermarkTile = buildWatermarkDataUrl(watermarkText, settings);
   const showBrandingImage = settings.brandingImageEnabled && settings.brandingImageUrl.trim();
   const brandingTiles = showBrandingImage ? Array.from({ length: 60 }) : [];
 
   return (
     <>
+      <style>{`
+        @media (max-width: 720px) {
+          .public-script-share-watermark {
+            background-position: center top;
+          }
+        }
+      `}</style>
       <div
+        className="public-script-share-watermark"
         aria-hidden="true"
         style={{
           position: "absolute",
@@ -107,9 +172,9 @@ function PublicScriptWatermark({ projectName = "", watermarkSettings = null }) {
           zIndex: 5,
           pointerEvents: "none",
           userSelect: "none",
-          backgroundImage: buildWatermarkDataUrl(watermarkText, settings),
+          backgroundImage: watermarkTile.backgroundImage,
           backgroundRepeat: "repeat",
-          backgroundSize: "520px 380px",
+          backgroundSize: `${watermarkTile.tileWidth}px ${watermarkTile.tileHeight}px`,
           mixBlendMode: "multiply",
         }}
       />
@@ -200,6 +265,100 @@ function PublicTitlePage({ settings }) {
   );
 }
 
+function ResponsivePublicScriptPages({ children, renderContent }) {
+  const containerRef = useRef(null);
+  const contentRef = useRef(null);
+  const [layout, setLayout] = useState({ width: 0, height: 0, scale: 1 });
+
+  useEffect(() => {
+    const updateLayout = () => {
+      const container = containerRef.current;
+      const content = contentRef.current;
+      if (!container || !content) return;
+
+      const contentWidth = content.offsetWidth || content.scrollWidth || 0;
+      const contentHeight = content.offsetHeight || content.scrollHeight || 0;
+      if (!contentWidth || !contentHeight) return;
+
+      const availableWidth = Math.max(1, container.clientWidth);
+      const nextScale = Math.min(1, availableWidth / contentWidth);
+
+      setLayout(prev => {
+        const next = {
+          width: contentWidth,
+          height: contentHeight,
+          scale: nextScale,
+        };
+        if (
+          Math.abs(prev.width - next.width) < 0.5 &&
+          Math.abs(prev.height - next.height) < 0.5 &&
+          Math.abs(prev.scale - next.scale) < 0.001
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    };
+
+    updateLayout();
+
+    const observers = [];
+    if (typeof ResizeObserver !== "undefined") {
+      const containerObserver = new ResizeObserver(updateLayout);
+      const contentObserver = new ResizeObserver(updateLayout);
+      if (containerRef.current) containerObserver.observe(containerRef.current);
+      if (contentRef.current) contentObserver.observe(contentRef.current);
+      observers.push(containerObserver, contentObserver);
+    }
+
+    window.addEventListener("resize", updateLayout);
+    return () => {
+      window.removeEventListener("resize", updateLayout);
+      observers.forEach(observer => observer.disconnect());
+    };
+  }, [children]);
+
+  const scaledWidth = layout.width * layout.scale;
+  const scaledHeight = layout.height * layout.scale;
+  const isScaled = layout.scale < 0.999;
+  const content = typeof renderContent === "function" ? renderContent({ isScaled }) : children;
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        width: "100%",
+        overflowX: "hidden",
+        display: "flex",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        style={{
+          width: scaledWidth || "100%",
+          height: scaledHeight || "auto",
+          position: "relative",
+          flexShrink: 0,
+        }}
+      >
+        <div
+          ref={contentRef}
+          style={{
+            display: "inline-block",
+            transform: layout.width ? `translateX(-50%) scale(${layout.scale})` : `scale(${layout.scale})`,
+            transformOrigin: "top center",
+            position: layout.width ? "absolute" : "relative",
+            top: 0,
+            left: layout.width ? "50%" : 0,
+          }}
+        >
+          {content}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function getTokenFromPath() {
   const match = window.location.pathname.match(/^\/share\/script\/([^/?#]+)/);
   return match ? decodeURIComponent(match[1]) : "";
@@ -270,7 +429,7 @@ export default function PublicScriptShareViewer() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f3f5f7", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif" }}>
+    <div style={{ minHeight: "100vh", backgroundColor: "#f3f5f7", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", position: "relative", overflowX: "hidden" }}>
       <header style={{ position: "sticky", top: 0, zIndex: 10, padding: "12px 20px", backgroundColor: "white", borderBottom: "1px solid #d7dde2", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
         <div style={{ maxWidth: "8.5in", margin: "0 auto", display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "16px" }}>
           <div>
@@ -286,15 +445,35 @@ export default function PublicScriptShareViewer() {
       </header>
 
       {nodes.length > 0 || titlePageSettings.enabled ? (
-        <div style={{ position: "relative" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: "24px", alignItems: "center", padding: "24px", boxSizing: "border-box", position: "relative", zIndex: 1 }}>
-            <PublicTitlePage settings={titlePageSettings} />
-            {nodes.length > 0 && (
-              <ScreenplayPagePreview nodes={nodes} showSceneNumbers={false} titlePage={null} />
+        <>
+          <ResponsivePublicScriptPages
+            renderContent={({ isScaled }) => (
+              <div className={isScaled ? "public-script-share-scaled-content" : ""} style={{ position: "relative" }}>
+                {isScaled && (
+                  <style>{`
+                    .public-script-share-scaled-content .public-script-share-preview-shell > div {
+                      padding: 0 !important;
+                      gap: 0 !important;
+                      background-color: transparent !important;
+                    }
+                    .public-script-share-scaled-content [style*="box-shadow"] {
+                      box-shadow: none !important;
+                    }
+                  `}</style>
+                )}
+                <div style={{ display: "flex", flexDirection: "column", gap: isScaled ? "0" : "24px", alignItems: "center", padding: isScaled ? "0" : "24px", boxSizing: "border-box", position: "relative", zIndex: 1 }}>
+                  <PublicTitlePage settings={titlePageSettings} />
+                  {nodes.length > 0 && (
+                    <div className="public-script-share-preview-shell">
+                      <ScreenplayPagePreview nodes={nodes} showSceneNumbers={false} titlePage={null} />
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
-          </div>
+          />
           <PublicScriptWatermark projectName={payload?.projectName || ""} watermarkSettings={watermarkSettings} />
-        </div>
+        </>
       ) : (
         <div style={{ padding: "48px 24px", textAlign: "center", color: "#607D8B" }}>
           No script content is available.

@@ -575,7 +575,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     return c ? c.canvasItems : [];
   });
   const [selectedItemIds, setSelectedItemIds] = useState([]);
-  const [activeInputTab, setActiveInputTab] = useState("links");
+  const [activeInputTab, setActiveInputTab] = useState("images");
   const [newBoardName, setNewBoardName] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
   const [newLinkTitle, setNewLinkTitle] = useState("");
@@ -3145,8 +3145,8 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
 
         <div style={{ padding: "10px", borderBottom: "none", height: linksH, minHeight: 60, flexShrink: 0, boxSizing: "border-box", overflow: "hidden", display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", borderBottom: "1px solid #ccc", marginBottom: "8px", flexShrink: 0 }}>
-            <button onClick={() => setActiveInputTab("links")} style={{ flex: 1, padding: "6px 4px", border: "none", borderBottom: activeInputTab === "links" ? "3px solid #2196F3" : "3px solid transparent", background: "transparent", fontWeight: activeInputTab === "links" ? "bold" : "normal", cursor: "pointer", fontSize: "11px" }}>Links</button>
             <button onClick={() => setActiveInputTab("images")} style={{ flex: 1, padding: "6px 4px", border: "none", borderBottom: activeInputTab === "images" ? "3px solid #2196F3" : "3px solid transparent", background: "transparent", fontWeight: activeInputTab === "images" ? "bold" : "normal", cursor: "pointer", fontSize: "11px" }}>Image URLs</button>
+            <button onClick={() => setActiveInputTab("links")} style={{ flex: 1, padding: "6px 4px", border: "none", borderBottom: activeInputTab === "links" ? "3px solid #2196F3" : "3px solid transparent", background: "transparent", fontWeight: activeInputTab === "links" ? "bold" : "normal", cursor: "pointer", fontSize: "11px" }}>Links</button>
           </div>
 
           {activeInputTab === "links" && (
@@ -3524,7 +3524,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                           setSelBounds(null);
                         };
                         return (
-                          <div style={{ position: "absolute", top: "28px", left: 0, width: "188px", boxSizing: "border-box", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999, padding: "8px 10px", display: "flex", flexDirection: "column", gap: "7px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", overflow: "hidden" }}>
+                          <div style={{ position: "absolute", top: "28px", left: 0, width: "188px", boxSizing: "border-box", backgroundColor: "white", border: "1px solid #ccc", borderRadius: "4px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)", zIndex: 9999, padding: "8px 10px", display: "flex", flexDirection: "column", gap: "7px", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", overflow: "visible" }}>
                             {/* Shape — hover row reveals submenu, never causes menu resize */}
                             <div
                               style={{ position: "relative" }}
@@ -4149,44 +4149,66 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                       return b ? b.name : bid;
                     }).join(", ");
                     return (
-                      <div key={link.id} style={{ border: "1px solid #e0e0e0", borderRadius: "6px", padding: "12px", backgroundColor: "#fafafa" }}>
-                        <div style={{ display: "flex", gap: "6px", marginBottom: "6px" }}>
+                      <div key={link.id} style={{ display: "grid", rowGap: "3px", columnGap: "7px", border: "1px solid #d7dde2", borderRadius: "6px", padding: "10px", backgroundColor: "#fafafa" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "center" }}>
+                          <strong style={{ color: "#263238", minWidth: 0, flex: "0 1 116px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "12px" }}>
+                            {link.label ? link.label : "Active public link"}
+                          </strong>
+                          <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", flexWrap: "wrap", flex: "0 0 auto" }}>
+                            <button
+                              onClick={async () => {
+                                try { await navigator.clipboard.writeText(shareUrl); setShareMessage("Copied!"); }
+                                catch { setShareMessage(shareUrl); }
+                              }}
+                              style={{ padding: "6px 8px", fontSize: "11px", backgroundColor: "#e3f2fd", color: "#1565C0", border: "1px solid #90CAF9", borderRadius: "4px", cursor: "pointer", whiteSpace: "nowrap", fontWeight: "bold" }}
+                            >Copy</button>
+                            <button
+                              onClick={() => window.open(shareUrl, "_blank", "noopener,noreferrer")}
+                              style={{ padding: "6px 8px", fontSize: "11px", backgroundColor: "white", color: "#455A64", border: "1px solid #cfd8dc", borderRadius: "4px", cursor: "pointer", whiteSpace: "nowrap", fontWeight: "bold" }}
+                            >Open</button>
+                            <button
+                              onClick={() => handleRevokeMoodboardShareLink(link.id)}
+                              disabled={shareStatus === "saving"}
+                              title="Remove public link"
+                              aria-label="Remove public link"
+                              style={{
+                                width: "28px",
+                                height: "28px",
+                                padding: 0,
+                                border: "1px solid #ffcdd2",
+                                borderRadius: "50%",
+                                backgroundColor: "#ffebee",
+                                color: "#c62828",
+                                cursor: shareStatus === "saving" ? "default" : "pointer",
+                                fontWeight: "bold",
+                                fontSize: "18px",
+                                lineHeight: 1,
+                                opacity: shareStatus === "saving" ? 0.65 : 1,
+                              }}
+                            >×</button>
+                          </div>
+                        </div>
+                        <label style={{ display: "grid", gap: "3px", minWidth: 0 }}>
+                          <span style={{ fontWeight: "bold", color: "#455A64", fontSize: "12px" }}>Label</span>
                           <input
                             value={link.label ?? ""}
-                            placeholder="Label (optional)"
+                            placeholder="Add label"
                             onChange={e => setMoodboardShareLinks(prev => prev.map(l => l.id === link.id ? { ...l, label: e.target.value } : l))}
                             onBlur={e => handleUpdateMoodboardShareLinkLabel(link.id, e.target.value)}
-                            style={{ flex: 1, fontSize: "12px", padding: "4px 8px", border: "1px solid #ddd", borderRadius: "3px" }}
+                            onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                            style={{ width: "100%", fontSize: "12px", padding: "6px 8px", border: "1px solid #ccc", borderRadius: "4px", boxSizing: "border-box" }}
                           />
-                          <button
-                            onClick={() => handleRevokeMoodboardShareLink(link.id)}
-                            disabled={shareStatus === "saving"}
-                            style={{ padding: "4px 10px", fontSize: "11px", backgroundColor: "#fff0f0", color: "#c0392b", border: "1px solid #f5c6cb", borderRadius: "3px", cursor: "pointer" }}
-                          >Revoke</button>
-                        </div>
-                        {sharedBoardNames && (
-                          <div style={{ fontSize: "10px", color: "#888", marginBottom: "6px" }}>
-                            Boards: {sharedBoardNames}
+                        </label>
+                        {(sharedBoardNames || link.created_at) && (
+                          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "10px", alignItems: "center", fontSize: "11px", color: "#78909C" }}>
+                            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {sharedBoardNames ? `Boards: ${sharedBoardNames}` : ""}
+                            </span>
+                            <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                              {link.created_at ? `Created ${new Date(link.created_at).toLocaleString()}` : ""}
+                            </span>
                           </div>
                         )}
-                        <div style={{ display: "flex", gap: "6px" }}>
-                          <input
-                            readOnly
-                            value={shareUrl}
-                            onFocus={e => e.target.select()}
-                            style={{ flex: 1, fontSize: "11px", padding: "4px 8px", border: "1px solid #ddd", borderRadius: "3px", backgroundColor: "#f5f5f5", color: "#333", overflow: "hidden", textOverflow: "ellipsis" }}
-                          />
-                          <button
-                            onClick={async () => {
-                              try { await navigator.clipboard.writeText(shareUrl); setShareMessage("Copied!"); }
-                              catch { setShareMessage(shareUrl); }
-                            }}
-                            style={{ padding: "4px 10px", fontSize: "11px", backgroundColor: "#e3f2fd", color: "#1565C0", border: "1px solid #90CAF9", borderRadius: "3px", cursor: "pointer", whiteSpace: "nowrap" }}
-                          >Copy</button>
-                        </div>
-                        <div style={{ fontSize: "10px", color: "#bbb", marginTop: "5px" }}>
-                          Created {new Date(link.created_at).toLocaleDateString()}
-                        </div>
                       </div>
                     );
                   })}

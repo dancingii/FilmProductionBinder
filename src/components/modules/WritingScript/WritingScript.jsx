@@ -3209,7 +3209,6 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 
 	      {showShareScriptModal && createPortal((() => {
 	        const activeLinks = scriptShareLinks.filter(link => link?.is_active);
-	        const activeLink = activeLinks[0] || null;
 	        const activeWatermarkLink = activeLinks.find(link => link?.id === shareWatermarkLinkId) || null;
 	        return (
 	          <>
@@ -3224,44 +3223,98 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	              </div>
 
 	              <div style={{ display: "grid", gap: "12px", fontSize: "12px", color: "#455A64" }}>
+	                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+	                  <div>
+	                    <div style={{ fontWeight: "bold", color: "#263238" }}>Public Links</div>
+	                    <div style={{ marginTop: "2px", fontSize: "11px", color: "#78909C" }}>
+	                      Create separate links for different recipients or reviews.
+	                    </div>
+	                  </div>
+	                  <button
+	                    type="button"
+	                    disabled={scriptShareStatus === "saving" || scriptShareStatus === "loading"}
+	                    onClick={handleCreateScriptShareLink}
+	                    title="Add public link"
+	                    style={{
+	                      display: "inline-flex",
+	                      alignItems: "center",
+	                      justifyContent: "center",
+	                      gap: "6px",
+	                      padding: "7px 10px",
+	                      border: "1px solid #2e7d32",
+	                      borderRadius: "5px",
+	                      backgroundColor: scriptShareStatus === "saving" || scriptShareStatus === "loading" ? "#c8e6c9" : "#43a047",
+	                      color: "white",
+	                      cursor: scriptShareStatus === "saving" || scriptShareStatus === "loading" ? "default" : "pointer",
+	                      fontWeight: "bold",
+	                      whiteSpace: "nowrap",
+	                      opacity: scriptShareStatus === "saving" || scriptShareStatus === "loading" ? 0.7 : 1,
+	                    }}
+	                  >
+	                    <span style={{ fontSize: "16px", lineHeight: 1 }}>+</span>
+	                    <span>{scriptShareStatus === "saving" ? "Adding..." : "Add Link"}</span>
+	                  </button>
+	                </div>
+
 	                {scriptShareStatus === "loading" ? (
 	                  <div style={{ padding: "18px", textAlign: "center", border: "1px solid #e0e0e0", borderRadius: "6px", backgroundColor: "#fafafa" }}>Loading share links...</div>
-	                ) : activeLink ? (
+	                ) : activeLinks.length > 0 ? (
 	                  <div style={{ display: "grid", gap: "10px" }}>
 	                    {activeLinks.map((link) => {
 	                      const shareUrl = link?.token ? `${window.location.origin}/share/script/${link.token}` : "";
 	                      return (
-	                        <div key={link.id} style={{ display: "grid", gap: "10px", padding: "12px", border: "1px solid #d7dde2", borderRadius: "6px", backgroundColor: "#fafafa" }}>
-	                          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center" }}>
-	                            <strong style={{ color: "#263238" }}>Active public link</strong>
-	                            <span style={{ color: "#78909C", fontSize: "11px" }}>
-	                              {link.created_at ? new Date(link.created_at).toLocaleString() : ""}
-	                            </span>
+	                        <div key={link.id} style={{ display: "grid", gap: "7px", padding: "10px", border: "1px solid #d7dde2", borderRadius: "6px", backgroundColor: "#fafafa" }}>
+	                          <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "center" }}>
+	                            <strong style={{ color: "#263238", minWidth: 0, flex: "0 1 116px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{link.label ? link.label : "Active public link"}</strong>
+	                            <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", flexWrap: "wrap", flex: "0 0 auto" }}>
+	                              <button type="button" onClick={() => openShareWatermarkSettings(link)} style={{ padding: "6px 8px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: "#f7f7f7", color: "#333", cursor: "pointer", fontWeight: "bold", whiteSpace: "nowrap", fontSize: "11px" }}>Watermark Settings...</button>
+	                              <button type="button" onClick={() => copyScriptShareLink(link.token)} style={{ padding: "6px 8px", border: "1px solid #90caf9", borderRadius: "4px", backgroundColor: "#e8f0fe", color: APP_TAB_BLUE, cursor: "pointer", fontWeight: "bold", whiteSpace: "nowrap", fontSize: "11px" }}>Copy Link</button>
+	                              <button type="button" onClick={() => window.open(shareUrl, "_blank", "noopener,noreferrer")} style={{ padding: "6px 8px", border: "1px solid #cfd8dc", borderRadius: "4px", backgroundColor: "white", color: "#455A64", cursor: "pointer", fontWeight: "bold", whiteSpace: "nowrap", fontSize: "11px" }}>Open</button>
+	                              <button
+	                                type="button"
+	                                disabled={scriptShareStatus === "saving"}
+	                                onClick={() => handleRevokeScriptShareLink(link.id)}
+	                                title="Remove public link"
+	                                aria-label="Remove public link"
+	                                style={{
+	                                  width: "28px",
+	                                  height: "28px",
+	                                  padding: 0,
+	                                  border: "1px solid #ffcdd2",
+	                                  borderRadius: "50%",
+	                                  backgroundColor: "#ffebee",
+	                                  color: "#c62828",
+	                                  cursor: scriptShareStatus === "saving" ? "default" : "pointer",
+	                                  fontWeight: "bold",
+	                                  fontSize: "18px",
+	                                  lineHeight: 1,
+	                                  opacity: scriptShareStatus === "saving" ? 0.65 : 1,
+	                                }}
+	                              >
+	                                ×
+	                              </button>
+	                            </div>
 	                          </div>
-	                          <label style={{ display: "grid", gap: "4px" }}>
-	                            <span style={{ fontWeight: "bold", color: "#455A64" }}>Label</span>
-	                            <input
-	                              type="text"
-	                              defaultValue={link.label || ""}
-	                              maxLength={160}
-	                              placeholder="Add label"
-	                              onBlur={(event) => saveScriptShareLinkLabel(link, event.target.value)}
-	                              onKeyDown={(event) => {
-	                                if (event.key === "Enter") event.currentTarget.blur();
-	                              }}
-	                              style={{ width: "100%", padding: "7px 8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "12px", boxSizing: "border-box" }}
-	                            />
-	                          </label>
-	                          <input
-	                            readOnly
-	                            value={shareUrl}
-	                            onFocus={(event) => event.target.select()}
-	                            style={{ width: "100%", padding: "7px 8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "12px", fontFamily: "'Courier Prime', Courier, monospace", boxSizing: "border-box" }}
-	                          />
-	                          <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap" }}>
-	                            <button type="button" onClick={() => openShareWatermarkSettings(link)} style={{ padding: "7px 10px", border: "1px solid #ccc", borderRadius: "4px", backgroundColor: "#f7f7f7", color: "#333", cursor: "pointer", fontWeight: "bold" }}>Watermark Settings...</button>
-	                            <button type="button" onClick={() => copyScriptShareLink(link.token)} style={{ padding: "7px 10px", border: "1px solid #90caf9", borderRadius: "4px", backgroundColor: "#e8f0fe", color: APP_TAB_BLUE, cursor: "pointer", fontWeight: "bold" }}>Copy Link</button>
-	                            <button type="button" disabled={scriptShareStatus === "saving"} onClick={() => handleRevokeScriptShareLink(link.id)} style={{ padding: "7px 10px", border: "1px solid #ffcdd2", borderRadius: "4px", backgroundColor: "#ffebee", color: "#c62828", cursor: scriptShareStatus === "saving" ? "default" : "pointer", fontWeight: "bold", opacity: scriptShareStatus === "saving" ? 0.65 : 1 }}>Revoke Link</button>
+	                          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "10px", alignItems: "end" }}>
+	                            <label style={{ display: "grid", gap: "3px", minWidth: 0 }}>
+	                              <span style={{ fontWeight: "bold", color: "#455A64" }}>Label</span>
+	                              <input
+	                                type="text"
+	                                defaultValue={link.label || ""}
+	                                maxLength={160}
+	                                placeholder="Add label"
+	                                onBlur={(event) => saveScriptShareLinkLabel(link, event.target.value)}
+	                                onKeyDown={(event) => {
+	                                  if (event.key === "Enter") event.currentTarget.blur();
+	                                }}
+	                                style={{ width: "100%", padding: "6px 8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "12px", boxSizing: "border-box" }}
+	                              />
+	                            </label>
+	                            {link.created_at && (
+	                              <div style={{ color: "#78909C", fontSize: "11px", textAlign: "right", whiteSpace: "nowrap", paddingBottom: "7px" }}>
+	                                Created {new Date(link.created_at).toLocaleString()}
+	                              </div>
+	                            )}
 	                          </div>
 	                        </div>
 	                      );
@@ -3269,10 +3322,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	                  </div>
 	                ) : (
 	                  <div style={{ display: "grid", gap: "10px", padding: "12px", border: "1px solid #d7dde2", borderRadius: "6px", backgroundColor: "#fafafa" }}>
-	                    <div>No active share link exists for this Writing script.</div>
-	                    <button type="button" disabled={scriptShareStatus === "saving"} onClick={handleCreateScriptShareLink} style={{ justifySelf: "start", padding: "8px 12px", border: "none", borderRadius: "4px", backgroundColor: APP_TAB_BLUE, color: "white", cursor: scriptShareStatus === "saving" ? "default" : "pointer", fontWeight: "bold", opacity: scriptShareStatus === "saving" ? 0.65 : 1 }}>
-	                      {scriptShareStatus === "saving" ? "Creating..." : "Create Share Link"}
-	                    </button>
+	                    <div>No active public links yet.</div>
 	                  </div>
 	                )}
 
@@ -3281,9 +3331,6 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	                    {scriptShareMessage}
 	                  </div>
 	                )}
-	                <div style={{ color: "#78909C", fontSize: "11px", lineHeight: 1.45 }}>
-	                  The public viewer uses a tokenized RPC and does not expose project members, production modules, or full project settings.
-	                </div>
 	              </div>
 
 	              <button type="button" onClick={() => { setShowShareScriptModal(false); setShowShareWatermarkSettings(false); setShareWatermarkLinkId(null); }} style={{ width: "100%", marginTop: "18px", padding: "9px", backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>Done</button>
