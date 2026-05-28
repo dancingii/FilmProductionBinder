@@ -28,6 +28,7 @@ import ShotListModule from "./components/modules/ShotList/ShotList";
 import TimelineModule from "./components/modules/Timeline/Timeline";
 import MoodBoard from "./components/modules/MoodBoard/MoodBoard";
 import Dashboard from "./components/modules/Dashboard/Dashboard";
+import DevBacklogPortal from "./components/dev/DevBacklogPortal";
 import CostReportModule from "./components/modules/CostReport/CostReport";
 import {
   btlDepartments,
@@ -133,6 +134,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   const [scriptMoodImages, setScriptMoodImages] = useState([]);
   const [isSavingScenes, setIsSavingScenes] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [devBacklogOpen, setDevBacklogOpen] = useState(false);
   const [summarizeProgress, setSummarizeProgress] = useState({
     current: 0,
     total: 0,
@@ -4609,6 +4611,33 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   };
 
   const isWritingWorkflow = activeWorkflow === "writing";
+  const showDevBacklogLauncher =
+    process.env.NODE_ENV === "development" ||
+    user?.email === "joshuachiara@gmail.com";
+  const devBacklogLauncher = showDevBacklogLauncher ? (
+    <button
+      type="button"
+      onClick={() => setDevBacklogOpen(true)}
+      title="Dev Backlog"
+      style={{
+        margin: "auto 0 10px",
+        padding: "7px 4px",
+        backgroundColor: devBacklogOpen ? "#1a1a2e" : "#fff8e1",
+        color: devBacklogOpen ? "#e0e0ff" : "#333",
+        border: "1px solid #444",
+        borderRadius: "5px",
+        cursor: "pointer",
+        fontWeight: "bold",
+        fontSize: "10px",
+        width: "100px",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}
+    >
+      Dev Backlog
+    </button>
+  ) : null;
 
   return (
     <div
@@ -4708,6 +4737,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
             >
               Characters
             </button>
+            {devBacklogLauncher}
           </div>
 
           {/* Writing content area — matches production content area positioning */}
@@ -4953,6 +4983,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
                   </button>
                 );
               })}
+            {devBacklogLauncher}
           </div>
 
           <div
@@ -5179,6 +5210,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
           </div>
         </div>
       )}
+      <DevBacklogPortal userEmail={user?.email} open={devBacklogOpen} onOpenChange={setDevBacklogOpen} hideTrigger />
     </div>
   );
 }
