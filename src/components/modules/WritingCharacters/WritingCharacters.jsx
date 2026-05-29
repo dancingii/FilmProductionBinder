@@ -1,9 +1,10 @@
 import React from "react";
+import WritingCharactersPanel from "./WritingCharactersPanel";
 
-// Placeholder for the future isolated draft/story character system.
-// This must remain separate from the production Characters module.
-function WritingCharacters() {
-  return null;
+// Separate from the production Characters module.
+// Receives all state and handlers from WritingScript.
+function WritingCharacters(props) {
+  return <WritingCharactersPanel {...props} />;
 }
 
 export default WritingCharacters;

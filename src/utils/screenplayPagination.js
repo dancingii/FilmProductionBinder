@@ -390,7 +390,7 @@ const buildSceneHeadingUnit = (nodes = [], index = 0, layoutTuning = DEFAULT_SCR
   let placementLineCount = headingLineCount;
   let followingActionLines = 0;
 
-  if (nextMeaningfulType === "Action") {
+  if (nextMeaningful && nextMeaningfulType === "Action") {
     followingActionLines =
       getSpacingBeforeNodeLines(nextMeaningful.node, node, layoutTuning) +
       Math.min(2, getNodeTextLineEstimate(nextMeaningful.node, layoutTuning));

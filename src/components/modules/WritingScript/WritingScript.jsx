@@ -46,6 +46,16 @@ import {
   updateScriptShareLinkLabel,
   updateScriptShareWatermarkSettings,
 } from "../../../services/database";
+import { extractWritingCharacters } from "../WritingCharacters/writingCharacterExtraction";
+import {
+  normalizeWritingCharacterProfiles,
+  makeEmptyCharacterProfile,
+} from "../WritingCharacters/writingCharactersModel";
+import {
+  loadWritingCharacterProfilesAsync,
+  saveWritingCharacterProfilesAsync,
+} from "../WritingCharacters/writingCharactersPersistence";
+import WritingCharactersPanel from "../WritingCharacters/WritingCharactersPanel";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ENABLE_WRITING_TIMELINE = true;
@@ -971,6 +981,10 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
   const [scriptMoodboardImages, setScriptMoodboardImages] = useState([]);
   const [beats, setBeats] = useState([]);
   const [activeSidePanelTab, setActiveSidePanelTab] = useState("scenes");
+  const [writingCharacterProfiles, setWritingCharacterProfiles] = useState(
+    () => normalizeWritingCharacterProfiles(null)
+  );
+  const [characterProfilesLoadStatus, setCharacterProfilesLoadStatus] = useState("idle");
   const [showBeatsTrack, setShowBeatsTrack] = useState(false);
   const [beatTrackZoom, setBeatTrackZoom] = useState(1);
   const [sceneTimelineZoom, setSceneTimelineZoom] = useState(1);
@@ -1642,7 +1656,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
     const storageKey = getProjectStorageKey("writingScriptSidePanelTab");
     const legacyStorageKey = getLegacyScriptStorageKey("scriptSidePanelTab");
     const storedTab = localStorage.getItem(storageKey) || localStorage.getItem(legacyStorageKey);
-    const safeTab = storedTab === "beats" ? "beats" : "scenes";
+    const safeTab = storedTab === "beats" ? "beats" : storedTab === "characters" ? "characters" : "scenes";
     if (!localStorage.getItem(storageKey) && storedTab) {
       localStorage.setItem(storageKey, safeTab);
     }
@@ -1653,7 +1667,8 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
   useEffect(() => {
     if (!selectedProject) return;
     if (skipNextTabPersistRef.current) { skipNextTabPersistRef.current = false; return; }
-    localStorage.setItem(getProjectStorageKey("writingScriptSidePanelTab"), activeSidePanelTab === "beats" ? "beats" : "scenes");
+    const persistTab = ["beats", "characters"].includes(activeSidePanelTab) ? activeSidePanelTab : "scenes";
+    localStorage.setItem(getProjectStorageKey("writingScriptSidePanelTab"), persistTab);
   }, [activeSidePanelTab, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
 
   // ─── Load/save collapsed acts ────────────────────────────────────────────────
@@ -1929,6 +1944,29 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	    };
 	  }, [selectedProject]);
 
+  // ─── Load writing character profiles ────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    setCharacterProfilesLoadStatus("loading");
+    setWritingCharacterProfiles(normalizeWritingCharacterProfiles(null));
+    if (!selectedProject) {
+      setCharacterProfilesLoadStatus("idle");
+      return;
+    }
+    loadWritingCharacterProfilesAsync(selectedProject)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setWritingCharacterProfiles(normalizeWritingCharacterProfiles(data));
+        setCharacterProfilesLoadStatus("loaded");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWritingCharacterProfiles(normalizeWritingCharacterProfiles(null));
+        setCharacterProfilesLoadStatus("error");
+      });
+    return () => { cancelled = true; };
+  }, [selectedProject?.id, selectedProject?.name]);
+
 	  // ─── Load moodboard images for mood overlay ──────────────────────────────────
   useEffect(() => {
     const loadMoodboardImagesForScript = async () => {
@@ -2045,6 +2083,11 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
       };
     });
   }, [writingDraftNodes, writingScenePageStats]);
+
+  const extractedCharacters = useMemo(
+    () => extractWritingCharacters(writingDraftNodes),
+    [writingDraftNodes]
+  );
 
 	  const displaySceneNumber = currentIndex < 0 ? null : (writingDraftScenes[currentIndex]?.sceneNumber || 1);
 
@@ -2271,36 +2314,39 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
       return;
     }
 
+    // Update React state immediately so the UI reflects the edit without waiting for DB.
     setWritingDraftNodes(prevNodes => (JSON.stringify(prevNodes) === payload ? prevNodes : safeNodes));
-
     setWritingDraftSaveStatus("unsaved");
+
+    // Debounce the actual DB write so rapid keystrokes don't each trigger a full save.
     clearTimeout(writingDraftSaveTimerRef.current);
+    writingDraftSaveTimerRef.current = setTimeout(() => {
+      const saveSequence = writingDraftSaveSequenceRef.current + 1;
+      writingDraftSaveSequenceRef.current = saveSequence;
+      setWritingDraftSaveStatus("saving");
 
-    setWritingDraftSaveStatus("saving");
-    const saveSequence = writingDraftSaveSequenceRef.current + 1;
-    writingDraftSaveSequenceRef.current = saveSequence;
-
-    saveWritingDraftNow(safeNodes).then((result) => {
-      if (writingDraftSaveSequenceRef.current !== saveSequence) return;
-      lastWritingDraftPayloadRef.current = payload;
-      lastWritingDraftSaveErrorPayloadRef.current = "";
-      if (result?.storage === "indexedDB" && result?.quotaExceeded) {
-        if (lastWritingDraftIndexedDbWarningPayloadRef.current !== payload) {
-          console.warn(result?.localOnly
-            ? "Writing draft database save failed; saved large draft to IndexedDB local fallback."
-            : "Writing draft exceeded localStorage quota; database save succeeded and local cache used IndexedDB.");
-          lastWritingDraftIndexedDbWarningPayloadRef.current = payload;
+      saveWritingDraftNow(safeNodes).then((result) => {
+        if (writingDraftSaveSequenceRef.current !== saveSequence) return;
+        lastWritingDraftPayloadRef.current = payload;
+        lastWritingDraftSaveErrorPayloadRef.current = "";
+        if (result?.storage === "indexedDB" && result?.quotaExceeded) {
+          if (lastWritingDraftIndexedDbWarningPayloadRef.current !== payload) {
+            console.warn(result?.localOnly
+              ? "Writing draft database save failed; saved large draft to IndexedDB local fallback."
+              : "Writing draft exceeded localStorage quota; database save succeeded and local cache used IndexedDB.");
+            lastWritingDraftIndexedDbWarningPayloadRef.current = payload;
+          }
         }
-      }
-      setWritingDraftSaveStatus(result?.storage === "database" ? "saved" : "local");
-    }).catch((err) => {
-      if (writingDraftSaveSequenceRef.current !== saveSequence) return;
-      if (lastWritingDraftSaveErrorPayloadRef.current !== payload) {
-        console.error("Could not save writing draft:", err);
-        lastWritingDraftSaveErrorPayloadRef.current = payload;
-      }
-      setWritingDraftSaveStatus("error");
-    });
+        setWritingDraftSaveStatus(result?.storage === "database" ? "saved" : "local");
+      }).catch((err) => {
+        if (writingDraftSaveSequenceRef.current !== saveSequence) return;
+        if (lastWritingDraftSaveErrorPayloadRef.current !== payload) {
+          console.error("Could not save writing draft:", err);
+          lastWritingDraftSaveErrorPayloadRef.current = payload;
+        }
+        setWritingDraftSaveStatus("error");
+      });
+    }, 1500);
   }, [saveWritingDraftNow, selectedProject]);
 
   // ─── handleStartNewScript (writing-only, no DB) ──────────────────────────────
@@ -2310,6 +2356,11 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
     handleWritingDraftNodesChange(newNodes);
     setCurrentIndex(0);
     setCurrentSceneNumber(1);
+    // Focus the first heading once React has committed the new node to the DOM.
+    const nodeId = headingNode.id;
+    setTimeout(() => {
+      writingEditorRef.current?.focusFirstNode(nodeId);
+    }, 0);
   };
 
   const handleImportScriptFile = async (event) => {
@@ -2483,6 +2534,63 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
       return nextItems;
     });
   };
+
+  // ─── Writing character handlers ──────────────────────────────────────────────
+  const handleCreateCharacterProfiles = useCallback(async (normalizedKeys) => {
+    const now = new Date().toISOString();
+    const newProfiles = { ...writingCharacterProfiles.profiles };
+    normalizedKeys.forEach((key) => {
+      if (newProfiles[key]) return; // already exists
+      const ec = extractedCharacters.get(key);
+      if (!ec) return;
+      newProfiles[key] = makeEmptyCharacterProfile(key, ec.displayName, {
+        firstAppearanceSceneId: ec.firstAppearanceSceneId,
+        firstAppearanceSceneHeading: ec.firstAppearanceSceneHeading,
+        sceneIds: Array.from(ec.sceneIds),
+        sceneCount: ec.sceneCount,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    // Remove newly created keys from ignoredSuggestions
+    const nextIgnored = (writingCharacterProfiles.ignoredSuggestions || []).filter(
+      (k) => !normalizedKeys.includes(k)
+    );
+    const next = {
+      ...writingCharacterProfiles,
+      profiles: newProfiles,
+      ignoredSuggestions: nextIgnored,
+      savedAt: now,
+    };
+    setWritingCharacterProfiles(next);
+    try { await saveWritingCharacterProfilesAsync(selectedProject, next); } catch {}
+  }, [writingCharacterProfiles, extractedCharacters, selectedProject]);
+
+  const handleIgnoreCharacterSuggestions = useCallback(async (normalizedKeys) => {
+    const next = {
+      ...writingCharacterProfiles,
+      ignoredSuggestions: Array.from(new Set([
+        ...(writingCharacterProfiles.ignoredSuggestions || []),
+        ...normalizedKeys,
+      ])),
+      savedAt: new Date().toISOString(),
+    };
+    setWritingCharacterProfiles(next);
+    try { await saveWritingCharacterProfilesAsync(selectedProject, next); } catch {}
+  }, [writingCharacterProfiles, selectedProject]);
+
+  const handleUpdateCharacterProfile = useCallback(async (normalizedKey, patch) => {
+    const existing = writingCharacterProfiles.profiles?.[normalizedKey];
+    if (!existing) return;
+    const updated = { ...existing, ...patch, updatedAt: new Date().toISOString() };
+    const next = {
+      ...writingCharacterProfiles,
+      profiles: { ...writingCharacterProfiles.profiles, [normalizedKey]: updated },
+      savedAt: new Date().toISOString(),
+    };
+    setWritingCharacterProfiles(next);
+    try { await saveWritingCharacterProfilesAsync(selectedProject, next); } catch {}
+  }, [writingCharacterProfiles, selectedProject]);
 
   // ─── Beat import handlers ────────────────────────────────────────────────────
   const handleOpenBeatImport = () => {
@@ -2700,7 +2808,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
     return <div data-writing-script-shell="preview" style={{ display: "none" }} />;
   }
 
-  const noScript = writingDraftScenes.length === 0;
+  const noScript = writingDraftNodes.length === 0;
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -3750,6 +3858,9 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
             <button type="button" onClick={() => setActiveSidePanelTab("beats")} style={{ padding: "6px 12px", border: "1px solid #ccc", borderBottomColor: activeSidePanelTab === "beats" ? APP_TAB_BLUE : "#ccc", backgroundColor: activeSidePanelTab === "beats" ? APP_TAB_BLUE : "#f5f5f5", color: activeSidePanelTab === "beats" ? "white" : "#222", cursor: "pointer", fontWeight: "bold", fontSize: "12px" }}>
               Beats{beats.filter(item => (item.type || "beat") === "beat").length ? ` (${beats.filter(item => (item.type || "beat") === "beat").length})` : ""}
             </button>
+            <button type="button" onClick={() => setActiveSidePanelTab("characters")} style={{ padding: "6px 12px", border: "1px solid #ccc", borderBottomColor: activeSidePanelTab === "characters" ? APP_TAB_BLUE : "#ccc", backgroundColor: activeSidePanelTab === "characters" ? APP_TAB_BLUE : "#f5f5f5", color: activeSidePanelTab === "characters" ? "white" : "#222", cursor: "pointer", fontWeight: "bold", fontSize: "12px" }}>
+              Characters{Object.keys(writingCharacterProfiles.profiles || {}).length ? ` (${Object.keys(writingCharacterProfiles.profiles).length})` : ""}
+            </button>
             {!isViewOnly && activeSidePanelTab === "beats" && (
               <div style={{ marginLeft: "auto", display: "flex", gap: "6px" }}>
                 <button type="button" onClick={() => appendOutlineItem("act")} style={{ padding: "6px 8px", backgroundColor: "#607D8B", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", fontSize: "11px" }}>Add Act</button>
@@ -3782,6 +3893,17 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	                showTitlePage={titlePageSettings.enabled}
 	                onTitlePageClick={scrollToTitlePage}
 	              />
+            ) : activeSidePanelTab === "characters" ? (
+              <WritingCharactersPanel
+                profiles={writingCharacterProfiles}
+                extractedNames={extractedCharacters}
+                isViewOnly={isViewOnly}
+                isProfilesLoading={characterProfilesLoadStatus === "loading"}
+                onCreateProfiles={handleCreateCharacterProfiles}
+                onIgnoreSuggestions={handleIgnoreCharacterSuggestions}
+                onUpdateProfile={handleUpdateCharacterProfile}
+                onRescan={() => {}}
+              />
             ) : (
               <BeatsList
                 beats={beats}

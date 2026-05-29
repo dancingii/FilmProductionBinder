@@ -2716,6 +2716,17 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
 	    replaceTextRange,
 	    replaceTextRanges,
 	    getPdfExportModel: () => ({ pages: paginatedPages, nodes, layoutTuning: DEFAULT_LAYOUT_TUNING }),
+	    focusFirstNode: (nodeId) => {
+	      const targetId = nodeId || nodesRef.current[0]?.id;
+	      if (!targetId) return;
+	      requestAnimationFrame(() => {
+	        const el = getNodeElement(editorRef.current, targetId);
+	        if (!el) return;
+	        el.focus();
+	        setCaretToEnd(el);
+	        setActiveNodeId(targetId);
+	      });
+	    },
 	  }));
 
   const handleSelectedDelete = (event) => {
@@ -3253,6 +3264,20 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
       }
 
       if (getNodesPayload(liveNodes) !== lastEmittedNodesPayloadRef.current) {
+        // Keep the editor's nodes state in sync with the live DOM so the React
+        // fiber never diverges from what the browser has painted. Without this,
+        // a re-render triggered by the parent can run with stale `nodes` and
+        // cause React to reconcile the empty-node placeholder against actual
+        // typed content, losing the caret.
+        if (getNodesPayload(liveNodes) !== getNodesPayload(nodes)) {
+          setNodes(liveNodes);
+          const restoreNodeId = currentNodeId;
+          const restoreOffset = savedCaretOffset;
+          requestAnimationFrame(() => {
+            const el = getNodeElement(editorRef.current, restoreNodeId);
+            if (el) setCaretOffset(el, restoreOffset);
+          });
+        }
         emitNodesChange(liveNodes);
       }
 
@@ -3811,6 +3836,30 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
           }
         }
         return;
+      }
+
+      // Intercept any deletion that would leave this node empty. When the browser
+      // removes the last character from a contentEditable node inline, React's
+      // reconciliation crashes: it tries to replace the rendered span-element child
+      // with a ​ text-node placeholder while the DOM is already in a modified
+      // state, causing removeChild on a non-child. Prevent the browser from
+      // touching the DOM and route the change through the model instead.
+      {
+        const sourceText = String(currentText || "");
+        const textAfterKey = event.key === "Backspace"
+          ? sourceText.slice(0, caretOffset - 1) + sourceText.slice(caretOffset)
+          : sourceText.slice(0, caretOffset) + sourceText.slice(caretOffset + 1);
+
+        if (isEffectivelyEmptyText(textAfterKey)) {
+          event.preventDefault();
+          event.stopPropagation();
+          pushHistorySnapshot(currentNodes);
+          const nextNodes = currentNodes.map(n =>
+            n.id === currentNode.id ? { ...n, text: "", runs: undefined } : n
+          );
+          updateNodes(nextNodes, currentNode.id, { caretOffset: 0 });
+          return;
+        }
       }
     }
   };
