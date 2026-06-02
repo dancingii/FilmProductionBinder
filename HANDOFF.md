@@ -6,6 +6,53 @@ Stabilize the writing workflow, scene ordering, narrative outline, and timeline 
 
 ## Current Known State
 
+## Codex Handoff — Emergency Writing Scripts Empty Display Guard
+
+**Completed 2026-06-01:** Emergency response after scripts appeared empty following the Writing Characters suggestion sprint.
+
+Files changed:
+- `src/components/modules/WritingCharacters/WritingCharactersPanel.jsx`
+- `src/components/modules/WritingCharacters/WritingCharactersModulePanel.jsx`
+- `src/components/modules/WritingCharacters/writingCharactersModel.js`
+- `src/components/modules/WritingScript/WritingScript.jsx`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Reverted the Writing Characters suggestion helper/import/explicit Rescan changes from the prior sprint.
+- Removed the added standalone Writing Characters Rescan button/status behavior from the prior sprint.
+- Restored the prior local suggestion computation paths in the Writing Characters panels.
+- Added a narrow guard in the active Writing Script save wrapper: if an empty node array is about to save and the app knows about non-empty script data from the last saved payload, session cache, or ProjectCache, the save is blocked and development logs “Blocked empty Writing Script save to prevent overwrite.”
+- No project was opened for testing, no recovery attach was run, no localStorage/IndexedDB clearing was performed, and no direct Supabase writes were made.
+- `WritingScriptEditor.jsx`, Writing Script persistence, storage/recovery files, backup architecture, and Supabase schema were not edited in this emergency pass.
+
+Verification:
+- `npm run build` passed.
+
+## Codex Handoff — Writing Characters Suggestion Rescan Guard
+
+**Completed 2026-06-01:** Stopped Writing Characters suggestion review from opening on normal project load/hydration and tightened merged-alias filtering.
+
+Files changed:
+- `src/components/modules/WritingCharacters/WritingCharactersPanel.jsx`
+- `src/components/modules/WritingCharacters/WritingCharactersModulePanel.jsx`
+- `src/components/modules/WritingCharacters/writingCharactersModel.js`
+- `HANDOFF.md`
+- `AI_TASK_LOG.md`
+
+Key behavior:
+- Writing Characters no longer opens the new-character suggestions modal from mount, project load, profile hydration, or script-data hydration.
+- Rescan Script explicitly computes unresolved suggestions and opens the modal only when unresolved suggestions remain.
+- If Rescan finds no unresolved suggestions, the panel shows “No new unresolved characters found.” inline.
+- Suggestion filtering now uses a shared normalized comparison helper that trims, collapses repeated spaces, uppercases, and treats underscore IDs as spaced names for matching.
+- Resolved names include profile IDs, canonical/name fields, aliases, merge history source/original names, resolution mappings, ignored suggestions, and existing `mergedAliases` metadata.
+- Merge history is read and preserved; no profile-shape migration or hard delete changes were added.
+- No script text, WritingScriptEditor, storage/recovery, backup/save architecture, Supabase schema, or Writing Script persistence changes were made.
+- First-import suggestion auto-open is deferred because these panels do not currently receive a reliable explicit import event without touching Writing Script import internals.
+
+Verification:
+- `npm run build` passed.
+
 ## Codex Handoff — Writing Public Share Watermark Branding
 
 **Completed 2026-05-25:** Extended public script share watermark customization without changing DB schema or RPC SQL.

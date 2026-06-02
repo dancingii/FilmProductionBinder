@@ -3951,3 +3951,69 @@ export const syncDoodSettings = async (selectedProject, settings) => {
     throw error;
   }
 };
+
+// ─── Project sync status helpers ──────────────────────────────────────────────
+//
+// These helpers wrap the project_sync_status table introduced to support
+// project-level cloud sync freshness checking on exit.
+//
+// touch_project_sync_status(p_project_id, p_sync_source) — upsert-based RPC that
+// sets last_successful_sync_at to now(). Called after each successful module sync.
+//
+// mark_project_sync_error(p_project_id, p_sync_source, p_error_message) — records
+// a sync failure timestamp. Optional; called on module sync failure.
+//
+// getProjectSyncStatus — SELECT from project_sync_status for exit verification.
+
+export const touchProjectSyncStatus = async (projectId, source) => {
+  if (!projectId) return null;
+  try {
+    const { data, error } = await supabase.rpc("touch_project_sync_status", {
+      p_project_id: projectId,
+      p_sync_source: source ?? null,
+    });
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn(`[touchProjectSyncStatus] failed for ${projectId}:`, err?.message);
+    }
+    return null;
+  }
+};
+
+export const getProjectSyncStatus = async (projectId) => {
+  if (!projectId) return null;
+  try {
+    const { data, error } = await supabase
+      .from("project_sync_status")
+      .select("project_id, last_successful_sync_at, last_sync_source, last_sync_error_at, last_sync_error_message, updated_at")
+      .eq("project_id", projectId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn(`[getProjectSyncStatus] failed for ${projectId}:`, err?.message);
+    }
+    return null;
+  }
+};
+
+export const markProjectSyncError = async (projectId, source, message) => {
+  if (!projectId) return null;
+  try {
+    const { data, error } = await supabase.rpc("mark_project_sync_error", {
+      p_project_id: projectId,
+      p_sync_source: source ?? null,
+      p_error_message: message ?? null,
+    });
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn(`[markProjectSyncError] failed for ${projectId}:`, err?.message);
+    }
+    return null;
+  }
+};

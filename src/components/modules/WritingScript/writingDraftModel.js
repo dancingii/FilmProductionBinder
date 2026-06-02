@@ -32,6 +32,32 @@ const cloneScene = (scene = {}) => ({
 
 const safeText = (value) => String(value || "");
 
+// Strip PDF extraction artifacts from imported node text so imported content
+// behaves identically to manually typed content in the contentEditable editor.
+//
+// ­ soft hyphen: invisible in most contexts but counted as a character by
+//   getCaretOffsetInElement, causing off-by-one errors vs. getTextFromNodeElement.
+// ​ zero-width space: getTextFromNodeElement strips it on DOM read; if stored
+//   in node.text the DOM vs. React state payloads permanently diverge, causing
+//   readNodesFromDom to always report "changed" and setNodes to fire on every rAF.
+// ‌/‍ ZWNJ/ZWJ, ﻿ BOM: same invisible-character class.
+// \r/\n: screenplay elements are single-line; getTextFromNodeElement strips \n but
+//   not \r — an embedded newline causes the saved caret offset (counted against the
+//   \n-bearing DOM) to be wrong after React reconciles the \n-stripped text.
+// C0 control chars (0x00–0x08, 0x0B, 0x0C, 0x0E–0x1F, 0x7F): never intentional
+//   in screenplay text; can come from malformed PDF byte streams.
+/* eslint-disable no-control-regex */
+const sanitizeImportedText = (text = "") =>
+  String(text || "")
+    .replace(/­/g, "")                             // soft hyphen
+    .replace(/[​‌‍﻿]/g, "")         // zero-width space/joiner/BOM
+    .replace(/\r\n?/g, " ")                             // CR / CRLF → space
+    .replace(/\n/g, " ")                                // LF → space
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "")  // C0 control chars
+    .replace(/[ \t]+/g, " ")                            // collapse whitespace
+    .trim();
+/* eslint-enable no-control-regex */
+
 const sanitizeWritingSceneMetadata = (metadata = {}) => {
   const {
     originalSceneNumber,
@@ -76,7 +102,7 @@ export const documentNodesFromScenes = (scenes = []) => {
 
   sourceScenes.forEach((scene) => {
     const sceneId = isValidSceneId(scene?.id) ? scene.id : createSceneId();
-    const headingText = safeText(scene?.heading);
+    const headingText = sanitizeImportedText(safeText(scene?.heading));
     const content = Array.isArray(scene?.content) ? scene.content : [];
 
     if (!headingText.trim()) {
@@ -84,9 +110,8 @@ export const documentNodesFromScenes = (scenes = []) => {
         nodes.push({
           id: block.id || makeNodeId("preamble", [blockIndex, safeText(block.text).slice(0, 24)]),
           type: normalizeType(block.type),
-          text: safeText(block.text),
+          text: sanitizeImportedText(safeText(block.text)),
           sceneId: null,
-          sourceBlockIndex: blockIndex,
         });
       });
       return;
@@ -109,9 +134,8 @@ export const documentNodesFromScenes = (scenes = []) => {
       nodes.push({
         id: block.id || makeNodeId("block", [sceneId, blockIndex]),
         type: normalizeType(block.type),
-        text: safeText(block.text),
+        text: sanitizeImportedText(safeText(block.text)),
         sceneId,
-        sourceBlockIndex: blockIndex,
       });
     });
   });

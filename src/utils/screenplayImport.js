@@ -30,8 +30,14 @@ const normalizeWhitespace = (value = "") =>
     .replace(/[\u00d2\u0093\u201c]/g, '"')
     // MacRoman right double quote (\u00d3 = 0xD3), WinAnsi right double (0x94), Unicode right double (U+201D) \u2192 "
     .replace(/[\u00d3\u0094\u201d]/g, '"')
-    // MacRoman left single (\u00d4 = 0xD4), WinAnsi left single (0x91), Unicode left single (U+2018), MacRoman right single (\u00d5 = 0xD5), WinAnsi right single (0x92), Unicode right single (U+2019) \u2192 '
+    // MacRoman left/right single quotes, WinAnsi, Unicode curly singles \u2192 '
     .replace(/[\u00d4\u00d5\u0091\u0092\u2018\u2019]/g, "'")
+    // Soft hyphen \u2014 invisible but counted as a char by the browser, disrupts caret math
+    .replace(/\u00ad/g, "")
+    // Zero-width characters \u2014 invisible but cause getTextFromNodeElement/DOM payload mismatch
+    .replace(/[\u200b\u200c\u200d\ufeff]/g, "")
+    // Carriage returns \u2192 space (screenplay elements are always single-line)
+    .replace(/\r\n?/g, " ")
     // Collapse runs of spaces/tabs
     .replace(/[ \t]+/g, " ")
     .trim();
@@ -134,13 +140,29 @@ const looksLikeDialogueLine = (line = "") => {
   return !looksLikeActionLine(text);
 };
 
+// Words and phrases that are never character names — they are time-of-day,
+// action context cues, or production stage directions that appear in uppercase
+// and would otherwise pass the character pattern test.
+const NON_CHARACTER_WORDS = new Set([
+  "LATER", "NIGHT", "DAY", "MORNING", "AFTERNOON", "EVENING", "DUSK", "DAWN",
+  "CONTINUOUS", "SAME", "EARLIER", "MOMENTS LATER", "SHORTLY AFTER",
+  "SOME TIME LATER", "THE NEXT DAY", "MEANWHILE", "INTERCUT",
+  "THE END", "SMASH CUT", "FADE IN", "FADE OUT",
+  "OVER BLACK", "TITLE CARD", "SUPER", "MATCH CUT",
+]);
+
 const isCharacterLine = (line = "") => {
   const text = normalizeWhitespace(line);
   if (!text || text.length > 34) return false;
   if (isSceneHeadingLine(text) || isTransitionLine(text) || isParentheticalLine(text)) return false;
   if (/[a-z]/.test(text)) return false;
   if (/[.!?]$/.test(text)) return false;
-  return /^[A-Z0-9][A-Z0-9 '\-.()]*$/.test(text);
+  if (!(/^[A-Z0-9][A-Z0-9 '\-.()]*$/.test(text))) return false;
+  // Strip any trailing continuation marker before blocklist check so
+  // "JOHN (CONT'D)" still passes while "LATER (CONT'D)" is still rejected.
+  const stripped = text.replace(/\s+\(CONT['']?D\.?\)$/i, "").trim();
+  if (NON_CHARACTER_WORDS.has(stripped)) return false;
+  return true;
 };
 
 const NUMERIC_PDF_ARTIFACT_PATTERN = /(^|\s)\d{2,5}\.{2,}(?=\s|$)/g;
@@ -897,6 +919,7 @@ const parsePdfScenesFromStructuredLines = (structuredLines) => {
   const ACTION_MARGIN_TOLERANCE = 10;
   const DIALOGUE_COLUMN_TOLERANCE = 18;
   const PARENTHETICAL_COLUMN_TOLERANCE = 18;
+  const CHARACTER_COLUMN_TOLERANCE = 24;
 
   const isAtActionMargin = (x) => actionX !== null && x <= actionX + ACTION_MARGIN_TOLERANCE;
   const isNearColumn = (x, columnX, tolerance) =>
@@ -905,6 +928,16 @@ const parsePdfScenesFromStructuredLines = (structuredLines) => {
     isNearColumn(x, columnXs.dialogueX, DIALOGUE_COLUMN_TOLERANCE);
   const isAtParentheticalColumn = (x) =>
     isNearColumn(x, columnXs.parentheticalX, PARENTHETICAL_COLUMN_TOLERANCE);
+  // A line is plausibly at the character column if characterX was inferred and
+  // the line's x is within tolerance, OR if characterX is unknown but the line
+  // is clearly right of the action margin (indicating centre/right indentation).
+  const isAtCharacterColumn = (x) => {
+    if (columnXs.characterX !== null) {
+      return isNearColumn(x, columnXs.characterX, CHARACTER_COLUMN_TOLERANCE);
+    }
+    // No character column inferred yet — accept if clearly indented past action margin.
+    return actionX !== null && x > actionX + 30;
+  };
   const isStrongActionPosition = (x) =>
     isAtActionMargin(x) && !isAtDialogueColumn(x) && !isAtParentheticalColumn(x);
 
@@ -999,7 +1032,10 @@ const parsePdfScenesFromStructuredLines = (structuredLines) => {
 
     if (!currentScene) return;
 
-    if (isCharacterLine(text)) {
+    // Require x-position near the character column in addition to the text pattern.
+    // This prevents action-margin lines like LATER, NIGHT, or CONTINUOUS from being
+    // classified as Character just because they happen to be all-caps and short.
+    if (isCharacterLine(text) && isAtCharacterColumn(x)) {
       commitPendingText();
       appendBlock("Character", text);
       previousWasBoundary = false;

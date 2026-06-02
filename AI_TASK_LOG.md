@@ -28,6 +28,46 @@ main
 
 ## Completed Tasks
 
+### Emergency Writing Scripts Empty Display Guard
+
+**Date:** 2026-06-01
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingCharacters/WritingCharactersPanel.jsx`
+- `src/components/modules/WritingCharacters/WritingCharactersModulePanel.jsx`
+- `src/components/modules/WritingCharacters/writingCharactersModel.js`
+- `src/components/modules/WritingScript/WritingScript.jsx`
+
+**Changes:**
+- Reverted the Writing Characters suggestion helper/import/explicit Rescan changes from the prior sprint.
+- Removed the added standalone module Rescan status/button behavior from the prior sprint.
+- Added a narrow active-save guard in Writing Script that blocks saving an empty node array when a known non-empty last payload, session cache, or ProjectCache snapshot exists.
+- Did not run recovery attach, clear storage, write Supabase directly, or touch storage recovery files.
+
+**Verification:**
+- `npm run build` — passed.
+
+### Writing Characters Suggestion Rescan Guard
+
+**Date:** 2026-06-01
+**Branch:** main
+
+**Files changed:**
+- `src/components/modules/WritingCharacters/WritingCharactersPanel.jsx`
+- `src/components/modules/WritingCharacters/WritingCharactersModulePanel.jsx`
+- `src/components/modules/WritingCharacters/writingCharactersModel.js`
+
+**Changes:**
+- Replaced load/hydration-driven suggestion modal opening with explicit Rescan-driven opening.
+- Added shared suggestion normalization and filtering helpers for existing profiles, aliases, merge history source names, resolution mappings, ignored suggestions, and existing merged alias metadata.
+- Kept ignored suggestions ignored during Rescan.
+- Added inline “No new unresolved characters found.” status when Rescan finds nothing new.
+- Preserved merge history and script text; no storage recovery, backup, Supabase schema, or WritingScriptEditor changes were made.
+
+**Verification:**
+- `npm run build` — passed.
+
 ### Writing Public Share Watermark Branding
 
 **Date:** 2026-05-25

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabase";
+import StorageRecoveryImportModal from "./dev/StorageRecoveryImportModal";
 
 function ProjectSelector({ user, onProjectSelected }) {
   const [projects, setProjects] = useState([]);
@@ -9,6 +10,7 @@ function ProjectSelector({ user, onProjectSelected }) {
   const [newProducer, setNewProducer] = useState("");
   const [newDirector, setNewDirector] = useState("");
   const [projectAlert, setProjectAlert] = useState(null);
+  const [showStorageRecovery, setShowStorageRecovery] = useState(false);
 
   const showProjectAlert = (message) =>
     new Promise((resolve) =>
@@ -416,6 +418,27 @@ function ProjectSelector({ user, onProjectSelected }) {
         </div>
       )}
       </div>
+
+      {/* Dev / Storage Recovery — available before opening any project */}
+      <div style={{ textAlign: "center", marginTop: "20px", paddingBottom: "40px" }}>
+        <button
+          onClick={() => setShowStorageRecovery(true)}
+          style={{
+            background: "none", border: "1px solid #ce93d8", color: "#6a1b9a",
+            padding: "6px 14px", borderRadius: "4px", cursor: "pointer",
+            fontSize: "11px", fontFamily: "'Questrial','Futura','Arial',sans-serif",
+          }}
+        >
+          Storage Recovery
+        </button>
+      </div>
+
+      <StorageRecoveryImportModal
+        open={showStorageRecovery}
+        onClose={() => setShowStorageRecovery(false)}
+        currentProject={null}
+        context="projectSelector"
+      />
 
       {projectAlert && (
         <div

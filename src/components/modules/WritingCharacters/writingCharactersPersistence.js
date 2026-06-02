@@ -1,3 +1,11 @@
+// ─── Writing Characters Persistence ──────────────────────────────────────────
+// Saves/loads Writing Character profiles as part of project.settings.
+//
+// ISOLATION CONTRACT:
+//   • Writing Character profiles are stored in project.settings["writingCharacterProfiles"].
+//   • This is entirely separate from the characters, cast, or breakdown tables.
+//   • Profiles contain Writing-only metadata: aliases, merges, suppressions, notes, role.
+//   • Nothing here reads or writes Production Characters or Script Breakdown data.
 import { supabase } from "../../../supabase";
 
 export const WRITING_CHARACTER_PROFILES_SETTINGS_KEY = "writingCharacterProfiles";

@@ -7,7 +7,10 @@ const WRITING_DRAFT_STORE_NAME = "drafts";
 const WRITING_DRAFT_SETTINGS_KEY = "writingScriptDraft";
 const WRITING_DICTIONARY_SETTINGS_KEY = "writingSpellcheckDictionaryWords";
 const WRITING_TITLE_PAGE_SETTINGS_KEY = "writingTitlePageSettings";
-const LOCAL_STORAGE_SAFE_LIMIT = 2500000;
+
+// Full draft payloads must NEVER be written to literal localStorage.
+// localStorage only stores a tiny marker {storage:"indexedDB", indexedDbKey, ...}.
+// Legacy full-payload reads are still supported in the load path but never written back.
 
 export const getWritingDraftProjectId = (project) => {
   if (!project) return DEFAULT_PROJECT_ID;
@@ -293,11 +296,6 @@ export const saveWritingTitlePageSettingsAsync = async (project, settings = {}) 
   }
 };
 
-const isQuotaExceededError = (err) => {
-  return err?.name === "QuotaExceededError" ||
-    err?.code === 22 ||
-    err?.code === 1014;
-};
 
 const openWritingDraftDatabase = () => {
   if (typeof indexedDB === "undefined") {
@@ -398,19 +396,16 @@ export const loadWritingDraft = (project) => {
 
   const parseDraft = (rawDraft) => parseWritingDraftPayload(project, rawDraft);
 
+  // Read from current key. If it is a full payload (legacy pre-migration state),
+  // return it as-is but do NOT write it back to localStorage — the async path handles
+  // the IDB migration on the next load. If it is a marker, the async path handles it.
   const draft = parseDraft(localStorage.getItem(getWritingDraftStorageKey(project)));
   if (draft) return draft;
 
+  // Legacy key fallback — read only, no localStorage write. The async loader
+  // (loadWritingDraftAsync) migrates legacy entries to IDB when it next runs.
   const legacyDraft = parseDraft(localStorage.getItem(getLegacyWritingDraftStorageKey(project)));
-  if (legacyDraft) {
-    try {
-      localStorage.setItem(getWritingDraftStorageKey(project), JSON.stringify(legacyDraft));
-    } catch {
-      // Large legacy drafts may not fit during migration; the async loader/save path
-      // will use IndexedDB on the next write.
-    }
-    return legacyDraft;
-  }
+  if (legacyDraft) return legacyDraft;
 
   return emptyDraft;
 };
@@ -430,13 +425,21 @@ export const loadWritingDraftAsync = async (project) => {
   try {
     const databaseDraft = await loadWritingDraftFromDatabase(project);
     if (databaseDraft) {
-      if (typeof localStorage !== "undefined") {
+      // Always cache to IndexedDB — never write the full payload to localStorage.
+      // Fire-and-forget: the database result is what we return. The IDB cache is
+      // for offline/recovery and fast subsequent loads within the same session.
+      saveWritingDraftToIndexedDb(project, databaseDraft).then((indexedDbKey) => {
         try {
-          localStorage.setItem(getWritingDraftStorageKey(project), JSON.stringify(databaseDraft));
-        } catch {
-          // Cache only; database remains the source of truth.
-        }
-      }
+          localStorage.setItem(getWritingDraftStorageKey(project), JSON.stringify({
+            projectId: databaseDraft.projectId,
+            savedAt: databaseDraft.savedAt,
+            hasUserCreatedScript: databaseDraft.hasUserCreatedScript,
+            storage: "indexedDB",
+            indexedDbKey,
+            nodeCount: databaseDraft.nodes.length,
+          }));
+        } catch {}
+      }).catch(() => {});
       return { ...databaseDraft, storage: "database" };
     }
   } catch {
@@ -469,78 +472,179 @@ export const loadWritingDraftAsync = async (project) => {
   return loadWritingDraft(project);
 };
 
-export const saveWritingDraft = (project, nodes = []) => {
-  const payload = buildWritingDraftPayload(project, nodes);
-
-  if (typeof localStorage !== "undefined") {
-    localStorage.setItem(getWritingDraftStorageKey(project), JSON.stringify(payload));
-  }
-
-  return payload;
+// saveWritingDraft is retained for API compatibility only — it is not called
+// anywhere in the app. All active save paths use saveWritingDraftSafely().
+// This version writes to IndexedDB + marker rather than a full localStorage payload.
+export const saveWritingDraft = async (project, nodes = []) => {
+  return saveWritingDraftSafely(project, nodes);
 };
+
+// Maximum time (ms) to wait for a Supabase database save before falling back
+// to IndexedDB. Keeps the flush handler well within its own timeout budget.
+const DATABASE_SAVE_TIMEOUT_MS = 10_000;
 
 export const saveWritingDraftSafely = async (project, nodes = []) => {
   const payload = buildWritingDraftPayload(project, nodes);
   const storageKey = getWritingDraftStorageKey(project);
-  const serializedPayload = JSON.stringify(payload);
   let databaseError = null;
 
-  try {
-    await saveWritingDraftToDatabase(project, payload);
-    if (typeof localStorage !== "undefined") {
+  // Helper: write to IndexedDB and replace localStorage with a tiny marker.
+  // Returns the IDB key on success, null on failure (original localStorage untouched).
+  const writeIdbAndMarker = async () => {
+    try {
+      const indexedDbKey = await saveWritingDraftToIndexedDb(project, payload);
+      const marker = JSON.stringify({
+        projectId: payload.projectId,
+        savedAt: payload.savedAt,
+        hasUserCreatedScript: payload.hasUserCreatedScript,
+        storage: "indexedDB",
+        indexedDbKey,
+        nodeCount: payload.nodes.length,
+      });
       try {
-        if (serializedPayload.length <= LOCAL_STORAGE_SAFE_LIMIT) {
-          localStorage.setItem(storageKey, serializedPayload);
-          deleteWritingDraftFromIndexedDb(project);
-        } else {
-          const indexedDbKey = await saveWritingDraftToIndexedDb(project, payload);
-          localStorage.setItem(storageKey, JSON.stringify({
-            projectId: payload.projectId,
-            savedAt: payload.savedAt,
-            hasUserCreatedScript: payload.hasUserCreatedScript,
-            storage: "indexedDB",
-            indexedDbKey,
-            nodeCount: payload.nodes.length,
-          }));
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem(storageKey, marker);
         }
-      } catch {
-        // Cache failure should not downgrade a successful database save.
-      }
+      } catch {}
+      return indexedDbKey;
+    } catch {
+      // IDB write failed — do not touch localStorage.
+      return null;
     }
+  };
+
+  // Race the database save against a bounded timeout. If Supabase is slow or
+  // unresponsive the timeout rejects and we fall through to the IDB path below,
+  // returning localOnly instead of hanging until the flush context's outer guard fires.
+  const dbSaveWithTimeout = () =>
+    Promise.race([
+      saveWritingDraftToDatabase(project, payload),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Database save timed out after ${DATABASE_SAVE_TIMEOUT_MS / 1000}s`)),
+          DATABASE_SAVE_TIMEOUT_MS
+        )
+      ),
+    ]);
+
+  try {
+    if (process.env.NODE_ENV === "development") {
+      console.time("[writingDraftPersistence] database save");
+    }
+    await dbSaveWithTimeout();
+    if (process.env.NODE_ENV === "development") {
+      console.timeEnd("[writingDraftPersistence] database save");
+    }
+    // Database save succeeded. Update local cache: IDB + tiny marker.
+    // Fire-and-forget — a cache write failure must not downgrade a successful DB save.
+    writeIdbAndMarker().catch(() => {});
     return { payload, storage: "database" };
   } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.timeEnd("[writingDraftPersistence] database save");
+      console.warn("[writingDraftPersistence] Database save failed/timed out, falling back to IDB:", error?.message);
+    }
     databaseError = error;
   }
 
-  if (typeof localStorage === "undefined") {
-    return { payload, storage: "memory", databaseError };
+  // Database save failed or timed out. Try IDB as the local-only fallback.
+  const indexedDbKey = await writeIdbAndMarker();
+  if (indexedDbKey) {
+    return { payload, storage: "indexedDB", localOnly: true, databaseError };
   }
 
-  try {
-    if (serializedPayload.length <= LOCAL_STORAGE_SAFE_LIMIT) {
-      localStorage.setItem(storageKey, serializedPayload);
-      deleteWritingDraftFromIndexedDb(project);
-      return { payload, storage: "localStorage", localOnly: true, databaseError };
-    }
-    throw { name: "QuotaExceededError" };
-  } catch (err) {
-    if (!isQuotaExceededError(err)) {
-      throw err;
-    }
+  // IDB also unavailable. This is a last-resort path: no writes succeed.
+  // Return memory-only so the caller can show a warning, but never throw away data.
+  return { payload, storage: "memory", localOnly: true, databaseError };
+};
 
-    const indexedDbKey = await saveWritingDraftToIndexedDb(project, payload);
-    const marker = {
+/**
+ * Load the Writing Script draft from IndexedDB only — no Supabase round-trip.
+ * Returns the parsed payload or null if missing/empty.
+ */
+export const loadWritingDraftFromIndexedDbOnly = async (project) => {
+  try {
+    const raw = await loadWritingDraftFromIndexedDb(project);
+    return parseWritingDraftPayload(project, raw);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Load the Writing Script draft from IndexedDB using an explicit IDB key.
+ * Used by the Save Verification proxy to load the exact record a localStorage
+ * marker points to, without a Supabase round-trip.
+ * Returns the parsed payload or null if missing/empty.
+ */
+export const loadWritingDraftFromIndexedDbByKey = async (project, indexedDbKey) => {
+  try {
+    const raw = await loadWritingDraftFromIndexedDb(project, indexedDbKey || null);
+    return parseWritingDraftPayload(project, raw);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Load the Writing Script draft from Supabase only — no IDB or localStorage fallback.
+ * Returns the parsed payload or null if missing/empty.
+ * Throws on Supabase errors (caller should catch).
+ */
+export const loadWritingDraftFromDatabaseOnly = async (project) => {
+  if (!project?.id) return null;
+  const draft = await loadWritingDraftFromDatabase(project);
+  return draft || null;
+};
+
+/**
+ * Save a pre-built Writing Script payload directly to Supabase (projects.settings).
+ * Guards against empty payloads — throws if nodes.length === 0.
+ * Used by recovery/attach flow. Does NOT rebuild payload — accepts an already-normalized payload.
+ */
+export const saveWritingDraftPayloadToDatabase = async (project, payload) => {
+  if (!payload || !Array.isArray(payload.nodes) || payload.nodes.length === 0) {
+    throw new Error("Cannot save empty Writing Script payload to database.");
+  }
+  if (!project?.id) {
+    throw new Error("Cannot save Writing Script: no project database ID.");
+  }
+  await saveWritingDraftToDatabase(project, payload);
+  return payload;
+};
+
+/**
+ * Save a pre-built Writing Script payload directly to IndexedDB.
+ * Guards against empty payloads.
+ * Returns the IDB key on success. Does NOT touch localStorage.
+ */
+export const saveWritingDraftPayloadToIndexedDb = async (project, payload) => {
+  if (!payload || !Array.isArray(payload.nodes) || payload.nodes.length === 0) {
+    throw new Error("Cannot save empty Writing Script payload to IndexedDB.");
+  }
+  const key = await saveWritingDraftToIndexedDb(project, payload);
+  return key;
+};
+
+/**
+ * Write the localStorage marker for a Writing Script IDB record.
+ * Marker shape: { projectId, savedAt, hasUserCreatedScript, storage:"indexedDB", indexedDbKey, nodeCount }
+ */
+export const writeWritingDraftMarker = (project, payload, indexedDbKey) => {
+  try {
+    const storageKey = getWritingDraftStorageKey(project);
+    const marker = JSON.stringify({
       projectId: payload.projectId,
       savedAt: payload.savedAt,
       hasUserCreatedScript: payload.hasUserCreatedScript,
       storage: "indexedDB",
       indexedDbKey,
       nodeCount: payload.nodes.length,
-    };
-
-    localStorage.removeItem(storageKey);
-    localStorage.setItem(storageKey, JSON.stringify(marker));
-    return { payload, storage: "indexedDB", quotaExceeded: true, localOnly: true, databaseError };
+    });
+    localStorage.setItem(storageKey, marker);
+    return true;
+  } catch {
+    return false;
   }
 };
 

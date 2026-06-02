@@ -78,11 +78,26 @@ import StripboardScheduleModule from "./components/modules/StripboardSchedule/St
 import CastCrewModule from "./components/modules/CastCrew/CastCrew";
 import ScriptBreakdownModule from "./components/modules/ScriptBreakdown";
 import WritingScript from "./components/modules/WritingScript";
+import WritingCharactersModule from "./components/modules/WritingCharacters/WritingCharacters";
 import MakeupModule from "./components/modules/Makeup/Makeup";
 import ProductionDesignModule from "./components/modules/ProductionDesign/ProductionDesign";
 import ReportsModule from "./components/modules/Reports/Reports";
 import PropsModule from "./components/modules/Props/Props";
 import WorkflowWorkspace from "./components/workspace/WorkflowWorkspace";
+import { useModuleFlush } from "./contexts/ModuleFlushContext";
+import {
+  getWritingDraftStorageKey,
+  saveWritingDraftSafely,
+  loadWritingDraftFromIndexedDbByKey,
+  loadWritingDraftFromDatabaseOnly,
+} from "./components/modules/WritingScript/writingDraftPersistence";
+import {
+  loadWritingCharacterProfilesAsync,
+  saveWritingCharacterProfilesAsync,
+  getWritingCharactersStorageKey,
+  WRITING_CHARACTER_PROFILES_SETTINGS_KEY,
+} from "./components/modules/WritingCharacters/writingCharactersPersistence";
+import { normalizeWritingCharacterProfiles } from "./components/modules/WritingCharacters/writingCharactersModel";
 
 
 const canEdit = (userRole) => ["owner", "editor"].includes(userRole);
@@ -125,7 +140,12 @@ const getAccessibleModules = (userRole, modulePermissions) => {
   return normalizeModuleList(ROLE_MODULES[userRole] || ALL_MODULES);
 };
 
-function App({ selectedProject, userRole, modulePermissions, user, activeWorkflow = "writing" }) {
+function App({ selectedProject, userRole, modulePermissions, user, activeWorkflow = "writing", onProjectDirty, onProjectSynced }) {
+  // onProjectDirty(source) — called when a module sync starts (project has local changes)
+  // onProjectSynced(source, timestamp) — called after successful Supabase write + touch
+  // Both are provided by AuthWrapper; default to no-ops so App works standalone in tests.
+  const markProjectDirty = onProjectDirty ?? (() => {});
+  const touchAndMark = onProjectSynced ?? (() => {});
   // Removed app render logging - causing sync loops
   // console.log("🔄 App render:", { projectId: selectedProject?.id, userRole });
   // Database-synced scenes state
@@ -166,6 +186,9 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   const initialLoadComplete = useRef(false);
   const pendingBudgetSyncRef = useRef(null);
   const budgetLockReleaseTimer = useRef(null);
+
+  // ─── Flush registry access ───────────────────────────────────────────────────
+  const { registerFlushHandler } = useModuleFlush();
 
   // Clear scroll position flags on page load/refresh
   useEffect(() => {
@@ -1040,9 +1063,11 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   }, [selectedProject?.id]);
 
   const saveScenesDatabase = async (updatedScenes) => {
+    markProjectDirty("scenes");
     syncLocks.current.scenes = true;
     console.log("🔒 Scenes sync lock ENABLED");
 
+    let syncOk = false;
     try {
       await database.saveScenesDatabase(
         selectedProject,
@@ -1051,7 +1076,9 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
         isSavingScenes,
         setIsSavingScenes
       );
+      syncOk = true;
     } finally {
+      if (syncOk) touchAndMark("scenes");
       // Delay lock release to cover the 500ms realtime debounce window plus
       // network variance — prevents the realtime handler from reloading stale
       // DB data triggered by our own write.
@@ -1063,6 +1090,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   };
 
   const syncShootingDaysToDatabase = async (updatedShootingDays) => {
+    markProjectDirty("shootingDays");
     syncLocks.current.shootingDays = true;
     console.log("🔒 Shooting days sync lock ENABLED");
 
@@ -1071,11 +1099,10 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
         selectedProject,
         updatedShootingDays
       );
-      // Release lock immediately after sync completes
       syncLocks.current.shootingDays = false;
       console.log("🔓 Shooting days sync lock RELEASED (immediate)");
+      touchAndMark("shootingDays");
     } catch (error) {
-      // Release immediately on error
       syncLocks.current.shootingDays = false;
       console.log("🔓 Shooting days sync lock RELEASED (error)");
       throw error;
@@ -1083,67 +1110,83 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   };
 
   const syncStripboardScenesToDatabase = async (updatedStripboardScenes) => {
+    markProjectDirty("stripboardScenes");
     syncLocks.current.stripboardScenes = true;
     console.log("🔒 Stripboard scenes sync lock ENABLED");
 
-    await database.syncStripboardScenesToDatabase(
-      selectedProject,
-      updatedStripboardScenes
-    );
-
-    syncLocks.current.stripboardScenes = false;
-    console.log("🔓 Stripboard scenes sync lock RELEASED");
+    try {
+      await database.syncStripboardScenesToDatabase(
+        selectedProject,
+        updatedStripboardScenes
+      );
+      touchAndMark("stripboardScenes");
+    } finally {
+      syncLocks.current.stripboardScenes = false;
+      console.log("🔓 Stripboard scenes sync lock RELEASED");
+    }
   };
 
   const syncScheduledScenesToDatabase = async (updatedScheduledScenes) => {
+    markProjectDirty("scheduledScenes");
     syncLocks.current.scheduledScenes = true;
     console.log("🔒 Scheduled scenes sync lock ENABLED");
 
-    await database.syncScheduledScenesToDatabase(
-      selectedProject,
-      updatedScheduledScenes
-    );
-
-    syncLocks.current.scheduledScenes = false;
-    console.log("🔓 Scheduled scenes sync lock RELEASED");
+    try {
+      await database.syncScheduledScenesToDatabase(
+        selectedProject,
+        updatedScheduledScenes
+      );
+      touchAndMark("scheduledScenes");
+    } finally {
+      syncLocks.current.scheduledScenes = false;
+      console.log("🔓 Scheduled scenes sync lock RELEASED");
+    }
   };
 
   const syncScriptLocationsToDatabase = async (updatedLocations) => {
+    markProjectDirty("scriptLocations");
     syncLocks.current.scriptLocations = true;
     console.log("🔒 Script locations sync lock ENABLED");
 
-    await database.syncScriptLocationsToDatabase(
-      selectedProject,
-      updatedLocations
-    );
-
-    syncLocks.current.scriptLocations = false;
-    console.log("🔓 Script locations sync lock RELEASED");
+    try {
+      await database.syncScriptLocationsToDatabase(
+        selectedProject,
+        updatedLocations
+      );
+      touchAndMark("scriptLocations");
+    } finally {
+      syncLocks.current.scriptLocations = false;
+      console.log("🔓 Script locations sync lock RELEASED");
+    }
   };
 
   const syncActualLocationsToDatabase = async (updatedLocations) => {
+    markProjectDirty("actualLocations");
     syncLocks.current.actualLocations = true;
     console.log("🔒 Actual locations sync lock ENABLED");
 
-    await database.syncActualLocationsToDatabase(
-      selectedProject,
-      updatedLocations
-    );
-
-    syncLocks.current.actualLocations = false;
-    console.log("🔓 Actual locations sync lock RELEASED");
+    try {
+      await database.syncActualLocationsToDatabase(
+        selectedProject,
+        updatedLocations
+      );
+      touchAndMark("actualLocations");
+    } finally {
+      syncLocks.current.actualLocations = false;
+      console.log("🔓 Actual locations sync lock RELEASED");
+    }
   };
 
   const syncCastCrewToDatabase = async (updatedCastCrew) => {
+    markProjectDirty("castCrew");
     syncLocks.current.castCrew = true;
     console.log("🔒 Cast/Crew sync lock ENABLED");
 
     try {
       await database.syncCastCrewToDatabase(selectedProject, updatedCastCrew);
-
-      // Release lock immediately after sync completes
       syncLocks.current.castCrew = false;
       console.log("🔓 Cast/Crew sync lock RELEASED (immediate)");
+      touchAndMark("castCrew");
     } catch (error) {
       console.error("❌ Error syncing Cast/Crew:", error);
       syncLocks.current.castCrew = false;
@@ -1152,24 +1195,29 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   };
 
   const syncCallSheetDataToDatabase = async (updatedCallSheetData) => {
+    markProjectDirty("callSheet");
     syncLocks.current.callSheet = true;
     console.log("🔒 CallSheet sync lock ENABLED");
 
+    let syncOk = false;
     try {
       await database.syncCallSheetDataToDatabase(
         selectedProject,
         updatedCallSheetData
       );
+      syncOk = true;
       console.log("✅ CallSheet sync completed");
     } catch (error) {
       console.error("❌ CallSheet sync failed:", error);
     } finally {
       syncLocks.current.callSheet = false;
       console.log("🔓 CallSheet sync lock RELEASED");
+      if (syncOk) touchAndMark("callSheet");
     }
   };
 
   const syncAllShootingDaysToDatabase = async (daysToSync = null) => {
+    markProjectDirty("shootingDays");
     syncLocks.current.shootingDays = true;
     console.log("🔒 Shooting days sync lock ENABLED");
 
@@ -1291,6 +1339,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
         uuidConvertedShootingDays
       );
       console.log("✅ Shooting days synced successfully");
+      touchAndMark("shootingDays");
     } catch (error) {
       console.error("❌ CRITICAL: Shooting days sync failed:", error);
       // Continue without throwing to prevent cascade failures
@@ -1317,14 +1366,18 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   };
 
   const syncTodoItemsToDatabase = async (updatedTodoItems) => {
+    markProjectDirty("todoItems");
     syncLocks.current.todoItems = true;
     console.log("🔒 Todo items sync lock ENABLED");
 
+    let syncOk = false;
     try {
       await database.syncTodoItemsToDatabase(selectedProject, updatedTodoItems);
+      syncOk = true;
     } finally {
       syncLocks.current.todoItems = false;
       console.log("🔓 Todo items sync lock RELEASED");
+      if (syncOk) touchAndMark("todoItems");
     }
   };
 
@@ -1342,20 +1395,30 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   };
 
   const syncProjectSettingsToDatabase = async (updatedProjectSettings) => {
-    await database.syncProjectSettingsToDatabase(
-      selectedProject,
-      updatedProjectSettings
-    );
+    markProjectDirty("projectSettings");
+    try {
+      await database.syncProjectSettingsToDatabase(
+        selectedProject,
+        updatedProjectSettings
+      );
+      touchAndMark("projectSettings");
+    } catch (err) {
+      throw err;
+    }
   };
 
   const syncCharactersToDatabase = async (updatedCharacters) => {
+    markProjectDirty("characters");
     syncLocks.current.characters = true;
     console.log("🔒 Characters sync lock ENABLED");
 
-    await database.syncCharactersToDatabase(selectedProject, updatedCharacters);
-
-    syncLocks.current.characters = false;
-    console.log("🔓 Characters sync lock RELEASED");
+    try {
+      await database.syncCharactersToDatabase(selectedProject, updatedCharacters);
+      touchAndMark("characters");
+    } finally {
+      syncLocks.current.characters = false;
+      console.log("🔓 Characters sync lock RELEASED");
+    }
   };
 
   const handleDeleteCharacter = async (characterName, updatedCharacters) => {
@@ -1387,29 +1450,37 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   };
 
   const syncWardrobeItemsToDatabase = async (updatedWardrobeItems) => {
+    markProjectDirty("wardrobeItems");
     syncLocks.current.wardrobeItems = true;
     console.log("🔒 Wardrobe sync lock ENABLED");
-    await database.syncWardrobeItemsToDatabase(
-      selectedProject,
-      updatedWardrobeItems
-    );
-    syncLocks.current.wardrobeItems = false;
-    console.log("🔓 Wardrobe sync lock RELEASED");
+
+    try {
+      await database.syncWardrobeItemsToDatabase(
+        selectedProject,
+        updatedWardrobeItems
+      );
+      touchAndMark("wardrobeItems");
+    } finally {
+      syncLocks.current.wardrobeItems = false;
+      console.log("🔓 Wardrobe sync lock RELEASED");
+    }
   };
 
   const syncGarmentInventoryToDatabase = async (updatedGarmentInventory) => {
-    // Enable sync lock
+    markProjectDirty("garmentInventory");
     syncLocks.current.garmentInventory = true;
     console.log("🔒 Garment inventory sync lock ENABLED");
 
-    await database.syncGarmentInventoryToDatabase(
-      selectedProject,
-      updatedGarmentInventory
-    );
-
-    // Release sync lock immediately
-    syncLocks.current.garmentInventory = false;
-    console.log("🔓 Garment inventory sync lock RELEASED");
+    try {
+      await database.syncGarmentInventoryToDatabase(
+        selectedProject,
+        updatedGarmentInventory
+      );
+      touchAndMark("garmentInventory");
+    } finally {
+      syncLocks.current.garmentInventory = false;
+      console.log("🔓 Garment inventory sync lock RELEASED");
+    }
   };
 
   const syncCostCategoriesToDatabase = async (updatedCostCategories) => {
@@ -1427,16 +1498,24 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   };
 
   const syncTaggedItemsToDatabase = async (updatedTaggedItems) => {
+    markProjectDirty("taggedItems");
     syncLocks.current.taggedItems = true;
     console.log("🔒 Tagged items sync lock ENABLED");
 
-    await database.syncTaggedItemsToDatabase(
-      selectedProject,
-      updatedTaggedItems
-    );
+    let syncOk = false;
+    try {
+      await database.syncTaggedItemsToDatabase(
+        selectedProject,
+        updatedTaggedItems
+      );
+      syncOk = true;
+    } catch (err) {
+      throw err;
+    }
 
     syncLocks.current.taggedItems = false;
     console.log("🔓 Tagged items sync lock RELEASED");
+    if (syncOk) touchAndMark("taggedItems");
 
     // If any realtime events arrived while locked, reload now to catch up
     if (syncLocks.current.taggedItemsMissedUpdate) {
@@ -1451,6 +1530,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   };
 
   const syncBudgetDataToDatabase = async (updatedBudgetData) => {
+    markProjectDirty("budget");
     // If a sync is already in flight, queue this data and return — the in-flight
     // sync will pick it up after it finishes.
     if (syncLocks.current.budget) {
@@ -1483,6 +1563,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
         selectedProject,
         updatedCostCats
       );
+      touchAndMark("budget");
     } finally {
       // Delay release so realtime echoes from our own writes are still suppressed
       budgetLockReleaseTimer.current = setTimeout(() => {
@@ -1631,17 +1712,21 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
     updatedShotListData,
     updatedSceneNotes
   ) => {
+    markProjectDirty("shotList");
     syncLocks.current.shotList = true;
     console.log("🔒 Shot list sync lock ENABLED");
 
-    await database.syncShotListDataToDatabase(
-      selectedProject,
-      updatedShotListData,
-      updatedSceneNotes
-    );
-
-    syncLocks.current.shotList = false;
-    console.log("🔓 Shot list sync lock RELEASED");
+    try {
+      await database.syncShotListDataToDatabase(
+        selectedProject,
+        updatedShotListData,
+        updatedSceneNotes
+      );
+      touchAndMark("shotList");
+    } finally {
+      syncLocks.current.shotList = false;
+      console.log("🔓 Shot list sync lock RELEASED");
+    }
   };
 
   const cleanupDuplicateShootingDays = async () => {
@@ -4053,6 +4138,1033 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
     return () => document.removeEventListener("keydown", handleEsc);
   }, []);
 
+  // ─── Script Breakdown / Production Scenes flush handler ──────────────────────
+  // Registered here because App.js owns scenes and taggedItems state, which are
+  // always in scope regardless of which module is currently active.
+  // ScriptBreakdownModule is only rendered when active — it cannot self-register.
+  //
+  // Strategy: verification-first. Operational saves happen inline as the user
+  // edits scenes/tags. This handler reads the current Supabase state to verify
+  // what was saved, applies the empty-overwrite guard, and builds a snapshot.
+  useEffect(() => {
+    return registerFlushHandler("scriptBreakdown", "Script Breakdown", async () => {
+      const projectId = selectedProject?.id ?? null;
+
+      const baseMetadata = {
+        moduleKey: "scriptBreakdown",
+        projectId,
+        supabaseTables: "scenes, tagged_items, script_revisions",
+        localStorageKey: null,
+      };
+
+      if (!projectId) {
+        return {
+          storage: "blocked",
+          localOnly: true,
+          blockedEmptySave: true,
+          savePhase: "blocked",
+          errorMessage: "Script Breakdown verification skipped: no project ID.",
+          message: "Script Breakdown verification skipped: no project ID.",
+          sceneCount: 0,
+          taggedItemCount: 0,
+          scriptRevisionCount: 0,
+          supabaseSceneCount: null,
+          supabaseTaggedItemCount: null,
+          metadataOnly: false,
+          ...baseMetadata,
+        };
+      }
+
+      // If scenes are not yet loaded, block the exit — do not treat an empty
+      // scenes array as legitimate loaded state. This is a hard block because
+      // we cannot distinguish "no scenes" from "scenes not loaded yet".
+      if (!scenesLoaded) {
+        return {
+          storage: "blocked",
+          localOnly: true,
+          blockedEmptySave: true,
+          blockedScriptBreakdownNotLoaded: true,
+          savePhase: "blocked",
+          errorMessage: "Blocked Script Breakdown verification: production scenes have not finished loading.",
+          message: "Blocked Script Breakdown verification: production scenes have not finished loading.",
+          sceneCount: scenes.length,
+          taggedItemCount: Object.keys(taggedItems).length,
+          scriptRevisionCount: 0,
+          supabaseSceneCount: null,
+          supabaseTaggedItemCount: null,
+          scenesLoaded: false,
+          metadataOnly: true,
+          ...baseMetadata,
+        };
+      }
+
+      // Read current Supabase state for verification and snapshot payload.
+      // This is a read-only check — no writes, no deletes.
+      try {
+        const [scenesRes, tagsRes, revisionsRes] = await Promise.all([
+          supabase
+            .from("scenes")
+            .select("id, scene_number, heading, status, manual_time_of_day, description, notes, metadata, content, page_number, page_length")
+            .eq("project_id", projectId)
+            .order("scene_number", { ascending: true }),
+          supabase
+            .from("tagged_items")
+            .select("id, category, display_name, instances, created_at")
+            .eq("project_id", projectId),
+          supabase
+            .from("script_revisions")
+            .select("id, round_number, round_name, round_color, is_pending, created_at, created_by")
+            .eq("project_id", projectId)
+            .order("created_at", { ascending: true }),
+        ]);
+
+        const scenesErr = scenesRes.error;
+        const tagsErr = tagsRes.error;
+        const revisionsErr = revisionsRes.error;
+
+        if (scenesErr) {
+          return {
+            storage: "local",
+            localOnly: true,
+            savePhase: "failed",
+            errorMessage: `Script Breakdown scenes read failed: ${scenesErr.message}`,
+            message: `Script Breakdown scenes read failed: ${scenesErr.message}`,
+            sceneCount: scenes.length,
+            taggedItemCount: Object.keys(taggedItems).length,
+            scriptRevisionCount: 0,
+            supabaseSceneCount: null,
+            supabaseTaggedItemCount: null,
+            scenesLoaded: true,
+            metadataOnly: false,
+            ...baseMetadata,
+          };
+        }
+
+        const supabaseScenes = scenesRes.data ?? [];
+        const supabaseTags = tagsErr ? [] : (tagsRes.data ?? []);
+        const supabaseRevisions = revisionsErr ? [] : (revisionsRes.data ?? []);
+
+        const supabaseSceneCount = supabaseScenes.length;
+        const supabaseTaggedItemCount = supabaseTags.length;
+        const scriptRevisionCount = supabaseRevisions.length;
+
+        const localSceneCount = scenes.length;
+        const localTaggedItemCount = Object.keys(taggedItems).length;
+
+        // ── Empty-overwrite guard: scenes ──────────────────────────────────────
+        // Local scenes state is 0 but Supabase has existing scenes — block.
+        if (localSceneCount === 0 && supabaseSceneCount > 0) {
+          return {
+            storage: "blocked",
+            localOnly: true,
+            blockedEmptySave: true,
+            blockedEmptyScriptBreakdownSave: true,
+            savePhase: "blocked",
+            errorMessage: `Blocked empty Script Breakdown save: local scenes state is 0 but Supabase has ${supabaseSceneCount} existing scene(s). Scenes may not have loaded correctly.`,
+            message: `Blocked empty Script Breakdown save: local scenes state is 0 but Supabase has ${supabaseSceneCount} existing scene(s).`,
+            sceneCount: localSceneCount,
+            taggedItemCount: localTaggedItemCount,
+            scriptRevisionCount,
+            supabaseSceneCount,
+            supabaseTaggedItemCount,
+            scenesLoaded: true,
+            metadataOnly: true,
+            ...baseMetadata,
+          };
+        }
+
+        // ── Empty-overwrite guard: tagged items ────────────────────────────────
+        // Local tagged item state is 0 but Supabase has existing tagged items.
+        // Block only the dangerous empty-local/non-empty-cloud case.
+        // Minor count mismatches (e.g. 5 local vs 6 supabase) are not blocked.
+        if (localTaggedItemCount === 0 && supabaseTaggedItemCount > 0) {
+          return {
+            storage: "blocked",
+            localOnly: true,
+            blockedEmptySave: true,
+            blockedEmptyScriptBreakdownTagsSave: true,
+            savePhase: "blocked",
+            errorMessage: `Blocked Script Breakdown verification: local tagged item state is 0 but Supabase has ${supabaseTaggedItemCount} existing tagged item(s).`,
+            message: `Blocked Script Breakdown verification: local tagged item state is 0 but Supabase has ${supabaseTaggedItemCount} existing tagged item(s).`,
+            sceneCount: localSceneCount,
+            taggedItemCount: localTaggedItemCount,
+            scriptRevisionCount,
+            supabaseSceneCount,
+            supabaseTaggedItemCount,
+            scenesLoaded: true,
+            metadataOnly: true,
+            ...baseMetadata,
+          };
+        }
+
+        // ── Legitimately empty (new project with no scenes yet) ───────────────
+        if (supabaseSceneCount === 0 && localSceneCount === 0) {
+          return {
+            storage: "database",
+            localOnly: false,
+            skipped: true,
+            savePhase: "skipped",
+            message: "Script Breakdown: no production scenes exist for this project — new project or empty.",
+            sceneCount: 0,
+            taggedItemCount: localTaggedItemCount,
+            scriptRevisionCount,
+            supabaseSceneCount: 0,
+            supabaseTaggedItemCount,
+            scenesLoaded: true,
+            metadataOnly: false,
+            ...baseMetadata,
+          };
+        }
+
+        // ── Verified — build full snapshot payload ─────────────────────────────
+        const scriptRevisionsSummary = supabaseRevisions.map((r) => ({
+          id: r.id,
+          round_number: r.round_number,
+          round_name: r.round_name,
+          round_color: r.round_color,
+          is_pending: r.is_pending,
+          created_at: r.created_at,
+        }));
+
+        return {
+          storage: "database",
+          localOnly: false,
+          skipped: false,
+          savePhase: "verified",
+          sceneCount: localSceneCount,
+          taggedItemCount: localTaggedItemCount,
+          scriptRevisionCount,
+          supabaseSceneCount,
+          supabaseTaggedItemCount,
+          scenesLoaded: true,
+          metadataOnly: false,
+          message: `Script Breakdown verified: ${supabaseSceneCount} scene(s), ${supabaseTaggedItemCount} tagged item(s), ${scriptRevisionCount} revision(s) in Supabase.`,
+          snapshotPayload: {
+            scenes: supabaseScenes,
+            taggedItems: supabaseTags,
+            scriptRevisionsSummary,
+          },
+          ...baseMetadata,
+        };
+      } catch (err) {
+        return {
+          storage: "local",
+          localOnly: true,
+          savePhase: "failed",
+          errorMessage: `Script Breakdown verification threw: ${err?.message ?? "unknown error"}`,
+          message: `Script Breakdown verification threw: ${err?.message ?? "unknown error"}`,
+          sceneCount: scenes.length,
+          taggedItemCount: Object.keys(taggedItems).length,
+          scriptRevisionCount: 0,
+          supabaseSceneCount: null,
+          supabaseTaggedItemCount: null,
+          scenesLoaded: true,
+          metadataOnly: false,
+          ...baseMetadata,
+        };
+      }
+    });
+  }, [registerFlushHandler, selectedProject?.id, scenes, taggedItems, scenesLoaded]);
+
+  // ─── Writing Script proxy flush handler ──────────────────────────────────────
+  // Always-mounted. Owns the official "writingScript" key.
+  //
+  // Strategy: explicit dual-read (Supabase + IDB) with full timestamp comparison.
+  //   1. Read Supabase directly (no IDB fallback) → supabaseDraft, supabaseSavedAt.
+  //   2. Read localStorage marker → localNodeCount, localSavedAt, indexedDbKey.
+  //   3. If marker has an indexedDbKey, load the IDB draft directly by that key.
+  //   4. Compare savedAt timestamps AND node counts to determine which is newer.
+  //   5. If local is newer and has nodes: save IDB nodes via saveWritingDraftSafely
+  //      then return verified.
+  //   6. If local is newer but IDB load fails or returns 0 nodes: blocked.
+  //   7. 0-node overwrite guard: never save 0 local nodes over non-empty Supabase.
+  //   8. If Supabase is current: verify from Supabase.
+  useEffect(() => {
+    return registerFlushHandler("writingScript", "Writing Script", async () => {
+      const projectId = selectedProject?.id || null;
+      const lsKey = projectId ? getWritingDraftStorageKey(selectedProject) : null;
+      const baseMetadata = {
+        moduleKey: "writingScript",
+        supabaseTable: "projects",
+        supabaseField: "settings.writingScriptDraft",
+        storageKey: lsKey,
+        verifier: "proxy",
+      };
+
+      if (!projectId) {
+        return {
+          storage: "blocked", localOnly: true, blockedEmptySave: true,
+          savePhase: "blocked", nodeCount: 0, hasUserCreatedScript: false,
+          snapshotPayload: null, proxyAction: "blocked-no-project-id",
+          errorMessage: "Writing Script proxy: no project ID.",
+          message: "Writing Script proxy: no project ID.",
+          ...baseMetadata,
+        };
+      }
+
+      // ── Step 1: Read localStorage marker (synchronous, no network) ────────────
+      // Marker shape: { storage:"indexedDB", savedAt, nodeCount, hasUserCreatedScript,
+      //                 indexedDbKey, projectId }
+      let localMarkerFound = false;
+      let localMarkerIndexedDbKey = null;
+      let localNodeCount = 0;
+      let localSavedAt = null;
+      try {
+        const raw = lsKey ? localStorage.getItem(lsKey) : null;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          localMarkerFound = true;
+          localNodeCount = parsed?.nodeCount ?? 0;
+          localSavedAt = parsed?.savedAt ?? null;
+          // Only trust the IDB key if the marker explicitly says it's an IDB record.
+          if (parsed?.storage === "indexedDB" && parsed?.indexedDbKey) {
+            localMarkerIndexedDbKey = parsed.indexedDbKey;
+          }
+        }
+      } catch {}
+
+      const localHasNodes = localNodeCount > 0;
+
+      try {
+        // ── Step 2: Read Supabase directly — no IDB/localStorage fallback ─────
+        const supabaseDraft = await loadWritingDraftFromDatabaseOnly(selectedProject);
+        const supabaseNodes = Array.isArray(supabaseDraft?.nodes) ? supabaseDraft.nodes : [];
+        const supabaseNodeCount = supabaseNodes.length;
+        const supabaseSavedAt = supabaseDraft?.savedAt ?? null;
+        const supabaseHasUserCreatedScript = supabaseDraft?.hasUserCreatedScript === true;
+
+        // ── Step 3: Determine if local IDB draft is newer than Supabase ───────
+        // Comparison priority:
+        //   (a) savedAt timestamps if both present — more precise.
+        //   (b) local nodeCount > 0 and Supabase empty — definitive.
+        //   (c) local nodeCount != Supabase nodeCount and local savedAt newer — suspicious.
+        // "localIsNewer" is true when local evidence says IDB has changes not in Supabase.
+        let localIsNewer = false;
+        if (localHasNodes) {
+          if (localSavedAt && supabaseSavedAt) {
+            // Both timestamps present — compare directly.
+            localIsNewer = localSavedAt > supabaseSavedAt;
+          } else if (localSavedAt && !supabaseSavedAt) {
+            // Local has a timestamp, Supabase has none — local is newer.
+            localIsNewer = true;
+          } else if (supabaseNodeCount === 0) {
+            // No timestamps but Supabase is empty and local has nodes.
+            localIsNewer = true;
+          } else if (localNodeCount !== supabaseNodeCount && !supabaseSavedAt) {
+            // Counts differ and no Supabase timestamp to compare — treat as stale risk.
+            localIsNewer = true;
+          }
+          // If Supabase has the same or newer savedAt and non-zero nodes,
+          // treat Supabase as current even if counts differ (content may be same).
+        }
+        const staleLocalRisk = localHasNodes && localIsNewer;
+
+        const diagnostics = {
+          localMirrorFound: localMarkerFound,
+          localMirrorMeaningful: localHasNodes,
+          localNodeCount,
+          localSavedAt,
+          supabaseSavedAt,
+          supabaseNodeCount,
+          localIsNewer,
+          staleLocalRisk,
+        };
+
+        // ── Step 4: Handle stale-local risk ───────────────────────────────────
+        if (staleLocalRisk) {
+          if (!localMarkerIndexedDbKey) {
+            // Marker exists but has no IDB key — cannot load the local draft.
+            return {
+              storage: "blocked", localOnly: true, blockedEmptySave: false,
+              savePhase: "blocked", nodeCount: supabaseNodeCount,
+              hasUserCreatedScript: supabaseHasUserCreatedScript,
+              snapshotPayload: null,
+              proxyAction: "blocked-stale-local-risk",
+              errorMessage: "Writing Script proxy: local marker appears newer than Supabase but has no IDB key — cannot safely verify. Open Writing Script and retry.",
+              message: "Writing Script proxy: local marker newer but no IDB key.",
+              ...diagnostics, ...baseMetadata,
+            };
+          }
+
+          // Load the IDB draft using the explicit key from the marker.
+          const idbDraft = await loadWritingDraftFromIndexedDbByKey(selectedProject, localMarkerIndexedDbKey);
+          const idbNodes = Array.isArray(idbDraft?.nodes) ? idbDraft.nodes : [];
+          const idbNodeCount = idbNodes.length;
+          const idbHasUserCreatedScript = idbDraft?.hasUserCreatedScript === true;
+
+          // Update diagnostics with actual IDB node count (marker had an estimate).
+          const fullDiagnostics = { ...diagnostics, idbNodeCount };
+
+          if (idbNodeCount === 0) {
+            // Marker said there were nodes but IDB returned nothing.
+            // This can happen if the IDB record was never written or was cleared.
+            // If Supabase has nodes, verify those. If Supabase empty, blocked.
+            if (supabaseNodeCount > 0) {
+              const snapshotPayload = {
+                projectId: supabaseDraft.projectId || projectId,
+                savedAt: supabaseSavedAt || new Date().toISOString(),
+                hasUserCreatedScript: supabaseHasUserCreatedScript,
+                nodes: supabaseNodes,
+              };
+              return {
+                storage: "database", localOnly: false, skipped: false,
+                savePhase: "verified", nodeCount: supabaseNodeCount,
+                hasUserCreatedScript: supabaseHasUserCreatedScript,
+                snapshotPayload,
+                proxyAction: "verify-only",
+                message: `Writing Script proxy: local marker empty after IDB load; Supabase non-empty draft preserved (${supabaseNodeCount} nodes).`,
+                ...fullDiagnostics, ...baseMetadata,
+              };
+            }
+            return {
+              storage: "blocked", localOnly: true, blockedEmptySave: true,
+              savePhase: "blocked", nodeCount: 0, hasUserCreatedScript: false,
+              snapshotPayload: null,
+              proxyAction: "blocked-stale-local-risk",
+              errorMessage: "Writing Script proxy: local marker shows nodes but IDB record is empty — cannot safely verify.",
+              message: "Writing Script proxy: local marker shows nodes but IDB returned 0.",
+              ...fullDiagnostics, ...baseMetadata,
+            };
+          }
+
+          // 0-node overwrite guard: never save 0 IDB nodes over non-empty Supabase.
+          // (idbNodeCount > 0 here, so this guard is already satisfied — kept for clarity.)
+
+          // Save IDB nodes to Supabase.
+          const saveResult = await saveWritingDraftSafely(selectedProject, idbNodes);
+          const savedPayload = saveResult?.payload;
+          const savedToDb = saveResult?.storage === "database";
+
+          if (!savedToDb) {
+            return {
+              storage: "local", localOnly: true, savePhase: "failed",
+              nodeCount: idbNodeCount, hasUserCreatedScript: idbHasUserCreatedScript,
+              snapshotPayload: savedPayload ?? null,
+              proxyAction: "save-then-verify", proxySavedLocalToSupabase: false,
+              errorMessage: `Writing Script proxy: IDB→Supabase save failed (storage: ${saveResult?.storage}). ${saveResult?.databaseError?.message || ""}`.trim(),
+              message: "Writing Script proxy: IDB→Supabase save failed.",
+              ...fullDiagnostics, ...baseMetadata,
+            };
+          }
+
+          return {
+            storage: "database", localOnly: false, skipped: false,
+            savePhase: "verified", nodeCount: idbNodeCount,
+            hasUserCreatedScript: idbHasUserCreatedScript,
+            snapshotPayload: savedPayload ?? null,
+            proxyAction: "save-then-verify", proxySavedLocalToSupabase: true,
+            message: `Writing Script proxy: saved ${idbNodeCount} IDB node(s) to Supabase (was ${supabaseNodeCount} in Supabase).`,
+            ...fullDiagnostics, ...baseMetadata,
+          };
+        }
+
+        // ── Step 5: Supabase is current — verify from it ─────────────────────
+        // Special case: local marker exists and is empty, Supabase is non-empty.
+        const localEmptySupabaseNonEmpty = localMarkerFound && localNodeCount === 0 && supabaseNodeCount > 0;
+
+        if (supabaseNodeCount === 0) {
+          return {
+            storage: "database", localOnly: false, skipped: true,
+            savePhase: "skipped", nodeCount: 0, hasUserCreatedScript: false,
+            snapshotPayload: null,
+            proxyAction: "verify-only",
+            message: "Writing Script proxy: no draft found — legitimately empty or new project.",
+            ...diagnostics, ...baseMetadata,
+          };
+        }
+
+        const snapshotPayload = {
+          projectId: supabaseDraft.projectId || projectId,
+          savedAt: supabaseSavedAt || new Date().toISOString(),
+          hasUserCreatedScript: supabaseHasUserCreatedScript,
+          nodes: supabaseNodes,
+        };
+
+        return {
+          storage: "database", localOnly: false, skipped: false,
+          savePhase: "verified", nodeCount: supabaseNodeCount,
+          hasUserCreatedScript: supabaseHasUserCreatedScript,
+          snapshotPayload,
+          proxyAction: "verify-only",
+          message: localEmptySupabaseNonEmpty
+            ? `Writing Script proxy: local marker was empty; Supabase non-empty draft preserved (${supabaseNodeCount} nodes).`
+            : `Writing Script proxy verified: ${supabaseNodeCount} node(s) in Supabase.`,
+          ...diagnostics, ...baseMetadata,
+        };
+      } catch (err) {
+        return {
+          storage: "local", localOnly: true, savePhase: "failed",
+          nodeCount: 0, hasUserCreatedScript: false, snapshotPayload: null,
+          proxyAction: "blocked-stale-local-risk",
+          localMirrorFound: localMarkerFound,
+          localMirrorMeaningful: localHasNodes,
+          localNodeCount, localSavedAt,
+          errorMessage: `Writing Script proxy read failed: ${err?.message || "unknown error"}`,
+          message: `Writing Script proxy read failed: ${err?.message || "unknown error"}`,
+          ...baseMetadata,
+        };
+      }
+    });
+  }, [registerFlushHandler, selectedProject?.id, selectedProject?.name]);
+
+  // ─── MoodBoard proxy flush handler ───────────────────────────────────────────
+  // Always-mounted. Owns the official "moodBoard" key.
+  //
+  // Strategy: save-then-verify when local mirror is meaningful and newer than Supabase.
+  //   1. Read Supabase moodboard_data (with updated_at).
+  //   2. Read localStorage mirror (has savedAt on every state change).
+  //   3. If local savedAt > Supabase updated_at AND local has meaningful data:
+  //      upsert local mirror to Supabase (same shape as operational save), then verify.
+  //   4. Never overwrite meaningful Supabase with empty/default local data.
+  //   5. If comparison is impossible, block.
+  useEffect(() => {
+    return registerFlushHandler("moodBoard", "MoodBoard", async () => {
+      const projectId = selectedProject?.id || null;
+      const lsKey = projectId ? `filmProductionBinder:moodboard:${projectId}` : null;
+      const baseMetadata = {
+        moduleKey: "moodBoard",
+        localStorageKey: lsKey,
+        supabaseTable: "moodboard_data",
+        supabaseFields: ["project_id", "active_board_id", "boards", "links", "images", "canvas_items", "zoom", "show_grid", "updated_at"],
+        verifier: "proxy",
+      };
+
+      if (!projectId) {
+        return {
+          storage: "blocked", localOnly: true, blockedEmptySave: true,
+          savePhase: "blocked", boardCount: 0, imageCount: 0, linkCount: 0,
+          canvasItemCount: 0, hasMeaningfulData: false, snapshotPayload: null,
+          proxyAction: "blocked-no-project-id",
+          errorMessage: "MoodBoard proxy: no project ID.",
+          message: "MoodBoard proxy: no project ID.",
+          ...baseMetadata,
+        };
+      }
+
+      // Read localStorage mirror synchronously — always written on every state change
+      // before the 2-second debounce fires to Supabase.
+      let localData = null;
+      let localMirrorFound = false;
+      let localMirrorMeaningful = false;
+      let localSavedAt = null;
+      try {
+        const raw = lsKey ? localStorage.getItem(lsKey) : null;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          localMirrorFound = true;
+          localData = parsed;
+          localSavedAt = parsed?.savedAt ?? null;
+          const lBoardCount = Array.isArray(parsed?.boards) ? parsed.boards.length : 0;
+          const lImageCount = Array.isArray(parsed?.images) ? parsed.images.length : 0;
+          const lLinkCount = Array.isArray(parsed?.links) ? parsed.links.length : 0;
+          const lCanvasCount = Array.isArray(parsed?.canvasItems) ? parsed.canvasItems.length : 0;
+          localMirrorMeaningful = lBoardCount > 1 || lImageCount > 0 || lLinkCount > 0 || lCanvasCount > 0;
+        }
+      } catch {}
+
+      try {
+        // Always include updated_at so we can compare timestamps.
+        const { data, error } = await supabase
+          .from("moodboard_data")
+          .select("active_board_id, boards, links, images, canvas_items, zoom, show_grid, updated_at")
+          .eq("project_id", projectId)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        const supabaseUpdatedAt = data?.updated_at ?? null;
+        const localIsNewer = localSavedAt && supabaseUpdatedAt
+          ? localSavedAt > supabaseUpdatedAt
+          : (localSavedAt && !supabaseUpdatedAt); // local exists, Supabase has no timestamp
+
+        const diagnostics = {
+          localMirrorFound,
+          localMirrorMeaningful,
+          localSavedAt,
+          supabaseUpdatedAt,
+          localIsNewer,
+          staleLocalRisk: localMirrorMeaningful && localIsNewer,
+        };
+
+        // Case A: No Supabase row at all.
+        if (!data) {
+          // If local has meaningful data, save it first (debounce never fired for a new project).
+          if (localMirrorMeaningful && localData) {
+            const savedAt = new Date().toISOString();
+            const { error: upsertErr } = await supabase.from("moodboard_data").upsert({
+              project_id: projectId,
+              active_board_id: localData.activeBoardId ?? null,
+              boards: localData.boards ?? [],
+              links: localData.links ?? [],
+              images: localData.images ?? [],
+              canvas_items: localData.canvasItems ?? [],
+              zoom: localData.zoom ?? 0.65,
+              show_grid: localData.showGrid ?? true,
+              updated_at: savedAt,
+            }, { onConflict: "project_id" });
+
+            if (upsertErr) throw upsertErr;
+
+            const bCount = Array.isArray(localData.boards) ? localData.boards.length : 0;
+            const iCount = Array.isArray(localData.images) ? localData.images.length : 0;
+            const lCount = Array.isArray(localData.links) ? localData.links.length : 0;
+            const cCount = Array.isArray(localData.canvasItems) ? localData.canvasItems.length : 0;
+            return {
+              storage: "database", localOnly: false, skipped: false,
+              savePhase: "verified", boardCount: bCount, imageCount: iCount,
+              linkCount: lCount, canvasItemCount: cCount, hasMeaningfulData: true,
+              proxyAction: "save-then-verify", proxySavedLocalToSupabase: true,
+              snapshotPayload: {
+                active_board_id: localData.activeBoardId ?? null,
+                boards: localData.boards ?? [],
+                links: localData.links ?? [],
+                images: localData.images ?? [],
+                canvas_items: localData.canvasItems ?? [],
+                zoom: localData.zoom ?? 0.65,
+                show_grid: localData.showGrid ?? true,
+              },
+              message: `MoodBoard proxy: saved local mirror to Supabase (${bCount} board(s), ${iCount} image(s)) — no prior Supabase row.`,
+              ...diagnostics, ...baseMetadata,
+            };
+          }
+
+          return {
+            storage: "database", localOnly: false, skipped: true,
+            savePhase: "skipped", boardCount: 0, imageCount: 0, linkCount: 0,
+            canvasItemCount: 0, hasMeaningfulData: false, snapshotPayload: null,
+            proxyAction: "verify-only",
+            message: "MoodBoard proxy: no Supabase row and no meaningful local data — legitimately empty.",
+            ...diagnostics, ...baseMetadata,
+          };
+        }
+
+        const boardCount = Array.isArray(data.boards) ? data.boards.length : 0;
+        const imageCount = Array.isArray(data.images) ? data.images.length : 0;
+        const linkCount = Array.isArray(data.links) ? data.links.length : 0;
+        const canvasItemCount = Array.isArray(data.canvas_items) ? data.canvas_items.length : 0;
+        const hasMeaningfulData = boardCount > 1 || imageCount > 0 || linkCount > 0 || canvasItemCount > 0;
+
+        // Case B: Supabase row exists. Check whether local mirror is meaningfully newer.
+        if (localMirrorMeaningful && localIsNewer && localData) {
+          // Local savedAt is newer than Supabase updated_at — debounce may not have fired.
+          // Upsert local mirror to Supabase (never overwrite non-empty Supabase with empty local).
+          const lBoardCount = Array.isArray(localData.boards) ? localData.boards.length : 0;
+          const lImageCount = Array.isArray(localData.images) ? localData.images.length : 0;
+          const lLinkCount = Array.isArray(localData.links) ? localData.links.length : 0;
+          const lCanvasCount = Array.isArray(localData.canvasItems) ? localData.canvasItems.length : 0;
+          const localHasMeaningful = lBoardCount > 1 || lImageCount > 0 || lLinkCount > 0 || lCanvasCount > 0;
+
+          // Empty-overwrite guard: do not replace meaningful Supabase with empty local.
+          if (!localHasMeaningful && hasMeaningfulData) {
+            return {
+              storage: "blocked", localOnly: true, blockedEmptySave: false,
+              savePhase: "blocked", boardCount, imageCount, linkCount, canvasItemCount,
+              hasMeaningfulData, snapshotPayload: null,
+              proxyAction: "blocked-stale-local-risk",
+              errorMessage: "MoodBoard proxy: local mirror appears newer but has no meaningful data — blocked to avoid overwriting Supabase data.",
+              message: "MoodBoard proxy: local mirror is newer but empty — blocked.",
+              ...diagnostics, ...baseMetadata,
+            };
+          }
+
+          const savedAt = new Date().toISOString();
+          const { error: upsertErr } = await supabase.from("moodboard_data").upsert({
+            project_id: projectId,
+            active_board_id: localData.activeBoardId ?? data.active_board_id,
+            boards: localData.boards ?? data.boards,
+            links: localData.links ?? data.links,
+            images: localData.images ?? data.images,
+            canvas_items: localData.canvasItems ?? data.canvas_items,
+            zoom: localData.zoom ?? data.zoom,
+            show_grid: localData.showGrid ?? data.show_grid,
+            updated_at: savedAt,
+          }, { onConflict: "project_id" });
+
+          if (upsertErr) throw upsertErr;
+
+          return {
+            storage: "database", localOnly: false, skipped: false,
+            savePhase: "verified", boardCount: lBoardCount, imageCount: lImageCount,
+            linkCount: lLinkCount, canvasItemCount: lCanvasCount,
+            hasMeaningfulData: localHasMeaningful,
+            proxyAction: "save-then-verify", proxySavedLocalToSupabase: true,
+            snapshotPayload: {
+              active_board_id: localData.activeBoardId ?? data.active_board_id,
+              boards: localData.boards ?? data.boards,
+              links: localData.links ?? data.links,
+              images: localData.images ?? data.images,
+              canvas_items: localData.canvasItems ?? data.canvas_items,
+              zoom: localData.zoom ?? data.zoom,
+              show_grid: localData.showGrid ?? data.show_grid,
+            },
+            message: `MoodBoard proxy: local mirror newer than Supabase — saved ${lBoardCount} board(s), ${lImageCount} image(s) to Supabase.`,
+            ...diagnostics, ...baseMetadata,
+          };
+        }
+
+        // Case C: Supabase is current (or no stale-local risk). Verify from Supabase.
+        if (!hasMeaningfulData) {
+          return {
+            storage: "database", localOnly: false, skipped: true,
+            savePhase: "skipped", boardCount, imageCount, linkCount, canvasItemCount,
+            hasMeaningfulData: false, snapshotPayload: null,
+            proxyAction: "verify-only",
+            message: "MoodBoard proxy: Supabase row exists but empty — skipped.",
+            ...diagnostics, ...baseMetadata,
+          };
+        }
+
+        return {
+          storage: "database", localOnly: false, skipped: false,
+          savePhase: "verified", boardCount, imageCount, linkCount, canvasItemCount,
+          hasMeaningfulData: true,
+          proxyAction: "verify-only",
+          snapshotPayload: {
+            active_board_id: data.active_board_id,
+            boards: data.boards, links: data.links,
+            images: data.images, canvas_items: data.canvas_items,
+            zoom: data.zoom, show_grid: data.show_grid,
+          },
+          message: `MoodBoard proxy verified: ${boardCount} board(s), ${imageCount} image(s), ${linkCount} link(s), ${canvasItemCount} canvas item(s) in Supabase.`,
+          ...diagnostics, ...baseMetadata,
+        };
+      } catch (err) {
+        return {
+          storage: "local", localOnly: true, savePhase: "failed",
+          boardCount: 0, imageCount: 0, linkCount: 0, canvasItemCount: 0,
+          hasMeaningfulData: false, snapshotPayload: null,
+          proxyAction: "blocked-stale-local-risk",
+          localMirrorFound, localMirrorMeaningful, localSavedAt,
+          errorMessage: `MoodBoard proxy failed: ${err?.message || "unknown error"}`,
+          message: `MoodBoard proxy failed: ${err?.message || "unknown error"}`,
+          ...baseMetadata,
+        };
+      }
+    });
+  }, [registerFlushHandler, selectedProject?.id]);
+
+  // ─── Writing Characters proxy flush handler ───────────────────────────────────
+  // Always-mounted. Owns the official "writingCharacters" key.
+  //
+  // Strategy: save-then-verify when local mirror is meaningfully newer than Supabase.
+  //   1. Read Supabase projects.settings.writingCharacterProfiles (via existing helper).
+  //   2. Read localStorage mirror (has savedAt embedded in the profiles object).
+  //   3. If local savedAt > Supabase savedAt AND local has meaningful profiles:
+  //      call saveWritingCharacterProfilesAsync then verify.
+  //   4. Never save empty profiles over known non-empty Supabase profiles.
+  useEffect(() => {
+    return registerFlushHandler("writingCharacters", "Writing Characters", async () => {
+      const projectId = selectedProject?.id || null;
+      const lsKey = getWritingCharactersStorageKey(selectedProject);
+      const baseMetadata = {
+        moduleKey: "writingCharacters",
+        localStorageKey: lsKey,
+        supabaseTable: "projects",
+        supabaseField: `settings.${WRITING_CHARACTER_PROFILES_SETTINGS_KEY}`,
+        verifier: "proxy",
+      };
+
+      if (!projectId) {
+        return {
+          storage: "blocked", localOnly: true, blockedEmptySave: true,
+          savePhase: "blocked", profileCount: 0, aliasCount: 0,
+          mergeHistoryCount: 0, ignoredSuggestionCount: 0, resolutionCount: 0,
+          sceneSuppressionCount: 0, consumedSignalCount: 0,
+          hasMeaningfulData: false, snapshotPayload: null,
+          proxyAction: "blocked-no-project-id",
+          errorMessage: "Writing Characters proxy: no project ID.",
+          message: "Writing Characters proxy: no project ID.",
+          ...baseMetadata,
+        };
+      }
+
+      // Read localStorage mirror synchronously — written by saveWritingCharacterProfilesAsync
+      // after every save (Supabase-first, localStorage mirrors on success).
+      let localProfiles = null;
+      let localMirrorFound = false;
+      let localMirrorMeaningful = false;
+      let localSavedAt = null;
+      try {
+        const raw = localStorage.getItem(lsKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          localMirrorFound = true;
+          const normalized = normalizeWritingCharacterProfiles(parsed);
+          localSavedAt = normalized.savedAt ?? null;
+          const lProfileCount = Object.keys(normalized.profiles || {}).length;
+          const lIgnoredCount = (normalized.ignoredSuggestions || []).length;
+          const lMergeCount = Object.values(normalized.profiles || {})
+            .reduce((s, p) => s + (p.mergeHistory?.length || 0), 0);
+          localMirrorMeaningful = lProfileCount > 0 || lIgnoredCount > 0 || lMergeCount > 0;
+          localProfiles = normalized;
+        }
+      } catch {}
+
+      try {
+        // Supabase-first load (existing helper).
+        const { data: rawData, storage: loadStorage } = await loadWritingCharacterProfilesAsync(selectedProject);
+        const supabaseProfiles = normalizeWritingCharacterProfiles(rawData);
+        const supabaseSavedAt = supabaseProfiles.savedAt ?? null;
+
+        const localIsNewer = localSavedAt && supabaseSavedAt
+          ? localSavedAt > supabaseSavedAt
+          : (localSavedAt && !supabaseSavedAt);
+        const staleLocalRisk = localMirrorMeaningful && localIsNewer;
+
+        const profileCount = Object.keys(supabaseProfiles.profiles || {}).length;
+        const aliasCount = Object.values(supabaseProfiles.profiles || {})
+          .reduce((s, p) => s + (p.aliases?.length || 0), 0);
+        const mergeHistoryCount = Object.values(supabaseProfiles.profiles || {})
+          .reduce((s, p) => s + (p.mergeHistory?.length || 0), 0);
+        const ignoredSuggestionCount = (supabaseProfiles.ignoredSuggestions || []).length;
+        const resolutionCount = Object.keys(supabaseProfiles.resolution || {}).length;
+        const sceneSuppressionCount = Object.keys(supabaseProfiles.sceneSuppresssions || {}).length;
+        const consumedSignalCount = Object.keys(supabaseProfiles.consumedScriptImportSignals || {}).length;
+        const hasMeaningfulData = profileCount > 0 || aliasCount > 0 || mergeHistoryCount > 0
+          || ignoredSuggestionCount > 0 || resolutionCount > 0 || sceneSuppressionCount > 0;
+
+        const supabaseCounts = {
+          profileCount, aliasCount, mergeHistoryCount, ignoredSuggestionCount,
+          resolutionCount, sceneSuppressionCount, consumedSignalCount,
+          proxyLoadStatus: loadStorage,
+        };
+
+        const diagnostics = {
+          localMirrorFound, localMirrorMeaningful, localSavedAt,
+          supabaseSavedAt, localIsNewer, staleLocalRisk,
+        };
+
+        // Stale-local risk: local is newer and meaningful.
+        if (staleLocalRisk && localProfiles) {
+          const lProfileCount = Object.keys(localProfiles.profiles || {}).length;
+          const lIgnoredCount = (localProfiles.ignoredSuggestions || []).length;
+          const lMergeCount = Object.values(localProfiles.profiles || {})
+            .reduce((s, p) => s + (p.mergeHistory?.length || 0), 0);
+
+          // Empty-overwrite guard: never save 0-profile local over non-empty Supabase.
+          if (lProfileCount === 0 && profileCount > 0) {
+            return {
+              storage: "blocked", localOnly: true, blockedEmptySave: true,
+              savePhase: "blocked", hasMeaningfulData, snapshotPayload: null,
+              proxyAction: "blocked-stale-local-risk",
+              errorMessage: "Writing Characters proxy: local mirror is newer but has 0 profiles — blocked to avoid overwriting Supabase profiles.",
+              message: "Writing Characters proxy: local mirror newer but empty — blocked.",
+              ...supabaseCounts, ...diagnostics, ...baseMetadata,
+            };
+          }
+
+          // Save local mirror to Supabase.
+          const saveResult = await saveWritingCharacterProfilesAsync(selectedProject, localProfiles);
+          const savedToDb = saveResult?.storage === "database";
+
+          if (!savedToDb) {
+            return {
+              storage: "local", localOnly: true, savePhase: "failed",
+              hasMeaningfulData: true, snapshotPayload: null,
+              proxyAction: "save-then-verify", proxySavedLocalToSupabase: false,
+              errorMessage: `Writing Characters proxy: local→Supabase save failed. ${saveResult?.databaseError?.message || ""}`,
+              message: "Writing Characters proxy: local save to Supabase failed.",
+              profileCount: lProfileCount, aliasCount, mergeHistoryCount: lMergeCount,
+              ignoredSuggestionCount: lIgnoredCount,
+              resolutionCount, sceneSuppressionCount, consumedSignalCount,
+              proxyLoadStatus: loadStorage,
+              ...diagnostics, ...baseMetadata,
+            };
+          }
+
+          // Proxy save reached Supabase — touch the project-level sync marker so the
+          // exit timestamp comparison can see this write.
+          touchAndMark("writingCharacters");
+
+          return {
+            storage: "database", localOnly: false, skipped: false,
+            savePhase: "verified", hasMeaningfulData: true,
+            snapshotPayload: { writingCharacterProfiles: localProfiles },
+            proxyAction: "save-then-verify", proxySavedLocalToSupabase: true,
+            message: `Writing Characters proxy: saved local mirror (${lProfileCount} profile(s), ${lIgnoredCount} ignored) to Supabase.`,
+            profileCount: lProfileCount, aliasCount, mergeHistoryCount: lMergeCount,
+            ignoredSuggestionCount: lIgnoredCount,
+            resolutionCount, sceneSuppressionCount, consumedSignalCount,
+            proxyLoadStatus: loadStorage,
+            ...diagnostics, ...baseMetadata,
+          };
+        }
+
+        // No stale-local risk — verify from Supabase.
+        if (!hasMeaningfulData) {
+          return {
+            storage: "database", localOnly: false, skipped: true,
+            savePhase: "skipped", hasMeaningfulData: false, snapshotPayload: null,
+            proxyAction: "verify-only",
+            message: "Writing Characters proxy: Supabase has no profiles — legitimately empty or new project.",
+            ...supabaseCounts, ...diagnostics, ...baseMetadata,
+          };
+        }
+
+        return {
+          storage: "database", localOnly: false, skipped: false,
+          savePhase: "verified", hasMeaningfulData: true,
+          snapshotPayload: { writingCharacterProfiles: supabaseProfiles },
+          proxyAction: "verify-only",
+          message: `Writing Characters proxy verified: ${profileCount} profile(s), ${ignoredSuggestionCount} ignored, ${mergeHistoryCount} merge(s) in Supabase.`,
+          ...supabaseCounts, ...diagnostics, ...baseMetadata,
+        };
+      } catch (err) {
+        return {
+          storage: "local", localOnly: true, savePhase: "failed",
+          profileCount: 0, aliasCount: 0, mergeHistoryCount: 0,
+          ignoredSuggestionCount: 0, resolutionCount: 0, sceneSuppressionCount: 0,
+          consumedSignalCount: 0, hasMeaningfulData: false, snapshotPayload: null,
+          proxyAction: "blocked-stale-local-risk",
+          localMirrorFound, localMirrorMeaningful, localSavedAt,
+          errorMessage: `Writing Characters proxy read failed: ${err?.message || "unknown error"}`,
+          message: `Writing Characters proxy read failed: ${err?.message || "unknown error"}`,
+          ...baseMetadata,
+        };
+      }
+    });
+  }, [registerFlushHandler, selectedProject?.id, selectedProject?.name]);
+
+  // ─── Production Characters proxy flush handler ────────────────────────────────
+  // Always-mounted. Owns the official "characters" key.
+  //
+  // READ-ONLY VERIFICATION — does not write to Supabase, does not call
+  // syncCharactersToDatabase, sync_characters RPC, or upsertCharacter.
+  //
+  // Production Characters sync immediately on every edit (no debounce). By the
+  // time Save/Return fires, Supabase is expected to already be current. This
+  // handler verifies that and snapshots the result.
+  //
+  // Strict 4-case matrix:
+  //   local 0 / Supabase 0   → skipped (legitimately empty)
+  //   local 0 / Supabase > 0 → blocked (empty-overwrite guard)
+  //   local > 0 / Supabase 0 → blocked (Supabase behind — sync failure during session)
+  //   local > 0 / Supabase > 0, counts match → verified + snapshot
+  //   local > 0 / Supabase > 0, counts differ → blocked (state divergence)
+  useEffect(() => {
+    return registerFlushHandler("characters", "Characters", async () => {
+      const projectId = selectedProject?.id || null;
+      const baseMetadata = {
+        moduleKey: "characters",
+        supabaseTable: "characters",
+        verifier: "proxy-read-only",
+      };
+
+      if (!projectId) {
+        return {
+          storage: "blocked", localOnly: true, blockedEmptySave: true,
+          savePhase: "blocked", localCharacterCount: 0, supabaseCharacterCount: 0,
+          hasMeaningfulData: false, snapshotPayload: null,
+          proxyAction: "blocked-no-project-id",
+          errorMessage: "Characters proxy: no project ID.",
+          message: "Characters proxy: no project ID.",
+          ...baseMetadata,
+        };
+      }
+
+      const localCharacterCount = Object.keys(characters || {}).length;
+
+      try {
+        // Read-only Supabase read — verified columns only (no schema inference).
+        const { data: rows, error } = await supabase
+          .from("characters")
+          .select("name, scenes, scene_ids, chronological_number")
+          .eq("project_id", projectId);
+
+        if (error) throw error;
+
+        const supabaseCharacterCount = (rows || []).length;
+
+        // Case 1: both empty — legitimately empty project.
+        if (localCharacterCount === 0 && supabaseCharacterCount === 0) {
+          return {
+            status: "skipped", storage: "database", localOnly: false,
+            skipped: true, savePhase: "verified",
+            localCharacterCount: 0, supabaseCharacterCount: 0,
+            hasMeaningfulData: false, snapshotPayload: null,
+            proxyAction: "skipped-empty",
+            message: "Characters proxy: no production characters — legitimately empty.",
+            ...baseMetadata,
+          };
+        }
+
+        // Case 2: local empty, Supabase has rows — empty-overwrite guard.
+        if (localCharacterCount === 0 && supabaseCharacterCount > 0) {
+          return {
+            storage: "blocked", localOnly: true, blockedEmptySave: true,
+            blockedEmptyCharactersSave: true,
+            savePhase: "blocked",
+            localCharacterCount: 0,
+            supabaseCharacterCount,
+            hasMeaningfulData: false, snapshotPayload: null,
+            proxyAction: "blocked-local-empty",
+            errorMessage: `Blocked: local production characters state is empty but Supabase has ${supabaseCharacterCount} existing row(s). Sync may have failed on load.`,
+            message: "Characters proxy: local empty but Supabase non-empty — blocked.",
+            ...baseMetadata,
+          };
+        }
+
+        // Case 3: local has rows, Supabase empty — sync failure during session.
+        if (localCharacterCount > 0 && supabaseCharacterCount === 0) {
+          return {
+            storage: "blocked", localOnly: true, blockedEmptySave: false,
+            blockedEmptyCharactersSave: false,
+            savePhase: "blocked",
+            localCharacterCount,
+            supabaseCharacterCount: 0,
+            hasMeaningfulData: true, snapshotPayload: null,
+            proxyAction: "blocked-supabase-empty",
+            errorMessage: `Blocked: local state has ${localCharacterCount} production character(s) but Supabase has 0. One or more in-session syncs may have failed. Open the Characters module and retry.`,
+            message: "Characters proxy: local non-empty but Supabase empty — blocked.",
+            ...baseMetadata,
+          };
+        }
+
+        // Case 4a: counts match — verified.
+        if (localCharacterCount === supabaseCharacterCount) {
+          return {
+            status: "success", storage: "database", localOnly: false,
+            savePhase: "verified",
+            localCharacterCount,
+            supabaseCharacterCount,
+            hasMeaningfulData: true,
+            snapshotPayload: { characters: rows },
+            proxyAction: "verify-only",
+            message: `Characters proxy verified: ${supabaseCharacterCount} character(s) in Supabase match local state.`,
+            ...baseMetadata,
+          };
+        }
+
+        // Case 4b: both non-empty but counts differ — state divergence, block.
+        return {
+          storage: "blocked", localOnly: false, blockedEmptySave: false,
+          savePhase: "blocked",
+          localCharacterCount,
+          supabaseCharacterCount,
+          hasMeaningfulData: true, snapshotPayload: null,
+          proxyAction: "blocked-count-mismatch",
+          errorMessage: `Blocked: local state has ${localCharacterCount} character(s) but Supabase has ${supabaseCharacterCount}. Counts must match before exit. An in-session character add/delete may not have synced.`,
+          message: "Characters proxy: local/Supabase count mismatch — blocked.",
+          ...baseMetadata,
+        };
+
+      } catch (err) {
+        return {
+          storage: "blocked", localOnly: true, blockedEmptySave: false,
+          savePhase: "blocked",
+          localCharacterCount,
+          supabaseCharacterCount: null,
+          hasMeaningfulData: localCharacterCount > 0,
+          snapshotPayload: null,
+          proxyAction: "blocked-read-error",
+          errorMessage: `Characters proxy read failed: ${err?.message || "unknown error"}`,
+          message: `Characters proxy read failed: ${err?.message || "unknown error"}`,
+          ...baseMetadata,
+        };
+      }
+    });
+  }, [registerFlushHandler, selectedProject?.id, selectedProject?.name, characters]);
+
   const renderSharedMoodBoardModule = () => (
     <MoodBoard
       selectedProject={selectedProject}
@@ -4718,57 +5830,81 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
               </span>
             </button>
             <button
-              disabled
-              title="Coming soon"
+              onClick={() => setWritingActiveModule("Characters")}
               style={{
                 margin: "5px 0",
                 padding: "8px 4px",
-                backgroundColor: "transparent",
+                backgroundColor: writingActiveModule === "Characters" ? "#ddd" : "transparent",
                 border: "1px solid #ccc",
-                cursor: "not-allowed",
+                cursor: "pointer",
                 fontWeight: "normal",
                 fontSize: "11px",
                 width: "100px",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
-                opacity: 0.45,
               }}
             >
-              Characters
+              <span style={{ fontWeight: writingActiveModule === "Characters" ? "bold" : "normal" }}>
+                Characters
+              </span>
             </button>
             {devBacklogLauncher}
           </div>
 
           {/* Writing content area — matches production content area positioning */}
+          {/* All three writing modules stay mounted to avoid cold-load on tab switch. */}
+          {/* Visibility is controlled by display:none so state/data is preserved.   */}
+
           <div
             style={{
-              position: "fixed",
-              top: "44px",
-              left: "120px",
-              right: 0,
-              bottom: 0,
-              minWidth: 0,
-              minHeight: 0,
-              overflow: "auto",
-              boxSizing: "border-box",
+              display: writingActiveModule === "Script" ? undefined : "none",
+              position: "fixed", top: "44px", left: "120px", right: 0, bottom: 0,
+              minWidth: 0, minHeight: 0, overflow: "auto", boxSizing: "border-box",
               backgroundColor: "#f5f5f5",
-              // App-wide UI typography baseline. Do not change without an explicit user request.
               fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
-              padding: (writingActiveModule === "Script" || writingActiveModule === "MoodBoard") ? "10px" : "0",
+              padding: "10px",
             }}
           >
-            {writingActiveModule === "MoodBoard" ? (
-              renderSharedMoodBoardModule()
-            ) : (
-              <WritingScript
-                previewMode="editor"
-                selectedProject={selectedProject}
-                user={user}
-                userRole={userRole}
-                onAlert={showAlert}
-              />
-            )}
+            <WritingScript
+              previewMode="editor"
+              selectedProject={selectedProject}
+              user={user}
+              userRole={userRole}
+              onAlert={showAlert}
+            />
+          </div>
+
+          <div
+            style={{
+              display: writingActiveModule === "MoodBoard" ? undefined : "none",
+              position: "fixed", top: "44px", left: "120px", right: 0, bottom: 0,
+              minWidth: 0, minHeight: 0, overflow: "auto", boxSizing: "border-box",
+              backgroundColor: "#f5f5f5",
+              fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
+              padding: "10px",
+            }}
+          >
+            {renderSharedMoodBoardModule()}
+          </div>
+
+          <div
+            style={{
+              display: writingActiveModule === "Characters" ? undefined : "none",
+              position: "fixed", top: "44px", left: "120px", right: 0, bottom: 0,
+              minWidth: 0, minHeight: 0, overflow: "auto", boxSizing: "border-box",
+              backgroundColor: "#f5f5f5",
+              fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif",
+              padding: "10px",
+            }}
+          >
+            <WritingCharactersModule
+              selectedProject={selectedProject}
+              userRole={userRole}
+              isVisible={writingActiveModule === "Characters"}
+              onProjectDirty={markProjectDirty}
+              onProjectSynced={touchAndMark}
+            />
           </div>
         </>
       ) : (
@@ -5210,7 +6346,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
           </div>
         </div>
       )}
-      <DevBacklogPortal userEmail={user?.email} open={devBacklogOpen} onOpenChange={setDevBacklogOpen} hideTrigger />
+      <DevBacklogPortal userEmail={user?.email} currentProject={selectedProject} open={devBacklogOpen} onOpenChange={setDevBacklogOpen} hideTrigger />
     </div>
   );
 }

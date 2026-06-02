@@ -16,6 +16,7 @@ import { calculateScenePageStats, LINES_PER_PAGE } from "../../../utils.js";
 import { createSceneId } from "../../../utils/sceneIdentity";
 import { buildSceneDisplayLabelMap, getSceneDisplayLabel } from "../../../utils/sceneDisplayLabel";
 import { parseScriptFile } from "../../../utils/screenplayImport";
+import { paginateScreenplayNodes } from "../../../utils/screenplayPagination";
 import {
   getSceneRowPresentation,
   getSceneMetadataColumns,
@@ -25,6 +26,16 @@ import {
 } from "../../../utils/scenePresentation";
 import WritingTimeline from "../../../experimental/writingTimeline/WritingTimeline";
 import ScriptWritingEditor from "../Script/ScriptWritingEditor";
+import WritingCharactersPanel from "../WritingCharacters/WritingCharactersPanel";
+import { extractWritingCharacters } from "../WritingCharacters/writingCharacterExtraction";
+import {
+  normalizeWritingCharacterProfiles,
+  makeEmptyCharacterProfile,
+} from "../WritingCharacters/writingCharactersModel";
+import {
+  loadWritingCharacterProfilesAsync,
+  saveWritingCharacterProfilesAsync,
+} from "../WritingCharacters/writingCharactersPersistence";
 import {
   documentNodesFromScenes,
   scenesFromDocumentNodes,
@@ -37,7 +48,17 @@ import {
   saveWritingDictionaryWordsAsync,
   saveWritingDraftSafely,
   saveWritingTitlePageSettingsAsync,
+  buildWritingDraftPayload,
 } from "./writingDraftPersistence";
+import {
+  saveCurrentProjectCache,
+  createProjectCacheVersion,
+  getCurrentProjectCache,
+  CACHE_SOURCES,
+  CACHE_VERSION_REASONS,
+} from "../../../utils/projectCacheManager";
+import { WRITING_SCRIPT_MODULE_KEY } from "../../../utils/writingScriptRecoveryScanner";
+import { useWritingScriptSync } from "../../../contexts/ProjectModuleSyncContext";
 import { exportWritingScriptToPdf } from "../../../utils/exportScriptPagesToPdf";
 import {
   createScriptShareLink,
@@ -46,16 +67,6 @@ import {
   updateScriptShareLinkLabel,
   updateScriptShareWatermarkSettings,
 } from "../../../services/database";
-import { extractWritingCharacters } from "../WritingCharacters/writingCharacterExtraction";
-import {
-  normalizeWritingCharacterProfiles,
-  makeEmptyCharacterProfile,
-} from "../WritingCharacters/writingCharactersModel";
-import {
-  loadWritingCharacterProfilesAsync,
-  saveWritingCharacterProfilesAsync,
-} from "../WritingCharacters/writingCharactersPersistence";
-import WritingCharactersPanel from "../WritingCharacters/WritingCharactersPanel";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ENABLE_WRITING_TIMELINE = true;
@@ -955,6 +966,20 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
     const cached = writingDraftSessionCache.get(projectId);
     return cached ? cached.nodes : [];
   });
+  // Stable document identity key passed to the editor. The editor reinitializes its
+  // live editing state ONLY when this changes (project switch, import, new script).
+  // Parent save echoes and derived-state updates never change this key, so they
+  // cannot interfere with the active contentEditable during typing.
+  const [writingEditorDocumentKey, setWritingEditorDocumentKey] = useState(0);
+  // The nodes snapshot the editor was initialized with for the current documentKey.
+  // Only changes when documentKey changes (load, import, new-script).
+  // Autosave typing snapshots never update this — they go to refs only.
+  const [editorInitialNodes, setEditorInitialNodes] = useState(() => {
+    if (!selectedProject) return [];
+    const projectId = selectedProject?.id || selectedProject?.name || "default-project";
+    const cached = writingDraftSessionCache.get(projectId);
+    return cached ? cached.nodes : [];
+  });
   const [writingDraftSaveStatus, setWritingDraftSaveStatus] = useState("saved");
   const [writingScenePageStats, setWritingScenePageStats] = useState({});
   const [writingRenderedPageCount, setWritingRenderedPageCount] = useState(0);
@@ -988,6 +1013,9 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
   const [showBeatsTrack, setShowBeatsTrack] = useState(false);
   const [beatTrackZoom, setBeatTrackZoom] = useState(1);
   const [sceneTimelineZoom, setSceneTimelineZoom] = useState(1);
+  // Increments after every successful script file import. Passed to WritingCharactersPanel
+  // so it can open the suggestions modal once for newly imported content.
+  const [scriptImportTrigger, setScriptImportTrigger] = useState(0);
   const [showBeatImportDialog, setShowBeatImportDialog] = useState(false);
   const [beatImportText, setBeatImportText] = useState("");
   const [beatImportDraft, setBeatImportDraft] = useState(null);
@@ -1243,11 +1271,23 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
   const titlePageRef = useRef(null);
   const writingEditorRef = useRef(null);
   const spellcheckModalRef = useRef(null);
+  // KEEP — used in load effect to cancel any save timer from a prior project load phase.
+  // The actual debounce timer is owned by ProjectModuleSyncContext (wsTimerRef).
   const writingDraftSaveTimerRef = useRef(null);
+  // KEEP — payload dedup in handleWritingDraftNodesChange (prevents redundant markDirty calls).
   const lastWritingDraftPayloadRef = useRef("");
   const lastWritingDraftSaveErrorPayloadRef = useRef("");
   const lastWritingDraftIndexedDbWarningPayloadRef = useRef("");
+  // LEGACY — sequence guard for the old component-local save path (saveWritingDraftNow).
+  // Controller now owns the sequence guard (wsSequenceRef). Retained to avoid
+  // touching the old saveWritingDraftNow callback body — it is never called.
   const writingDraftSaveSequenceRef = useRef(0);
+  // LEGACY — snapshot refs previously read by the App.js proxy flush handler.
+  // The proxy now reads from localStorage/IDB directly and no longer uses these refs.
+  // Retained because handleWritingDraftNodesChange still updates them and removing
+  // them would require touching editor interaction code.
+  const latestSaveSnapshotNodesRef = useRef([]);
+  const latestSaveSnapshotPayloadRef = useRef("");
   const skipNextBeatPersistRef = useRef(false);
   const skipNextTabPersistRef = useRef(false);
   const skipNextCollapsedActsPersistRef = useRef(false);
@@ -1293,32 +1333,60 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
   useEffect(() => {
     let cancelled = false;
 
+    // Cancel any pending save for the previous project so it cannot contaminate
+    // this project's state when it resolves. The sequence guard also protects
+    // against stale saves, but clearing the timer is the authoritative defence.
+    clearTimeout(writingDraftSaveTimerRef.current);
+    writingDraftSaveTimerRef.current = null;
+
     if (!selectedProject) {
       setWritingDraftNodes([]);
+      setEditorInitialNodes([]);
       setWritingDraftSaveStatus("saved");
       lastWritingDraftPayloadRef.current = "";
       lastWritingDraftSaveErrorPayloadRef.current = "";
       lastWritingDraftIndexedDbWarningPayloadRef.current = "";
+      setWritingEditorDocumentKey(prev => prev + 1);
       return;
     }
 
     // If cache exists, writingDraftNodes was already initialized synchronously in useState().
-    // Just sync the refs — no state update needed, no DB round-trip.
+    // Just sync the refs and bump the document key so the editor loads from cache.
     const projectId = selectedProject?.id || selectedProject?.name || "default-project";
     const cached = writingDraftSessionCache.get(projectId);
     if (cached) {
       lastWritingDraftPayloadRef.current = cached.payload;
       lastWritingDraftSaveErrorPayloadRef.current = "";
       lastWritingDraftIndexedDbWarningPayloadRef.current = "";
+      // Sync flush-read refs from cache so flush sees correct nodes even without an edit.
+      latestSaveSnapshotNodesRef.current = cached.nodes;
+      latestSaveSnapshotPayloadRef.current = cached.payload;
+      // Tell the always-mounted controller this project has known non-empty state
+      // so its empty-overwrite guard is seeded even before the first edit.
+      writingScriptInitFromLoadRef.current(cached.nodes, "cache");
       setWritingDraftSaveStatus("saved");
+      setEditorInitialNodes(cached.nodes);
+      setWritingEditorDocumentKey(prev => prev + 1);
       return;
     }
 
     const loadStartTime = Date.now();
+    if (process.env.NODE_ENV === "development") {
+      console.info(`[WritingScript load] starting async load for project ${projectId}`);
+    }
     (async () => {
       try {
         const draft = await loadWritingDraftAsync(selectedProject);
         if (cancelled) return;
+
+        if (process.env.NODE_ENV === "development") {
+          console.info(
+            `[WritingScript load] result: storage=${draft?.storage}, ` +
+            `hasUserCreatedScript=${draft?.hasUserCreatedScript}, ` +
+            `nodes=${Array.isArray(draft?.nodes) ? draft.nodes.length : "n/a"}, ` +
+            `elapsed=${Date.now() - loadStartTime}ms`
+          );
+        }
 
         // Don't overwrite user edits that arrived while the DB was loading
         const liveCache = writingDraftSessionCache.get(projectId);
@@ -1331,29 +1399,53 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 
         if (savedNodes.length) {
           setWritingDraftNodes(savedNodes);
+          setEditorInitialNodes(savedNodes);
           lastWritingDraftPayloadRef.current = savedPayload;
           lastWritingDraftSaveErrorPayloadRef.current = "";
           lastWritingDraftIndexedDbWarningPayloadRef.current = "";
+          // Sync flush-read refs so flush sees loaded nodes even if user makes no edit.
+          // Without this, latestSaveSnapshotNodesRef stays [] and flush would save 0 nodes.
+          latestSaveSnapshotNodesRef.current = savedNodes;
+          latestSaveSnapshotPayloadRef.current = savedPayload;
+          // Tell the always-mounted controller this project has known non-empty state
+          // so its empty-overwrite guard is seeded even before the first edit.
+          writingScriptInitFromLoadRef.current(savedNodes, draft.storage ?? "unknown");
           setWritingDraftSaveStatus(draft.storage === "database" ? "saved" : "local");
           writingDraftSessionCache.set(projectId, { nodes: savedNodes, payload: savedPayload, updatedAt: loadStartTime });
+          if (process.env.NODE_ENV === "development") {
+            console.info(`[WritingScript load] latestSaveSnapshotNodesRef synced: ${savedNodes.length} nodes`);
+          }
+          setWritingEditorDocumentKey(prev => prev + 1);
           return;
         }
 
         const emptyPayload = JSON.stringify([]);
         setWritingDraftNodes([]);
+        setEditorInitialNodes([]);
         lastWritingDraftPayloadRef.current = emptyPayload;
         lastWritingDraftSaveErrorPayloadRef.current = "";
         lastWritingDraftIndexedDbWarningPayloadRef.current = "";
+        // Tell the controller this project loaded empty — guard is not seeded.
+        writingScriptInitFromLoadRef.current([], draft?.storage ?? "empty");
         setWritingDraftSaveStatus("saved");
-        writingDraftSessionCache.set(projectId, { nodes: [], payload: emptyPayload, updatedAt: loadStartTime });
+        // Do NOT cache empty results — an empty load could be a transient Supabase/IDB
+        // miss. If we cache empty, the next project open short-circuits the async load
+        // and displays a blank editor even when data exists. Only cache non-empty content.
+        if (process.env.NODE_ENV === "development") {
+          console.info(`[WritingScript load] empty draft for project ${projectId} — not caching (source: ${draft?.storage || "unknown"})`);
+        }
+        setWritingEditorDocumentKey(prev => prev + 1);
       } catch (err) {
         if (cancelled) return;
-        console.warn("Could not load writing draft:", err);
+        console.warn("[WritingScript load] Could not load writing draft:", err);
         setWritingDraftNodes([]);
+        setEditorInitialNodes([]);
         lastWritingDraftPayloadRef.current = JSON.stringify([]);
         lastWritingDraftSaveErrorPayloadRef.current = "";
         lastWritingDraftIndexedDbWarningPayloadRef.current = "";
         setWritingDraftSaveStatus("error");
+        // Do not cache on error — allow retry on next project open.
+        setWritingEditorDocumentKey(prev => prev + 1);
       }
     })();
 
@@ -1491,6 +1583,37 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
   }, [scriptShareWatermarkDraft]);
 
   useEffect(() => () => { clearTimeout(writingDraftSaveTimerRef.current); }, []);
+
+  // ─── Module flush registration ───────────────────────────────────────────────
+  // Save Verification flush handler for "writingScript" has been moved to App.js
+  // as an always-mounted proxy handler. It reads from Supabase directly and works
+  // regardless of which workflow tab is active. The component-level registration
+  // has been removed to avoid double-registration under the same key.
+
+  // ─── Sync controller ─────────────────────────────────────────────────────────
+  // Debounce ownership, barrier registration, and Supabase flush have moved to
+  // ProjectModuleSyncContext (WritingScript sync controller) which is always-mounted
+  // and survives workflow tab switches. The UI component calls markDirty on every
+  // content change; the controller owns the timer and the barrier.
+  const writingScriptSync = useWritingScriptSync();
+  // Stable refs so dep arrays in handleWritingDraftNodesChange and the load effect stay stable.
+  const writingScriptMarkDirtyRef = useRef(writingScriptSync.markDirty);
+  useEffect(() => { writingScriptMarkDirtyRef.current = writingScriptSync.markDirty; }, [writingScriptSync.markDirty]);
+  const writingScriptInitFromLoadRef = useRef(writingScriptSync.initializeFromLoad);
+  useEffect(() => { writingScriptInitFromLoadRef.current = writingScriptSync.initializeFromLoad; }, [writingScriptSync.initializeFromLoad]);
+
+  // Mirror controller status into local UI state so save indicator updates.
+  useEffect(() => {
+    const controllerState = writingScriptSync.status.state;
+    const uiStatus =
+      controllerState === "idle" ? "saved" :
+      controllerState === "dirty" ? "unsaved" :
+      controllerState === "syncing" ? "saving" :
+      controllerState === "offlineQueued" ? "local" :
+      controllerState === "failed" ? "error" :
+      controllerState === "initializing" ? "saved" : "saved";
+    setWritingDraftSaveStatus(uiStatus);
+  }, [writingScriptSync.status.state]);
 
   const saveEditorPositionNow = useCallback(() => {
     if (!selectedProject) return;
@@ -1668,7 +1791,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
     if (!selectedProject) return;
     if (skipNextTabPersistRef.current) { skipNextTabPersistRef.current = false; return; }
     const persistTab = ["beats", "characters"].includes(activeSidePanelTab) ? activeSidePanelTab : "scenes";
-    localStorage.setItem(getProjectStorageKey("writingScriptSidePanelTab"), persistTab);
+    try { localStorage.setItem(getProjectStorageKey("writingScriptSidePanelTab"), persistTab); } catch {}
   }, [activeSidePanelTab, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
 
   // ─── Load/save collapsed acts ────────────────────────────────────────────────
@@ -1944,29 +2067,6 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	    };
 	  }, [selectedProject]);
 
-  // ─── Load writing character profiles ────────────────────────────────────────
-  useEffect(() => {
-    let cancelled = false;
-    setCharacterProfilesLoadStatus("loading");
-    setWritingCharacterProfiles(normalizeWritingCharacterProfiles(null));
-    if (!selectedProject) {
-      setCharacterProfilesLoadStatus("idle");
-      return;
-    }
-    loadWritingCharacterProfilesAsync(selectedProject)
-      .then(({ data }) => {
-        if (cancelled) return;
-        setWritingCharacterProfiles(normalizeWritingCharacterProfiles(data));
-        setCharacterProfilesLoadStatus("loaded");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setWritingCharacterProfiles(normalizeWritingCharacterProfiles(null));
-        setCharacterProfilesLoadStatus("error");
-      });
-    return () => { cancelled = true; };
-  }, [selectedProject?.id, selectedProject?.name]);
-
 	  // ─── Load moodboard images for mood overlay ──────────────────────────────────
   useEffect(() => {
     const loadMoodboardImagesForScript = async () => {
@@ -2017,7 +2117,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
     const parsed = Number(stored);
     const safeTargetPageCount = Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 90;
     if (!localStorage.getItem(storageKey) && stored !== null) {
-      localStorage.setItem(storageKey, String(safeTargetPageCount));
+      try { localStorage.setItem(storageKey, String(safeTargetPageCount)); } catch {}
     }
     setTargetPageCount(safeTargetPageCount);
   }, [selectedProject?.id, selectedProject?.name, getLegacyScriptStorageKey, getProjectStorageKey]);
@@ -2026,7 +2126,7 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
     if (!selectedProject) return;
     const safe = Number(targetPageCount);
     if (!Number.isFinite(safe) || safe < 1) return;
-    localStorage.setItem(getProjectStorageKey("writingScriptTargetPageCount"), String(Math.round(safe)));
+    try { localStorage.setItem(getProjectStorageKey("writingScriptTargetPageCount"), String(Math.round(safe))); } catch {}
   }, [targetPageCount, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
 
   // ─── Keyboard shortcuts for modals ──────────────────────────────────────────
@@ -2083,11 +2183,6 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
       };
     });
   }, [writingDraftNodes, writingScenePageStats]);
-
-  const extractedCharacters = useMemo(
-    () => extractWritingCharacters(writingDraftNodes),
-    [writingDraftNodes]
-  );
 
 	  const displaySceneNumber = currentIndex < 0 ? null : (writingDraftScenes[currentIndex]?.sceneNumber || 1);
 
@@ -2295,72 +2390,307 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	    }
 	  }, [selectedProject, titlePageSettings, writingEditorRef]);
 
+  // LEGACY — was called by the old component-local barrier registration.
+  // Not called from any active code path. The App.js proxy flush handler calls
+  // saveWritingDraftSafely directly; the controller owns the debounce and barrier.
+  // Retained to avoid touching surrounding code that references lastWritingDraftPayloadRef.
   const saveWritingDraftNow = useCallback(async (safeNodes = []) => {
+    if (Array.isArray(safeNodes) && safeNodes.length === 0) {
+      const projectId = selectedProject?.id || selectedProject?.name || "default-project";
+      const hasNonEmptyLastSavedPayload = (() => {
+        try {
+          const parsed = JSON.parse(lastWritingDraftPayloadRef.current || "[]");
+          return Array.isArray(parsed) && parsed.length > 0;
+        } catch {
+          return false;
+        }
+      })();
+      const cached = writingDraftSessionCache.get(projectId);
+      let hasNonEmptyProjectCache = false;
+      try {
+        const existing = await getCurrentProjectCache(projectId, WRITING_SCRIPT_MODULE_KEY);
+        hasNonEmptyProjectCache = Array.isArray(existing?.payload?.nodes) && existing.payload.nodes.length > 0;
+      } catch {}
+
+      if (hasNonEmptyLastSavedPayload || (Array.isArray(cached?.nodes) && cached.nodes.length > 0) || hasNonEmptyProjectCache) {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("Blocked empty Writing Script save to prevent overwrite.");
+        }
+        return { storage: "blocked", blockedEmptySave: true, localOnly: true };
+      }
+    }
     return saveWritingDraftSafely(selectedProject, safeNodes);
   }, [selectedProject]);
 
   // ─── handleWritingDraftNodesChange ──────────────────────────────────────────
+  // Called by the editor at structural commit points: Enter, Backspace merge,
+  // paste, element type change, undo/redo, blur, import, new-script.
+  // Normal typing (handleInput) does NOT call this function — it only updates
+  // nodesRef in the editor. So it is safe to call setWritingDraftNodes here:
+  // the editor receives initialNodes from editorInitialNodes (not writingDraftNodes),
+  // so updating writingDraftNodes never reaches the editor's reconciliation path.
+  //
+  // Debounce ownership has moved to ProjectModuleSyncContext (WritingScript sync
+  // controller). The controller's timer survives workflow tab switches/unmounts.
+  // writingDraftSaveTimerRef is retained here for the load-phase cancel guard only.
   const handleWritingDraftNodesChange = useCallback((nextNodes = []) => {
     const safeNodes = Array.isArray(nextNodes) ? nextNodes : [];
     const payload = JSON.stringify(safeNodes);
+    if (typeof window !== "undefined" && window.__DEBUG_WRITING_STABILITY) {
+      console.log("[WritingStability] handleWritingDraftNodesChange called nodeCount=" + safeNodes.length);
+    }
 
     // Keep session cache current so switching back to this module skips DB reload
     const projectId = selectedProject?.id || selectedProject?.name || "default-project";
     writingDraftSessionCache.set(projectId, { nodes: safeNodes, payload, updatedAt: Date.now() });
 
+    // Update legacy snapshot refs (retained but no longer read by any active save path).
+    latestSaveSnapshotNodesRef.current = safeNodes;
+    latestSaveSnapshotPayloadRef.current = payload;
+
+    // Update committed UI state (scenes column, spellcheck, sidebars) immediately.
+    // Safe because: (1) normal typing never reaches this function, (2) the editor
+    // uses editorInitialNodes — not writingDraftNodes — so this update never
+    // causes the editor to reconcile the active contentEditable span.
+    setWritingDraftNodes(prevNodes =>
+      JSON.stringify(prevNodes) === payload ? prevNodes : safeNodes
+    );
+
     if (payload === lastWritingDraftPayloadRef.current) {
-      setWritingDraftNodes(prevNodes => (JSON.stringify(prevNodes) === payload ? prevNodes : safeNodes));
-      setWritingDraftSaveStatus("saved");
+      // No change since last confirmed save — nothing to do.
       return;
     }
 
-    // Update React state immediately so the UI reflects the edit without waiting for DB.
-    setWritingDraftNodes(prevNodes => (JSON.stringify(prevNodes) === payload ? prevNodes : safeNodes));
-    setWritingDraftSaveStatus("unsaved");
+    lastWritingDraftPayloadRef.current = payload;
 
-    // Debounce the actual DB write so rapid keystrokes don't each trigger a full save.
-    clearTimeout(writingDraftSaveTimerRef.current);
-    writingDraftSaveTimerRef.current = setTimeout(() => {
-      const saveSequence = writingDraftSaveSequenceRef.current + 1;
-      writingDraftSaveSequenceRef.current = saveSequence;
-      setWritingDraftSaveStatus("saving");
+    // Delegate debounce + Supabase write to the always-mounted controller.
+    // Controller survives workflow switches; barrier registration stays alive
+    // even when this component unmounts.
+    writingScriptMarkDirtyRef.current(safeNodes);
+  }, [selectedProject]);
 
-      saveWritingDraftNow(safeNodes).then((result) => {
-        if (writingDraftSaveSequenceRef.current !== saveSequence) return;
-        lastWritingDraftPayloadRef.current = payload;
-        lastWritingDraftSaveErrorPayloadRef.current = "";
-        if (result?.storage === "indexedDB" && result?.quotaExceeded) {
-          if (lastWritingDraftIndexedDbWarningPayloadRef.current !== payload) {
-            console.warn(result?.localOnly
-              ? "Writing draft database save failed; saved large draft to IndexedDB local fallback."
-              : "Writing draft exceeded localStorage quota; database save succeeded and local cache used IndexedDB.");
-            lastWritingDraftIndexedDbWarningPayloadRef.current = payload;
-          }
-        }
-        setWritingDraftSaveStatus(result?.storage === "database" ? "saved" : "local");
-      }).catch((err) => {
-        if (writingDraftSaveSequenceRef.current !== saveSequence) return;
-        if (lastWritingDraftSaveErrorPayloadRef.current !== payload) {
-          console.error("Could not save writing draft:", err);
-          lastWritingDraftSaveErrorPayloadRef.current = payload;
-        }
-        setWritingDraftSaveStatus("error");
+  // ─── Load writing character profiles ────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    setCharacterProfilesLoadStatus("loading");
+    setWritingCharacterProfiles(normalizeWritingCharacterProfiles(null));
+    if (!selectedProject) {
+      setCharacterProfilesLoadStatus("idle");
+      return;
+    }
+    loadWritingCharacterProfilesAsync(selectedProject)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setWritingCharacterProfiles(normalizeWritingCharacterProfiles(data));
+        setCharacterProfilesLoadStatus("loaded");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWritingCharacterProfiles(normalizeWritingCharacterProfiles(null));
+        setCharacterProfilesLoadStatus("error");
       });
-    }, 1500);
-  }, [saveWritingDraftNow, selectedProject]);
+    return () => { cancelled = true; };
+  }, [selectedProject?.id, selectedProject?.name]);
+
+  // Derived from committed writingDraftNodes only — never from live typing.
+  const extractedCharacters = useMemo(
+    () => extractWritingCharacters(writingDraftNodes, writingCharacterProfiles?.resolution || {}),
+    [writingDraftNodes, writingCharacterProfiles]
+  );
+
+  // Maps every scene ID variant → 0-based index into writingDraftScenes.
+  // Used by WritingCharactersPanel to resolve sceneId → scene object for scene cells.
+  const sceneIdToIndex = useMemo(() => {
+    const map = {};
+    // Map every id/sceneId variant from writingDraftScenes → scene index.
+    writingDraftScenes.forEach((scene, idx) => {
+      if (scene.id) map[scene.id] = idx;
+      if (scene.sceneId && scene.sceneId !== scene.id) map[scene.sceneId] = idx;
+    });
+    // writingDraftScenes sets id = stableSceneId = headingNode.id (the element node
+    // ID). But Character/Action nodes carry node.sceneId = headingNode.sceneId (the
+    // scene's own sceneId, a different value). Walk heading nodes to add that mapping
+    // so the extraction results (keyed by node.sceneId) resolve to a scene index.
+    let sceneIdx = 0;
+    writingDraftNodes.forEach((node) => {
+      if (!node || node.type !== "Scene Heading") return;
+      if (node.sceneId && !(node.sceneId in map)) {
+        map[node.sceneId] = sceneIdx;
+      }
+      sceneIdx++;
+    });
+    return map;
+  }, [writingDraftScenes, writingDraftNodes]);
+
+  // Maps node array index → 1-based page number, computed from committed nodes.
+  // Used by the character suggestions modal to show first-appearance page numbers.
+  const nodeIndexPageMap = useMemo(() => {
+    if (!writingDraftNodes.length) return {};
+    const pages = paginateScreenplayNodes(writingDraftNodes);
+    const map = {};
+    pages.forEach((page, pageIdx) => {
+      page.forEach((entry) => {
+        if (entry.index != null && !(entry.index in map)) {
+          map[entry.index] = pageIdx + 1;
+        }
+      });
+    });
+    return map;
+  }, [writingDraftNodes]);
+
+  // ─── Writing character handlers ──────────────────────────────────────────────
+  const handleCreateCharacterProfiles = useCallback(async (normalizedKeys) => {
+    const now = new Date().toISOString();
+    const newProfiles = { ...writingCharacterProfiles.profiles };
+    normalizedKeys.forEach((key) => {
+      if (newProfiles[key]) return;
+      const ec = extractedCharacters.get(key);
+      if (!ec) return;
+      newProfiles[key] = makeEmptyCharacterProfile(key, ec.displayName, {
+        firstAppearanceSceneId: ec.firstAppearanceSceneId,
+        firstAppearanceSceneHeading: ec.firstAppearanceSceneHeading,
+        sceneIds: Array.from(ec.sceneIds),
+        sceneCount: ec.sceneCount,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    const nextIgnored = (writingCharacterProfiles.ignoredSuggestions || []).filter(
+      (k) => !normalizedKeys.includes(k)
+    );
+    const next = { ...writingCharacterProfiles, profiles: newProfiles, ignoredSuggestions: nextIgnored, savedAt: now };
+    setWritingCharacterProfiles(next);
+    try { await saveWritingCharacterProfilesAsync(selectedProject, next); } catch {}
+  }, [writingCharacterProfiles, extractedCharacters, selectedProject]);
+
+  const handleIgnoreCharacterSuggestions = useCallback(async (normalizedKeys) => {
+    const next = {
+      ...writingCharacterProfiles,
+      ignoredSuggestions: Array.from(new Set([
+        ...(writingCharacterProfiles.ignoredSuggestions || []),
+        ...normalizedKeys,
+      ])),
+      savedAt: new Date().toISOString(),
+    };
+    setWritingCharacterProfiles(next);
+    try { await saveWritingCharacterProfilesAsync(selectedProject, next); } catch {}
+  }, [writingCharacterProfiles, selectedProject]);
+
+  const handleUpdateCharacterProfile = useCallback(async (normalizedKey, patch) => {
+    const existing = writingCharacterProfiles.profiles?.[normalizedKey];
+    if (!existing) return;
+    const updated = { ...existing, ...patch, updatedAt: new Date().toISOString() };
+    const next = {
+      ...writingCharacterProfiles,
+      profiles: { ...writingCharacterProfiles.profiles, [normalizedKey]: updated },
+      savedAt: new Date().toISOString(),
+    };
+    setWritingCharacterProfiles(next);
+    try { await saveWritingCharacterProfilesAsync(selectedProject, next); } catch {}
+  }, [writingCharacterProfiles, selectedProject]);
+
+  const handleMergeCharacterProfiles = useCallback(async (sourceId, targetId) => {
+    const src = writingCharacterProfiles.profiles?.[sourceId];
+    const tgt = writingCharacterProfiles.profiles?.[targetId];
+    if (!src || !tgt) return;
+    const mergedTarget = {
+      ...tgt,
+      aliases: Array.from(new Set([...(tgt.aliases || []), src.canonicalName, ...(src.aliases || [])])),
+      sceneIds: Array.from(new Set([...(tgt.sceneIds || []), ...(src.sceneIds || [])])),
+      sceneCount: (tgt.sceneCount || 0) + (src.sceneCount || 0),
+      mergeHistory: [...(tgt.mergeHistory || []), { sourceId, sourceCanonicalName: src.canonicalName, mergedAt: new Date().toISOString() }],
+      updatedAt: new Date().toISOString(),
+    };
+    const newProfiles = { ...writingCharacterProfiles.profiles, [targetId]: mergedTarget };
+    delete newProfiles[sourceId];
+    const resolution = { ...(writingCharacterProfiles.resolution || {}), [sourceId]: targetId };
+    const next = { ...writingCharacterProfiles, profiles: newProfiles, resolution, savedAt: new Date().toISOString() };
+    setWritingCharacterProfiles(next);
+    try { await saveWritingCharacterProfilesAsync(selectedProject, next); } catch {}
+  }, [writingCharacterProfiles, selectedProject]);
+
+  const handleDeleteCharacterProfile = useCallback(async (profileId) => {
+    const newProfiles = { ...writingCharacterProfiles.profiles };
+    delete newProfiles[profileId];
+    const next = { ...writingCharacterProfiles, profiles: newProfiles, savedAt: new Date().toISOString() };
+    setWritingCharacterProfiles(next);
+    try { await saveWritingCharacterProfilesAsync(selectedProject, next); } catch {}
+  }, [writingCharacterProfiles, selectedProject]);
+
+  // Called by the inline Characters panel after it evaluates an import-triggered scan.
+  // Reads the localStorage marker, validates it, persists consumed metadata into
+  // writingCharacterProfiles, and removes the marker so the standalone module
+  // does not re-open the suggestions modal for the same import.
+  const handleInlineImportSignalConsumed = useCallback(() => {
+    const projectId = selectedProject?.id;
+    if (!projectId) return;
+    const markerKey = `writingScriptImportCompleted:${projectId}`;
+    let marker = null;
+    try {
+      const raw = localStorage.getItem(markerKey);
+      marker = raw ? JSON.parse(raw) : null;
+    } catch {}
+    if (!marker || marker.source !== "writingScriptImport") return;
+    if (!marker.importedAt || !marker.nodeCount || marker.nodeCount <= 0) return;
+    if (marker.projectId !== projectId) return;
+
+    const consumedAt = new Date().toISOString();
+    setWritingCharacterProfiles((prev) => {
+      const next = {
+        ...prev,
+        consumedScriptImportSignals: {
+          ...(prev.consumedScriptImportSignals || {}),
+          [projectId]: {
+            lastConsumedImportedAt: marker.importedAt,
+            lastConsumedNodeCount: marker.nodeCount ?? 0,
+            consumedAt,
+          },
+        },
+        savedAt: consumedAt,
+      };
+      // Fire-and-forget — persist the consumed marker so the standalone module
+      // sees it on next load and does not re-open suggestions for this import.
+      saveWritingCharacterProfilesAsync(selectedProject, next).catch(() => {});
+      return next;
+    });
+
+    // Remove the marker only after consumed metadata is staged.
+    try { localStorage.removeItem(markerKey); } catch {}
+  }, [selectedProject?.id, selectedProject?.name, selectedProject]);
+
+  // Suppress a character's association with a specific scene (cleanup mode).
+  // Adds the sceneId to sceneSuppresssions[profileId]. Does not delete script text,
+  // does not alter Production Characters, does not affect other scenes.
+  const handleSuppressSceneTag = useCallback(async (profileId, sceneId) => {
+    const existing = writingCharacterProfiles.sceneSuppresssions || {};
+    const current = existing[profileId] || [];
+    if (current.includes(sceneId)) return; // already suppressed
+    const next = {
+      ...writingCharacterProfiles,
+      sceneSuppresssions: { ...existing, [profileId]: [...current, sceneId] },
+      savedAt: new Date().toISOString(),
+    };
+    setWritingCharacterProfiles(next);
+    try { await saveWritingCharacterProfilesAsync(selectedProject, next); } catch {}
+  }, [writingCharacterProfiles, selectedProject]);
 
   // ─── handleStartNewScript (writing-only, no DB) ──────────────────────────────
   const handleStartNewScript = () => {
     const headingNode = createEmptySceneHeadingNode();
     const newNodes = [headingNode];
+    // Register the focus target BEFORE bumping documentKey so the editor's
+    // documentKey effect picks it up and focuses the heading after reinit.
+    writingEditorRef.current?.setFocusNodeAfterReinit?.(headingNode.id);
     handleWritingDraftNodesChange(newNodes);
+    // Document replacements must update writingDraftNodes so the scenes column
+    // and other committed-state derivations reflect the new document immediately.
+    // Normal typing does NOT call setWritingDraftNodes — only these explicit
+    // document-replacement paths do.
+    setWritingDraftNodes(newNodes);
+    setEditorInitialNodes(newNodes);
+    setWritingEditorDocumentKey(prev => prev + 1);
     setCurrentIndex(0);
     setCurrentSceneNumber(1);
-    // Focus the first heading once React has committed the new node to the DOM.
-    const nodeId = headingNode.id;
-    setTimeout(() => {
-      writingEditorRef.current?.focusFirstNode(nodeId);
-    }, 0);
   };
 
   const handleImportScriptFile = async (event) => {
@@ -2374,11 +2704,31 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
         throw new Error("No screenplay nodes were created from the imported file.");
       }
       handleWritingDraftNodesChange(importedNodes);
+      // Update committed UI state so the scenes column reflects the import immediately.
+      // Normal typing does NOT call setWritingDraftNodes — only document replacements do.
+      setWritingDraftNodes(importedNodes);
+      setEditorInitialNodes(importedNodes);
+      setWritingEditorDocumentKey(prev => prev + 1);
       setCurrentIndex(0);
       setCurrentSceneNumber(1);
       requestAnimationFrame(() => {
         editorScrollRef.current?.scrollTo?.({ top: 0, behavior: "auto" });
       });
+      // Signal Writing Characters panel that a real import just completed.
+      // Only fires on success with nodes present — not on cancel, error, or normal load.
+      const importType = file.name?.toLowerCase().endsWith(".fdx") ? "fdx"
+        : file.name?.toLowerCase().endsWith(".pdf") ? "pdf"
+        : "unknown";
+      const projectId = selectedProject?.id;
+      if (projectId) {
+        try {
+          localStorage.setItem(
+            `writingScriptImportCompleted:${projectId}`,
+            JSON.stringify({ projectId, importedAt: new Date().toISOString(), importType, nodeCount: importedNodes.length, source: "writingScriptImport" })
+          );
+        } catch {}
+      }
+      setScriptImportTrigger((n) => n + 1);
     } catch (err) {
       console.error("Writing script import failed:", err);
       if (onAlert) {
@@ -2534,63 +2884,6 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
       return nextItems;
     });
   };
-
-  // ─── Writing character handlers ──────────────────────────────────────────────
-  const handleCreateCharacterProfiles = useCallback(async (normalizedKeys) => {
-    const now = new Date().toISOString();
-    const newProfiles = { ...writingCharacterProfiles.profiles };
-    normalizedKeys.forEach((key) => {
-      if (newProfiles[key]) return; // already exists
-      const ec = extractedCharacters.get(key);
-      if (!ec) return;
-      newProfiles[key] = makeEmptyCharacterProfile(key, ec.displayName, {
-        firstAppearanceSceneId: ec.firstAppearanceSceneId,
-        firstAppearanceSceneHeading: ec.firstAppearanceSceneHeading,
-        sceneIds: Array.from(ec.sceneIds),
-        sceneCount: ec.sceneCount,
-        createdAt: now,
-        updatedAt: now,
-      });
-    });
-    // Remove newly created keys from ignoredSuggestions
-    const nextIgnored = (writingCharacterProfiles.ignoredSuggestions || []).filter(
-      (k) => !normalizedKeys.includes(k)
-    );
-    const next = {
-      ...writingCharacterProfiles,
-      profiles: newProfiles,
-      ignoredSuggestions: nextIgnored,
-      savedAt: now,
-    };
-    setWritingCharacterProfiles(next);
-    try { await saveWritingCharacterProfilesAsync(selectedProject, next); } catch {}
-  }, [writingCharacterProfiles, extractedCharacters, selectedProject]);
-
-  const handleIgnoreCharacterSuggestions = useCallback(async (normalizedKeys) => {
-    const next = {
-      ...writingCharacterProfiles,
-      ignoredSuggestions: Array.from(new Set([
-        ...(writingCharacterProfiles.ignoredSuggestions || []),
-        ...normalizedKeys,
-      ])),
-      savedAt: new Date().toISOString(),
-    };
-    setWritingCharacterProfiles(next);
-    try { await saveWritingCharacterProfilesAsync(selectedProject, next); } catch {}
-  }, [writingCharacterProfiles, selectedProject]);
-
-  const handleUpdateCharacterProfile = useCallback(async (normalizedKey, patch) => {
-    const existing = writingCharacterProfiles.profiles?.[normalizedKey];
-    if (!existing) return;
-    const updated = { ...existing, ...patch, updatedAt: new Date().toISOString() };
-    const next = {
-      ...writingCharacterProfiles,
-      profiles: { ...writingCharacterProfiles.profiles, [normalizedKey]: updated },
-      savedAt: new Date().toISOString(),
-    };
-    setWritingCharacterProfiles(next);
-    try { await saveWritingCharacterProfilesAsync(selectedProject, next); } catch {}
-  }, [writingCharacterProfiles, selectedProject]);
 
   // ─── Beat import handlers ────────────────────────────────────────────────────
   const handleOpenBeatImport = () => {
@@ -2808,7 +3101,15 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
     return <div data-writing-script-shell="preview" style={{ display: "none" }} />;
   }
 
-  const noScript = writingDraftNodes.length === 0;
+  // editorInitialNodes is set immediately on New Script, Import, and project load —
+  // unlike writingDraftNodes (which no longer updates on normal typing snapshots)
+  // and writingDraftScenes (which derives from writingDraftNodes and therefore lags).
+  // A document has started when there is at least one Scene Heading node or any node
+  // with non-whitespace text.
+  const hasWritingDocumentStarted = Array.isArray(editorInitialNodes) && editorInitialNodes.some(node =>
+    node?.type === "Scene Heading" || String(node?.text || "").trim().length > 0
+  );
+  const noScript = !hasWritingDocumentStarted;
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -3832,7 +4133,8 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	              )}
 	              <ScriptWritingEditor
 	                ref={writingEditorRef}
-                initialNodes={writingDraftNodes}
+                initialNodes={editorInitialNodes}
+                documentKey={writingEditorDocumentKey}
                 activeElementType={writingEditorElementType}
                 onActiveElementTypeChange={setWritingEditorElementType}
                 onNodesChange={handleWritingDraftNodesChange}
@@ -3872,7 +4174,62 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 
           {/* Panel content */}
           <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            {activeSidePanelTab === "scenes" ? (
+            {activeSidePanelTab === "characters" ? (
+              <WritingCharactersPanel
+                profiles={writingCharacterProfiles}
+                extractedNames={extractedCharacters}
+                isViewOnly={isViewOnly}
+                isProfilesLoading={characterProfilesLoadStatus === "loading"}
+                onCreateProfiles={handleCreateCharacterProfiles}
+                onIgnoreSuggestions={handleIgnoreCharacterSuggestions}
+                onUpdateProfile={handleUpdateCharacterProfile}
+                onRescan={() => {}}
+                importTrigger={scriptImportTrigger}
+                onImportSignalConsumed={handleInlineImportSignalConsumed}
+                onMergeProfiles={handleMergeCharacterProfiles}
+                onDeleteProfile={handleDeleteCharacterProfile}
+                onSuppressSceneTag={handleSuppressSceneTag}
+                sceneSuppresssions={writingCharacterProfiles.sceneSuppresssions || {}}
+                allNodes={writingDraftNodes}
+                scenes={writingDraftScenes}
+                sceneIdToIndex={sceneIdToIndex}
+                onNavigateToScene={(sceneIndex) => {
+                  if (sceneIndex < 0) return;
+                  setCurrentIndex(sceneIndex);
+                  requestAnimationFrame(() => {
+                    sceneRefs.current[sceneIndex]?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  });
+                }}
+                hasScript={hasWritingDocumentStarted}
+                onSetCharacterTagHighlights={(sources, allNodes) => {
+                  // Build solid-yellow highlight ranges for all unsuppressed sources
+                  // of the active cleanup character. UI-only — never saved.
+                  const highlights = [];
+                  (sources || []).forEach((source) => {
+                    const nodeId = source?.nodeId;
+                    if (!nodeId) return;
+                    const node = Array.isArray(allNodes) && source.nodeIndex != null
+                      ? allNodes[source.nodeIndex]
+                      : null;
+                    const text = String(node?.text || "");
+                    const matched = String(source.matchedName || "");
+                    if (matched && text) {
+                      const idx = text.toLowerCase().indexOf(matched.toLowerCase());
+                      if (idx >= 0) {
+                        highlights.push({ nodeId, startOffset: idx, endOffset: idx + matched.length });
+                        return;
+                      }
+                    }
+                    highlights.push({ nodeId, startOffset: 0, endOffset: Math.max(1, text.length) });
+                  });
+                  writingEditorRef.current?.setCharacterTagHighlights?.(highlights);
+                }}
+                onClearCharacterTagHighlights={() => {
+                  writingEditorRef.current?.clearCharacterTagHighlights?.();
+                }}
+                nodeIndexPageMap={nodeIndexPageMap}
+              />
+            ) : activeSidePanelTab === "scenes" ? (
               <SceneList
                 scenes={writingDraftScenes}
                 currentSceneNumber={displaySceneNumber}
@@ -3893,17 +4250,6 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
 	                showTitlePage={titlePageSettings.enabled}
 	                onTitlePageClick={scrollToTitlePage}
 	              />
-            ) : activeSidePanelTab === "characters" ? (
-              <WritingCharactersPanel
-                profiles={writingCharacterProfiles}
-                extractedNames={extractedCharacters}
-                isViewOnly={isViewOnly}
-                isProfilesLoading={characterProfilesLoadStatus === "loading"}
-                onCreateProfiles={handleCreateCharacterProfiles}
-                onIgnoreSuggestions={handleIgnoreCharacterSuggestions}
-                onUpdateProfile={handleUpdateCharacterProfile}
-                onRescan={() => {}}
-              />
             ) : (
               <BeatsList
                 beats={beats}

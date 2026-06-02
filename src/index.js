@@ -5,6 +5,8 @@ import "@fontsource/questrial";
 
 import App from "./App";
 import AuthWrapper from "./components/auth/AuthWrapper";
+import { ModuleFlushProvider } from "./contexts/ModuleFlushContext";
+import { ModuleSyncBarrierProvider } from "./contexts/ModuleSyncBarrierContext";
 import MobileApp from "./components/mobile/MobileApp";
 import PublicScriptShareViewer from "./components/modules/WritingScript/PublicScriptShareViewer";
 import PublicMoodBoardShareViewer from "./components/modules/MoodBoard/PublicMoodBoardShareViewer";
@@ -31,8 +33,12 @@ const isPublicMoodBoardShareRoute = /^\/share\/moodboard\/[^/?#]+/.test(window.l
     ) : isMobile ? (
       <MobileApp initialPropId={initialPropId} initialProjectId={initialProjectId} />
     ) : (
-      <AuthWrapper>
-        <App />
-      </AuthWrapper>
+      <ModuleSyncBarrierProvider>
+        <ModuleFlushProvider>
+          <AuthWrapper>
+            <App />
+          </AuthWrapper>
+        </ModuleFlushProvider>
+      </ModuleSyncBarrierProvider>
     )
   );

@@ -2,6 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom";
 import { supabase } from "../../../supabase";
 import {
+  loadWritingCharacterProfilesAsync,
+} from "../WritingCharacters/writingCharactersPersistence";
+import { normalizeWritingCharacterProfiles, getWritingCharacterProfilesArray } from "../WritingCharacters/writingCharactersModel";
+import {
   listMoodboardShareLinks,
   createMoodboardShareLink,
   revokeMoodboardShareLink,
@@ -9,6 +13,7 @@ import {
   updateMoodboardShareLinkSnapshots,
 } from "../../../services/database";
 import { drawMoodBoardTextItem, preloadImagesForItems, renderPageToCanvas } from "./moodBoardRasterize";
+import { useMoodBoardSync } from "../../../contexts/ProjectModuleSyncContext";
 
 const GRID_SIZE = 10;
 const STORAGE_VERSION = 2;
@@ -362,6 +367,9 @@ function normalizeImportedState(parsed) {
     }),
     zoom: parsed?.zoom || 0.65,
     showGrid: parsed?.showGrid ?? true,
+    characterBoardLinks: (parsed?.characterBoardLinks && typeof parsed.characterBoardLinks === "object" && !Array.isArray(parsed.characterBoardLinks))
+      ? parsed.characterBoardLinks : {},
+    hiddenCharacterIds: Array.isArray(parsed?.hiddenCharacterIds) ? parsed.hiddenCharacterIds : [],
   };
 }
 
@@ -591,6 +599,18 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     const c = MOODBOARD_SESSION_CACHE.get(getStorageKey(selectedProject));
     return c ? c.showGrid : true;
   });
+  const [characterBoardLinks, setCharacterBoardLinks] = useState(() => {
+    const c = MOODBOARD_SESSION_CACHE.get(getStorageKey(selectedProject));
+    return c ? (c.characterBoardLinks || {}) : {};
+  });
+  const [hiddenCharacterIds, setHiddenCharacterIds] = useState(() => {
+    const c = MOODBOARD_SESSION_CACHE.get(getStorageKey(selectedProject));
+    return c ? (c.hiddenCharacterIds || []) : [];
+  });
+  const [leftBoardsTab, setLeftBoardsTab] = useState("boards");
+  const [charProfiles, setCharProfiles] = useState(null);
+  const [charProfilesStatus, setCharProfilesStatus] = useState("idle");
+  const [showHiddenCharacters, setShowHiddenCharacters] = useState(false);
   const [showLayerPanel, setShowLayerPanel] = useState(true);
   const [showImportPanel, setShowImportPanel] = useState(false);
   const [importProjects, setImportProjects] = useState([]);
@@ -660,6 +680,22 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   const solidDropdownRef = useRef(null);
   const effectsDropdownRef = useRef(null);
   const dbSaveTimerRef = useRef(null);
+
+  // ─── Sync controller ─────────────────────────────────────────────────────────
+  // Debounce ownership and barrier registration have moved to ProjectModuleSyncContext
+  // (MoodBoard sync controller) which is always-mounted and survives workflow switches.
+  // dbSaveTimerRef is kept here as a local UI-layer timer that mirrors the controller
+  // timer for statusMessage display purposes only.
+  const moodBoardSync = useMoodBoardSync();
+  // Stable ref so the save effect dep array does not include the controller object —
+  // the controller's status changes trigger re-renders but must not re-fire the save effect.
+  const moodBoardSyncMarkDirtyRef = useRef(moodBoardSync.markDirty);
+  useEffect(() => { moodBoardSyncMarkDirtyRef.current = moodBoardSync.markDirty; }, [moodBoardSync.markDirty]);
+
+  // ── Flush-read refs: always hold the latest state for use in the flush handler.
+  // The flush handler is registered once on mount — it reads these refs at call time
+  // so it always sees current state regardless of when registration captured the closure.
+
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
   useEffect(() => { gridSizeRef.current = gridSize; }, [gridSize]);
   useEffect(() => { showGridRef.current = showGrid; }, [showGrid]);
@@ -672,6 +708,14 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
       activeBoardId,
     });
   }, [images, canvasItems, boards, activeBoardId, onMoodboardDataChange]);
+
+  // Save Verification flush handler for "moodBoard" has been moved to App.js
+  // as an always-mounted proxy handler. It reads from Supabase directly and works
+  // regardless of which workflow tab is active. The component-level registration
+  // has been removed to avoid double-registration under the same key.
+
+  // Barrier registration has moved to ProjectModuleSyncContext (MoodBoard sync
+  // controller). The barrier survives workflow switches/unmounts.
 
   // Stamp createdBy on boards that were loaded before display name was ready
   useEffect(() => {
@@ -702,6 +746,26 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     };
     fetchName();
   }, []);
+
+  // Load Writing Character profiles once on mount (or project change). Stays in memory
+  // for the lifetime of the module — no reload on tab switches.
+  useEffect(() => {
+    let cancelled = false;
+    setCharProfilesStatus("loading");
+    setCharProfiles(null);
+    loadWritingCharacterProfilesAsync(selectedProject)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setCharProfiles(normalizeWritingCharacterProfiles(data));
+        setCharProfilesStatus("loaded");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCharProfiles(normalizeWritingCharacterProfiles(null));
+        setCharProfilesStatus("error");
+      });
+    return () => { cancelled = true; };
+  }, [selectedProject?.id, selectedProject?.name]);
 
   const storageKey = useMemo(() => getStorageKey(selectedProject), [selectedProject]);
   const leftLayoutKey = useMemo(() => getLeftLayoutStorageKey(selectedProject), [selectedProject]);
@@ -753,6 +817,8 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
       setCanvasItems(normalized.canvasItems);
       setZoom(normalized.zoom);
       setShowGrid(normalized.showGrid);
+      setCharacterBoardLinks(normalized.characterBoardLinks || {});
+      setHiddenCharacterIds(normalized.hiddenCharacterIds || []);
       setSelectedItemIds([]);
     };
 
@@ -760,6 +826,9 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
       try {
         const raw = localStorage.getItem(storageKey);
         if (!raw) {
+          if (process.env.NODE_ENV === "development") {
+            console.warn(`[MoodBoard load] no localStorage key found for ${storageKey} — initializing new board. If data was expected, check mirror hydration.`);
+          }
           const board = makeBoard(1, userDisplayNameRef.current || user?.email || "");
           setBoards([board]);
           setActiveBoardId(board.id);
@@ -767,15 +836,24 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           setStatusMessage("New moodboard ready.");
           return;
         }
+        if (process.env.NODE_ENV === "development") {
+          try {
+            const parsed = JSON.parse(raw);
+            console.info(`[MoodBoard load] loading from localStorage — boards: ${parsed?.boards?.length ?? "?"}, images: ${parsed?.images?.length ?? "?"}`);
+          } catch {}
+        }
         applyNormalized(normalizeImportedState(JSON.parse(raw)), userDisplayNameRef.current);
         setStatusMessage("Loaded local MoodBoard data.");
       } catch (err) {
-        console.error("Failed to load local MoodBoard:", err);
+        console.error("[MoodBoard load] Failed to load local MoodBoard:", err);
         setStatusMessage("Could not load MoodBoard data.");
       }
     };
 
     const load = async () => {
+      if (process.env.NODE_ENV === "development") {
+        console.info(`[MoodBoard load] starting load for project ${selectedProject?.id || "no-id"}`);
+      }
       if (!selectedProject?.id) { loadFromLocal(); didLoadRef.current = true; setIsLoaded(true); return; }
       try {
         const { data, error } = await supabase
@@ -784,6 +862,9 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           .eq("project_id", selectedProject.id)
           .maybeSingle();
           if (!error && data) {
+            if (process.env.NODE_ENV === "development") {
+              console.info(`[MoodBoard load] loaded from database — boards: ${data.boards?.length ?? "?"}, images: ${data.images?.length ?? "?"}`);
+            }
             applyNormalized(normalizeImportedState({
               boards: data.boards, activeBoardId: data.active_board_id,
               links: data.links, images: data.images,
@@ -792,10 +873,13 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
             setStatusMessage("Loaded MoodBoard from database.");
             setTimeout(() => setStatusMessage(prev => prev === "Loaded MoodBoard from database." ? "Saved" : prev), 2500);
           } else {
+            if (process.env.NODE_ENV === "development") {
+              console.info(`[MoodBoard load] no database record found${error ? ` (error: ${error.message})` : ""} — falling back to localStorage`);
+            }
             loadFromLocal();
           }
       } catch (err) {
-        console.error("MoodBoard DB load error:", err);
+        console.error("[MoodBoard load] DB load error:", err);
         loadFromLocal();
       } finally {
         setTimeout(() => { didLoadRef.current = true; setIsLoaded(true); }, 0);
@@ -808,41 +892,42 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
   useEffect(() => {
     if (!didLoadRef.current) return;
     // Keep session cache current so remounting skips DB round-trip
-    MOODBOARD_SESSION_CACHE.set(storageKey, { boards, activeBoardId, links, images, canvasItems, zoom, showGrid });
-    // Always save to localStorage immediately
+    MOODBOARD_SESSION_CACHE.set(storageKey, { boards, activeBoardId, links, images, canvasItems, zoom, showGrid, characterBoardLinks, hiddenCharacterIds });
+
+    // Build the local storage payload.
+    const localPayload = {
+      version: STORAGE_VERSION, savedAt: new Date().toISOString(),
+      activeBoardId, boards, links, images, canvasItems, zoom, showGrid,
+      characterBoardLinks, hiddenCharacterIds,
+    };
+
+    // Always write localStorage immediately — local mirror is synchronous.
     try {
-      localStorage.setItem(storageKey, JSON.stringify({
-        version: STORAGE_VERSION, savedAt: new Date().toISOString(),
-        activeBoardId, boards, links, images, canvasItems, zoom, showGrid,
-      }));
+      localStorage.setItem(storageKey, JSON.stringify(localPayload));
     } catch (err) {
       console.error("Local save failed:", err);
     }
-    // Signal pending DB save
-    if (selectedProject?.id) {
-      setStatusMessage("Saving...");
-    }
-    // Debounced save to Supabase
+
+    if (!selectedProject?.id) return;
+
+    // Signal pending Supabase save to the controller.
+    // Controller owns the debounce timer and barrier registration — these survive
+    // workflow switches/unmounts unlike a component-local setTimeout.
+    setStatusMessage("Saving...");
+    const supabasePayload = {
+      activeBoardId, boards, links, images, canvasItems, zoom, showGrid,
+    };
+    moodBoardSyncMarkDirtyRef.current(supabasePayload, localPayload);
+
+    // Local dbSaveTimerRef is used only to track pending state for statusMessage.
     clearTimeout(dbSaveTimerRef.current);
-    dbSaveTimerRef.current = setTimeout(async () => {
-      if (!selectedProject?.id) return;
-      try {
-        const { error } = await supabase.from("moodboard_data").upsert({
-          project_id: selectedProject.id,
-          active_board_id: activeBoardId,
-          boards, links, images,
-          canvas_items: canvasItems,
-          zoom, show_grid: showGrid,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "project_id" });
-        if (error) throw error;
-        setStatusMessage("Saved");
-      } catch (err) {
-        console.error("MoodBoard DB save error:", err);
-        setStatusMessage("Save failed. Changes stored locally.");
-      }
-    }, 2000);
-  }, [storageKey, activeBoardId, boards, links, images, canvasItems, zoom, showGrid, selectedProject?.id]);
+    dbSaveTimerRef.current = setTimeout(() => {
+      dbSaveTimerRef.current = null;
+      // Status message will update when the controller completes, but give a
+      // hopeful "Saved" here; the proxy flush handler will verify on Save/Return.
+      setStatusMessage("Saved");
+    }, 2500);
+  }, [storageKey, activeBoardId, boards, links, images, canvasItems, zoom, showGrid, characterBoardLinks, hiddenCharacterIds, selectedProject?.id]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -3041,90 +3126,129 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           {isViewOnly && <div style={{ marginTop: "8px", padding: "5px 8px", backgroundColor: "#FF9800", color: "white", borderRadius: "4px", fontSize: "11px", fontWeight: "bold" }}>VIEW ONLY</div>}
         </div>
 
-        <div style={{ height: boardsH, minHeight: 80, maxHeight: 440, flexShrink: 0, boxSizing: "border-box", overflow: "hidden", display: "flex", flexDirection: "column", padding: "10px", borderBottom: "none" }}>
-          <div style={{ fontSize: "11px", fontWeight: "bold", color: "#555", marginBottom: "6px", flexShrink: 0 }}>BOARDS</div>
-          <div style={{ display: "flex", gap: "4px", marginBottom: "8px", flexShrink: 0 }}>
-            <input value={newBoardName} onChange={(event) => setNewBoardName(event.target.value)} placeholder="New board name" disabled={!canEdit || isViewOnly} style={{ flex: 1, padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px" }} />
-            <button onClick={addBoard} disabled={!canEdit || isViewOnly} style={{ padding: "6px 9px", cursor: "pointer" }}>+</button>
+        <div style={{ height: boardsH, minHeight: 80, maxHeight: 440, flexShrink: 0, boxSizing: "border-box", overflow: "hidden", display: "flex", flexDirection: "column", borderBottom: "none" }}>
+          {/* Tab switcher */}
+          <div style={{ display: "flex", borderBottom: "1px solid #ddd", flexShrink: 0 }}>
+            <button
+              onClick={() => setLeftBoardsTab("boards")}
+              style={{ flex: 1, padding: "6px 4px", border: "none", borderBottom: leftBoardsTab === "boards" ? "2px solid #2196F3" : "2px solid transparent", background: "transparent", fontWeight: leftBoardsTab === "boards" ? "bold" : "normal", cursor: "pointer", fontSize: "11px", color: "#555" }}
+            >Boards</button>
+            <button
+              onClick={() => setLeftBoardsTab("characters")}
+              style={{ flex: 1, padding: "6px 4px", border: "none", borderBottom: leftBoardsTab === "characters" ? "2px solid #2196F3" : "2px solid transparent", background: "transparent", fontWeight: leftBoardsTab === "characters" ? "bold" : "normal", cursor: "pointer", fontSize: "11px", color: "#555" }}
+            >Characters</button>
           </div>
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", border: "1px inset #ddd", backgroundColor: "white" }}>
-            {boards.map((board) => {
-              const isActive = activeBoard?.id === board.id;
-              const isExpanded = expandedBoardIds.has(board.id);
-              const boardPageList = board.pages || [];
-              return (
-                <React.Fragment key={board.id}>
-                  <div onClick={() => setActiveBoardId(board.id)} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px", backgroundColor: isActive ? "#e3f2fd" : "white", borderBottom: "1px solid #eee", cursor: "pointer" }}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setExpandedBoardIds(prev => {
-                        const next = new Set(prev);
-                        if (next.has(board.id)) next.delete(board.id); else next.add(board.id);
-                        return next;
-                      }); }}
-                      title={isExpanded ? "Collapse pages" : "Show pages"}
-                      style={{ fontSize: "10px", cursor: "pointer", border: "none", background: "transparent", padding: "0 2px", color: "#555", flexShrink: 0 }}
-                    >{isExpanded ? "▼" : "▶"}</button>
-                    <input value={board.name} onChange={(event) => renameBoard(board.id, event.target.value)} onFocus={() => setActiveBoardId(board.id)} onClick={(e) => e.stopPropagation()} disabled={!canEdit || isViewOnly} style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", fontWeight: isActive ? "bold" : "normal", fontSize: "12px", outline: "none", overflow: "hidden", textOverflow: "ellipsis", cursor: "text" }} />
-                    {(board.createdBy || userDisplayName) && (
-                      <span style={{ fontSize: "9px", color: "#aaa", whiteSpace: "nowrap", marginRight: "2px", maxWidth: "50px", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {(board.createdBy || userDisplayName).includes("@")
-                          ? (board.createdBy || userDisplayName).split("@")[0]
-                          : (board.createdBy || userDisplayName)}
-                      </span>
-                    )}
-                    <button onClick={(e) => { e.stopPropagation(); addPageToBoard(board.id, true); }} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap", padding: "2px 4px" }}>+Pg</button>
-                    <button onClick={(e) => { e.stopPropagation(); deleteBoard(board.id); }} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, padding: "2px 4px" }}>×</button>
-                  </div>
-                  {isExpanded && boardPageList.map((pg, pgIdx) => {
-                    const isActivePg = activePage?.id === pg.id && isActive;
-                    const isDragOver = boardPanelDragOverPageId === pg.id;
-                    return (
-                      <div
-                        key={pg.id}
-                        draggable
-                        onDragStart={(e) => {
-                          e.stopPropagation();
-                          boardPanelDragRef.current = { boardId: board.id, pageId: pg.id, fromIndex: pgIdx };
-                          setBoardPanelDragOverPageId(null);
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (boardPanelDragRef.current?.boardId === board.id && boardPanelDragRef.current?.pageId !== pg.id) {
-                            setBoardPanelDragOverPageId(pg.id);
-                          }
-                        }}
-                        onDrop={(e) => {
-                          e.stopPropagation();
-                          const dr = boardPanelDragRef.current;
-                          if (dr && dr.boardId === board.id && dr.pageId !== pg.id) {
-                            reorderPage(dr.pageId, pgIdx, board.id);
-                          }
-                          boardPanelDragRef.current = null;
-                          setBoardPanelDragOverPageId(null);
-                        }}
-                        onDragEnd={() => {
-                          boardPanelDragRef.current = null;
-                          setBoardPanelDragOverPageId(null);
-                        }}
-                        onClick={() => { setActiveBoardId(board.id); setActivePage(pg.id); pageRefs.current[pg.id]?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
-                        style={{ display: "flex", alignItems: "center", gap: "4px", padding: "3px 5px 3px 22px", backgroundColor: isDragOver ? "#e3f2fd" : isActivePg ? "#bbdefb" : "#f9f9f9", borderBottom: isDragOver ? "2px solid #2196F3" : "1px solid #f0f0f0", cursor: "grab" }}
-                      >
-                        <span style={{ fontSize: "10px", color: "#aaa", flexShrink: 0 }}>⠿</span>
-                        <span style={{ fontSize: "11px", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: isActivePg ? "bold" : "normal", color: "#444" }}>{pg.name || `Page ${pgIdx + 1}`}</span>
+
+          {/* Boards tab */}
+          {leftBoardsTab === "boards" && (
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: "8px 10px 10px", overflow: "hidden" }}>
+              <div style={{ display: "flex", gap: "4px", marginBottom: "8px", flexShrink: 0 }}>
+                <input value={newBoardName} onChange={(event) => setNewBoardName(event.target.value)} placeholder="New board name" disabled={!canEdit || isViewOnly} style={{ flex: 1, padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px" }} />
+                <button onClick={addBoard} disabled={!canEdit || isViewOnly} style={{ padding: "6px 9px", cursor: "pointer" }}>+</button>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", border: "1px inset #ddd", backgroundColor: "white" }}>
+                {boards.map((board) => {
+                  const isActive = activeBoard?.id === board.id;
+                  const isExpanded = expandedBoardIds.has(board.id);
+                  const boardPageList = board.pages || [];
+                  return (
+                    <React.Fragment key={board.id}>
+                      <div onClick={() => setActiveBoardId(board.id)} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px", backgroundColor: isActive ? "#e3f2fd" : "white", borderBottom: "1px solid #eee", cursor: "pointer" }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setExpandedBoardIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(board.id)) next.delete(board.id); else next.add(board.id);
+                            return next;
+                          }); }}
+                          title={isExpanded ? "Collapse pages" : "Show pages"}
+                          style={{ fontSize: "10px", cursor: "pointer", border: "none", background: "transparent", padding: "0 2px", color: "#555", flexShrink: 0 }}
+                        >{isExpanded ? "▼" : "▶"}</button>
+                        <input value={board.name} onChange={(event) => renameBoard(board.id, event.target.value)} onFocus={() => setActiveBoardId(board.id)} onClick={(e) => e.stopPropagation()} disabled={!canEdit || isViewOnly} style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", fontWeight: isActive ? "bold" : "normal", fontSize: "12px", outline: "none", overflow: "hidden", textOverflow: "ellipsis", cursor: "text" }} />
+                        {(board.createdBy || userDisplayName) && (
+                          <span style={{ fontSize: "9px", color: "#aaa", whiteSpace: "nowrap", marginRight: "2px", maxWidth: "50px", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {(board.createdBy || userDisplayName).includes("@")
+                              ? (board.createdBy || userDisplayName).split("@")[0]
+                              : (board.createdBy || userDisplayName)}
+                          </span>
+                        )}
+                        <button onClick={(e) => { e.stopPropagation(); addPageToBoard(board.id, true); }} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap", padding: "2px 4px" }}>+Pg</button>
+                        <button onClick={(e) => { e.stopPropagation(); deleteBoard(board.id); }} disabled={!canEdit || isViewOnly} style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, padding: "2px 4px" }}>×</button>
                       </div>
-                    );
-                  })}
-                </React.Fragment>
-              );
-            })}
-          </div>
-          <div style={{ display: "flex", gap: "6px", marginTop: "6px", flexShrink: 0 }}>
-            <button onClick={duplicateBoard} disabled={!canEdit || isViewOnly} style={{ flex: 1, minWidth: 0, fontSize: "11px", cursor: "pointer", padding: "4px 3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Duplicate Board</button>
-            {canEdit && !isViewOnly && (
-              <button onClick={openShareModal} style={{ flex: 1, minWidth: 0, fontSize: "11px", cursor: "pointer", padding: "4px 3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Share…</button>
-            )}
-          </div>
+                      {isExpanded && boardPageList.map((pg, pgIdx) => {
+                        const isActivePg = activePage?.id === pg.id && isActive;
+                        const isDragOver = boardPanelDragOverPageId === pg.id;
+                        return (
+                          <div
+                            key={pg.id}
+                            draggable
+                            onDragStart={(e) => {
+                              e.stopPropagation();
+                              boardPanelDragRef.current = { boardId: board.id, pageId: pg.id, fromIndex: pgIdx };
+                              setBoardPanelDragOverPageId(null);
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (boardPanelDragRef.current?.boardId === board.id && boardPanelDragRef.current?.pageId !== pg.id) {
+                                setBoardPanelDragOverPageId(pg.id);
+                              }
+                            }}
+                            onDrop={(e) => {
+                              e.stopPropagation();
+                              const dr = boardPanelDragRef.current;
+                              if (dr && dr.boardId === board.id && dr.pageId !== pg.id) {
+                                reorderPage(dr.pageId, pgIdx, board.id);
+                              }
+                              boardPanelDragRef.current = null;
+                              setBoardPanelDragOverPageId(null);
+                            }}
+                            onDragEnd={() => {
+                              boardPanelDragRef.current = null;
+                              setBoardPanelDragOverPageId(null);
+                            }}
+                            onClick={() => { setActiveBoardId(board.id); setActivePage(pg.id); pageRefs.current[pg.id]?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
+                            style={{ display: "flex", alignItems: "center", gap: "4px", padding: "3px 5px 3px 22px", backgroundColor: isDragOver ? "#e3f2fd" : isActivePg ? "#bbdefb" : "#f9f9f9", borderBottom: isDragOver ? "2px solid #2196F3" : "1px solid #f0f0f0", cursor: "grab" }}
+                          >
+                            <span style={{ fontSize: "10px", color: "#aaa", flexShrink: 0 }}>⠿</span>
+                            <span style={{ fontSize: "11px", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: isActivePg ? "bold" : "normal", color: "#444" }}>{pg.name || `Page ${pgIdx + 1}`}</span>
+                          </div>
+                        );
+                      })}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", gap: "6px", marginTop: "6px", flexShrink: 0 }}>
+                <button onClick={duplicateBoard} disabled={!canEdit || isViewOnly} style={{ flex: 1, minWidth: 0, fontSize: "11px", cursor: "pointer", padding: "4px 3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Duplicate Board</button>
+                {canEdit && !isViewOnly && (
+                  <button onClick={openShareModal} style={{ flex: 1, minWidth: 0, fontSize: "11px", cursor: "pointer", padding: "4px 3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Share…</button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Characters tab */}
+          {leftBoardsTab === "characters" && (
+            <CharactersTab
+              charProfilesStatus={charProfilesStatus}
+              charProfiles={charProfiles}
+              characterBoardLinks={characterBoardLinks}
+              setCharacterBoardLinks={setCharacterBoardLinks}
+              hiddenCharacterIds={hiddenCharacterIds}
+              setHiddenCharacterIds={setHiddenCharacterIds}
+              showHiddenCharacters={showHiddenCharacters}
+              setShowHiddenCharacters={setShowHiddenCharacters}
+              boards={boards}
+              setBoards={setBoards}
+              setActiveBoardId={setActiveBoardId}
+              setLeftBoardsTab={setLeftBoardsTab}
+              userDisplayNameRef={userDisplayNameRef}
+              userDisplayName={userDisplayName}
+              user={user}
+              canEdit={canEdit}
+              isViewOnly={isViewOnly}
+            />
+          )}
         </div>
 
         {/* Boards-Links splitter */}
@@ -4268,6 +4392,223 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+// ─── CharactersTab ─────────────────────────────────────────────────────────────
+// Characters tab inside the left boards panel.
+// Each character row mirrors the Boards tab style: expand arrow · name · +Brd · hide.
+// Expanded: indented assigned-board rows (clickable) + inline assign picker.
+
+function CharactersTab({
+  charProfilesStatus, charProfiles,
+  characterBoardLinks, setCharacterBoardLinks,
+  hiddenCharacterIds, setHiddenCharacterIds,
+  showHiddenCharacters, setShowHiddenCharacters,
+  boards, setBoards,
+  setActiveBoardId, setLeftBoardsTab,
+  userDisplayNameRef, userDisplayName, user,
+  canEdit, isViewOnly,
+}) {
+  const [expandedCharIds, setExpandedCharIds] = useState(new Set());
+  const [assignPickerCharId, setAssignPickerCharId] = useState(null);
+
+  const toggleExpand = (id) => setExpandedCharIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const addBoardForChar = (prof) => {
+    const board = makeBoard(boards.length + 1, userDisplayNameRef?.current || userDisplayName || user?.email || "");
+    board.name = prof.canonicalName;
+    setBoards((prev) => [...prev, board]);
+    setCharacterBoardLinks((prev) => {
+      const existing = Array.isArray(prev[prof.id]) ? prev[prof.id] : (prev[prof.id] ? [prev[prof.id]] : []);
+      return { ...prev, [prof.id]: [...existing, board.id] };
+    });
+    setActiveBoardId(board.id);
+    setLeftBoardsTab("boards");
+  };
+
+  const assignBoard = (profId, boardId) => {
+    setCharacterBoardLinks((prev) => {
+      const existing = Array.isArray(prev[profId]) ? prev[profId] : (prev[profId] ? [prev[profId]] : []);
+      if (existing.includes(boardId)) return prev;
+      return { ...prev, [profId]: [...existing, boardId] };
+    });
+    setAssignPickerCharId(null);
+    setActiveBoardId(boardId);
+    setLeftBoardsTab("boards");
+  };
+
+  const unassignBoard = (profId, boardId) => {
+    setCharacterBoardLinks((prev) => {
+      const existing = Array.isArray(prev[profId]) ? prev[profId] : (prev[profId] ? [prev[profId]] : []);
+      const next = existing.filter((id) => id !== boardId);
+      return { ...prev, [profId]: next.length ? next : null };
+    });
+  };
+
+  const getAssignedBoardIds = (profId) => {
+    const val = characterBoardLinks[profId];
+    if (!val) return [];
+    if (Array.isArray(val)) return val;
+    return [val];
+  };
+
+  if (charProfilesStatus === "loading") {
+    return <div style={{ padding: "12px 10px", fontSize: "11px", color: "#aaa" }}>Loading characters…</div>;
+  }
+
+  const profileList = getWritingCharacterProfilesArray(charProfiles);
+  if (profileList.length === 0) {
+    return (
+      <div style={{ padding: "12px 10px", fontSize: "11px", color: "#aaa", lineHeight: 1.6 }}>
+        No Writing Characters found.<br />Add characters in the Writing module.
+      </div>
+    );
+  }
+
+  const hiddenSet = new Set(hiddenCharacterIds);
+  const visible = profileList.filter((p) => !hiddenSet.has(p.id));
+  const hidden = profileList.filter((p) => hiddenSet.has(p.id));
+
+  const renderCharRow = (prof, isHidden) => {
+    const isExpanded = expandedCharIds.has(prof.id);
+    const assignedIds = getAssignedBoardIds(prof.id);
+    const assignedBoards = assignedIds.map((id) => boards.find((b) => b.id === id)).filter(Boolean);
+    const unassignedBoards = boards.filter((b) => !assignedIds.includes(b.id));
+    const showPicker = assignPickerCharId === prof.id;
+
+    return (
+      <React.Fragment key={prof.id}>
+        {/* Character name row */}
+        <div
+          style={{
+            display: "flex", alignItems: "center", gap: "4px", padding: "5px",
+            backgroundColor: isHidden ? "#fafafa" : "white",
+            borderBottom: "1px solid #eee", cursor: "default",
+            opacity: isHidden ? 0.65 : 1,
+          }}
+        >
+          <button
+            onClick={() => toggleExpand(prof.id)}
+            title={isExpanded ? "Collapse" : "Show boards"}
+            style={{ fontSize: "10px", cursor: "pointer", border: "none", background: "transparent", padding: "0 2px", color: "#555", flexShrink: 0 }}
+          >{isExpanded ? "▼" : "▶"}</button>
+
+          <span style={{ flex: 1, minWidth: 0, fontSize: "12px", fontWeight: isHidden ? "normal" : "bold", color: isHidden ? "#777" : "#1a1a1a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {prof.canonicalName}
+          </span>
+
+          {prof.role && (
+            <span style={{ fontSize: "9px", color: "#888", flexShrink: 0, backgroundColor: "#f0f0f0", padding: "1px 4px", borderRadius: "3px", whiteSpace: "nowrap" }}>{prof.role}</span>
+          )}
+
+          {!isHidden && !isViewOnly && (
+            <button
+              onClick={() => addBoardForChar(prof)}
+              title="Create a new board for this character"
+              style={{ fontSize: "10px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap", padding: "2px 4px" }}
+            >+Brd</button>
+          )}
+
+          {isHidden ? (
+            <button
+              onClick={() => setHiddenCharacterIds((prev) => prev.filter((id) => id !== prof.id))}
+              title="Show this character"
+              style={{ fontSize: "9px", color: "#2196F3", background: "none", border: "none", cursor: "pointer", padding: "0 2px", flexShrink: 0 }}
+            >show</button>
+          ) : (
+            <button
+              onClick={() => { setHiddenCharacterIds((prev) => [...prev, prof.id]); setAssignPickerCharId(null); }}
+              title="Hide this character"
+              style={{ fontSize: "11px", lineHeight: 1, color: "#ccc", background: "none", border: "none", cursor: "pointer", padding: "0 2px", flexShrink: 0 }}
+            >×</button>
+          )}
+        </div>
+
+        {/* Expanded: assigned boards + assign picker */}
+        {isExpanded && (
+          <>
+            {assignedBoards.length === 0 && !showPicker && (
+              <div style={{ padding: "3px 5px 3px 22px", fontSize: "10px", color: "#bbb", borderBottom: "1px solid #f5f5f5", backgroundColor: "#fafafa" }}>
+                No boards assigned
+              </div>
+            )}
+
+            {assignedBoards.map((b) => (
+              <div
+                key={b.id}
+                style={{ display: "flex", alignItems: "center", gap: "4px", padding: "3px 5px 3px 22px", backgroundColor: "#f9f9f9", borderBottom: "1px solid #f0f0f0", cursor: "pointer" }}
+                onClick={() => { setActiveBoardId(b.id); setLeftBoardsTab("boards"); }}
+              >
+                <span style={{ fontSize: "10px", color: "#aaa", flexShrink: 0 }}>⠿</span>
+                <span style={{ fontSize: "11px", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#444" }}>{b.name}</span>
+                {!isViewOnly && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); unassignBoard(prof.id, b.id); }}
+                    title="Remove assignment"
+                    style={{ fontSize: "10px", color: "#ccc", background: "none", border: "none", cursor: "pointer", padding: "0 2px", flexShrink: 0 }}
+                  >×</button>
+                )}
+              </div>
+            ))}
+
+            {/* Assign picker trigger / inline picker */}
+            {!isViewOnly && !showPicker && unassignedBoards.length > 0 && (
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "4px", padding: "3px 5px 3px 22px", backgroundColor: "#f9f9f9", borderBottom: "1px solid #f0f0f0", cursor: "pointer", color: "#2196F3" }}
+                onClick={() => setAssignPickerCharId(prof.id)}
+              >
+                <span style={{ fontSize: "11px" }}>+ Assign board</span>
+              </div>
+            )}
+
+            {showPicker && (
+              <div style={{ backgroundColor: "#f0f7ff", borderBottom: "1px solid #ddd" }}>
+                {unassignedBoards.map((b) => (
+                  <div
+                    key={b.id}
+                    onClick={() => assignBoard(prof.id, b.id)}
+                    style={{ padding: "4px 5px 4px 28px", fontSize: "11px", color: "#1a1a2e", cursor: "pointer", borderBottom: "1px solid #e8eef5" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#dbeeff"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
+                  >{b.name}</div>
+                ))}
+                <div
+                  onClick={() => setAssignPickerCharId(null)}
+                  style={{ padding: "3px 5px 3px 28px", fontSize: "10px", color: "#aaa", cursor: "pointer", borderTop: "1px solid #ddd" }}
+                >Cancel</div>
+              </div>
+            )}
+          </>
+        )}
+      </React.Fragment>
+    );
+  };
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", border: "1px inset #ddd", backgroundColor: "white", margin: "8px 10px 0" }}>
+        {visible.map((prof) => renderCharRow(prof, false))}
+
+        {hidden.length > 0 && (
+          <>
+            <div
+              onClick={() => setShowHiddenCharacters((v) => !v)}
+              style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px", backgroundColor: "#f5f5f5", borderTop: "1px solid #e0e0e0", cursor: "pointer" }}
+            >
+              <span style={{ fontSize: "10px", color: "#aaa", padding: "0 2px" }}>{showHiddenCharacters ? "▼" : "▶"}</span>
+              <span style={{ fontSize: "11px", color: "#aaa", flex: 1 }}>{hidden.length} hidden character{hidden.length !== 1 ? "s" : ""}</span>
+            </div>
+            {showHiddenCharacters && hidden.map((prof) => renderCharRow(prof, true))}
+          </>
+        )}
+      </div>
+      <div style={{ height: "10px", flexShrink: 0 }} />
     </div>
   );
 }

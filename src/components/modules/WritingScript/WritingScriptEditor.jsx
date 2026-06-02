@@ -1711,8 +1711,43 @@ const findDialoguePageOverflowSplit = (nodes = [], targetIndex = -1, caretOffset
   };
 };
 
+// ─── FrozenTextSpan ──────────────────────────────────────────────────────────
+// Renders the contentEditable text span for a script node.
+// When `frozen` is true the component never re-renders regardless of prop
+// changes — this prevents React from reconciling (and rewriting) the active
+// contentEditable DOM text during typing, which would reset the browser
+// selection to offset 0.  `frozen` is true while the user is actively typing
+// in this node; it is cleared on blur, structural ops, and document reinit.
+const FrozenTextSpan = React.memo(
+  function FrozenTextSpan({ style, children }) {
+    return (
+      <span data-node-text="true" style={style}>
+        {children}
+      </span>
+    );
+  },
+  (prev, next) => {
+    // Return true (skip re-render) whenever either version is frozen.
+    if (prev.frozen || next.frozen) return true;
+    // Both unfrozen — do a normal re-render.
+    return false;
+  }
+);
+
+// ─── Stability diagnostics ───────────────────────────────────────────────────
+// Set false to silence all [WritingStability] logs.
+const DEBUG_WRITING_STABILITY = false;
+const _ws = (...args) => { if (DEBUG_WRITING_STABILITY) console.log("[WritingStability]", ...args); };
+const _wsGroup = (label, fn) => {
+  if (!DEBUG_WRITING_STABILITY) return;
+  console.groupCollapsed("[WritingStability]", label);
+  fn();
+  console.groupEnd();
+};
+
 const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
   initialNodes = [],
+  documentKey = "",
   onNodesChange = null,
   activeElementType = "",
   onActiveElementTypeChange = null,
@@ -1731,6 +1766,9 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
   const [locationAutocomplete, setLocationAutocomplete] = useState(null);
   const [elementChooser, setElementChooser] = useState(null);
   const [activeSpellcheckRange, setActiveSpellcheckRange] = useState(null);
+  // Temporary solid-yellow highlights for Writing Characters cleanup mode.
+  // Array of { nodeId, startOffset, endOffset } — UI only, never persisted.
+  const [activeCharacterTagHighlights, setActiveCharacterTagHighlights] = useState([]);
   const [activeElementRect, setActiveElementRect] = useState(null);
   const [sceneDragState, setSceneDragState] = useState({
     draggedSceneId: null,
@@ -1746,6 +1784,34 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
   const nodesRef = useRef(nodes);
   const onNodesChangeRef = useRef(onNodesChange);
   const marginSelectionCleanupRef = useRef(null);
+  const documentKeyRef = useRef(documentKey);
+  // Debounced snapshot: normal text input queues here, emitted after 300 ms idle.
+  const snapshotTimerRef = useRef(null);
+  const pendingSnapshotNodesRef = useRef(null);
+  // Node ID currently being typed. While set, FrozenTextSpan skips re-renders
+  // for that node so React never reconciles (and resets) the active caret.
+  // Cleared on blur, structural ops, and document reinit.
+  const activeTypingNodeIdRef = useRef(null);
+  // Node ID to focus immediately after the next documentKey-driven reinit completes.
+  const focusNodeAfterReinitRef = useRef(null);
+
+  // ─── Diagnostic state ────────────────────────────────────────────────────────
+  const _dbgRenderCount = useRef(0);
+  const _dbgLastRenderTime = useRef(performance.now());
+  const lastInputEventRef = useRef(null);
+  const lastFocusEventRef = useRef(null);
+  const lastEffectRef = useRef(null);
+  const lastUpdateNodesRef = useRef(null);
+  if (DEBUG_WRITING_STABILITY) {
+    _dbgRenderCount.current += 1;
+    const _now = performance.now();
+    const _dt = (_now - _dbgLastRenderTime.current).toFixed(1);
+    _dbgLastRenderTime.current = _now;
+    const _focusedNodeId = (() => {
+      try { return document.activeElement?.closest?.("[data-node-id]")?.dataset?.nodeId || null; } catch { return null; }
+    })();
+    _ws(`render #${_dbgRenderCount.current} dt=${_dt}ms | nodes=${nodes.length} docKey=${documentKey} activeNodeId=${activeNodeId} activeElementType=${activeElementType} focusedNodeId=${_focusedNodeId}`);
+  }
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -1761,37 +1827,144 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
     };
   }, []);
 
+  // ─── Diagnostic: selectionchange ─────────────────────────────────────────────
   useEffect(() => {
-    const normalizedInitialNodes = normalizeNodes(initialNodes);
-    const nextPayload = getNodesPayload(normalizedInitialNodes);
+    if (!DEBUG_WRITING_STABILITY) return;
+    let _lastSelNodeId = null;
+    let _lastSelOffset = -1;
+    const _onSel = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      const anc = range.startContainer;
+      const el = anc?.nodeType === Node.ELEMENT_NODE ? anc : anc?.parentElement;
+      const nodeId = el?.closest?.("[data-node-id]")?.dataset?.nodeId || null;
+      const offset = (() => {
+        try {
+          const pr = document.createRange();
+          const textEl = anc?.nodeType === Node.ELEMENT_NODE ? anc : anc?.parentElement?.closest?.("[data-node-text]") || anc?.parentElement;
+          if (!textEl) return range.startOffset;
+          pr.selectNodeContents(textEl);
+          pr.setEnd(range.startContainer, range.startOffset);
+          return pr.toString().length;
+        } catch { return range.startOffset; }
+      })();
+      const inEditor = editorRef.current?.contains(range.startContainer);
+      if (!inEditor && _lastSelNodeId !== null) {
+        _ws(`selectionchange: LEFT EDITOR — activeEl=${document.activeElement?.tagName}#${document.activeElement?.id || ""}.${String(document.activeElement?.className || "").split(" ")[0]} lastNode=${_lastSelNodeId}@${_lastSelOffset}`);
+        lastFocusEventRef.current = { time: performance.now(), event: "selection-left-editor", nodeId: _lastSelNodeId, lastInput: lastInputEventRef.current };
+      }
+      if (nodeId && nodeId !== _lastSelNodeId) {
+        _ws(`selectionchange: nodeId ${_lastSelNodeId} → ${nodeId} offset=${offset}`);
+      }
+      if (nodeId && nodeId === _lastSelNodeId && offset === 0 && _lastSelOffset > 0) {
+        _ws(`selectionchange: CARET JUMPED TO 0! nodeId=${nodeId} was @${_lastSelOffset} — lastInput=${JSON.stringify(lastInputEventRef.current)}`);
+      }
+      _lastSelNodeId = nodeId;
+      _lastSelOffset = offset;
+    };
+    document.addEventListener("selectionchange", _onSel, true);
+    return () => document.removeEventListener("selectionchange", _onSel, true);
+  }, []);
 
-    if (nextPayload === lastEmittedNodesPayloadRef.current) {
+  // Editor reinitializes from initialNodes ONLY when document identity changes:
+  // project switch, import, new script. Parent save echoes do not change documentKey,
+  // so they never trigger a reconciliation of the active contentEditable.
+  useEffect(() => {
+    if (documentKey === documentKeyRef.current) {
+      if (DEBUG_WRITING_STABILITY) _ws(`effect[documentKey] SKIPPED — key unchanged (${documentKey})`);
       return;
     }
-
-    setNodes(prevNodes => {
-      const currentPayload = getNodesPayload(prevNodes);
-
-      return currentPayload === nextPayload ? prevNodes : normalizedInitialNodes;
-    });
-
+    const _t0 = performance.now();
+    if (DEBUG_WRITING_STABILITY) _ws(`effect[documentKey] FIRING ${documentKeyRef.current} → ${documentKey} | initialNodes.length=${initialNodes.length} activeNodeId=${activeNodeId}`);
+    lastEffectRef.current = { name: "documentKey", time: _t0, from: documentKeyRef.current, to: documentKey };
+    documentKeyRef.current = documentKey;
+    const normalizedNodes = normalizeNodes(initialNodes);
+    setNodes(normalizedNodes);
+    nodesRef.current = normalizedNodes;
+    lastEmittedNodesPayloadRef.current = getNodesPayload(normalizedNodes);
+    activeTypingNodeIdRef.current = null;
+    clearTimeout(snapshotTimerRef.current);
+    snapshotTimerRef.current = null;
+    pendingSnapshotNodesRef.current = null;
     setCharacterAutocomplete(null);
     setLocationAutocomplete(null);
     setElementChooser(null);
-  }, [initialNodes]);
+
+    // If a focus target was registered before this reinit (e.g. new script creation),
+    // focus that node once React has committed the new document to the DOM.
+    const reinitFocusNodeId = focusNodeAfterReinitRef.current;
+    focusNodeAfterReinitRef.current = null;
+    if (reinitFocusNodeId) {
+      // getNodeElement returns the [data-node-id] row div, which is NOT the
+      // contentEditable target. Focus the outer editorRef container first, then
+      // place the caret via setCaretToEnd (which targets [data-node-text="true"]).
+      // Do NOT call setActiveNodeId here — that's a React state setter and calling
+      // it from inside a rAF-inside-useEffect can trigger the active-element-type
+      // effect chain leading to maximum update depth. activeNodeId is set naturally
+      // on the first input or click via updateActiveNodeFromSelection.
+      const attemptFocusNode = (nodeId) => {
+        const rowEl = getNodeElement(editorRef.current, nodeId);
+        if (!rowEl) return false;
+        editorRef.current?.focus({ preventScroll: true });
+        setCaretToEnd(rowEl);
+        return true;
+      };
+
+      requestAnimationFrame(() => {
+        // First attempt: React has usually committed by now.
+        if (attemptFocusNode(reinitFocusNodeId)) return;
+        // Retry once: setNodes may not have flushed to DOM in React 18
+        // concurrent mode before the first rAF fires.
+        requestAnimationFrame(() => {
+          if (attemptFocusNode(reinitFocusNodeId)) return;
+          // Final attempt via setTimeout: fires after all browser focus-management
+          // from the click event has settled (e.g. focus redirected to body when
+          // the clicked button is removed from the DOM as noScript flips to false).
+          setTimeout(() => attemptFocusNode(reinitFocusNodeId), 0);
+        });
+      });
+    }
+    if (DEBUG_WRITING_STABILITY) _ws(`effect[documentKey] DONE — setNodes called, focusPending=${!!focusNodeAfterReinitRef.current} dt=${(performance.now() - lastEffectRef.current?.time).toFixed(1)}ms`);
+  }, [documentKey]); // initialNodes intentionally omitted: read at documentKey change time
 
   const activeNode = useMemo(() => {
     return nodes.find(node => node.id === activeNodeId) || null;
   }, [activeNodeId, nodes]);
 
-  useEffect(() => {
-    onActiveElementTypeChange?.(activeNode?.type || "");
-  }, [activeNode?.type, onActiveElementTypeChange]);
+  // Track last emitted type so we never send the same type twice or emit when
+  // there is no active node (which would cause spurious parent state churn).
+  const lastEmittedActiveTypeRef = useRef("");
 
   useEffect(() => {
-    if (!activeElementType || !activeNodeId) return;
-    if (activeNode?.type === activeElementType) return;
+    if (!activeNodeId || !activeNode) {
+      if (DEBUG_WRITING_STABILITY) _ws(`effect[activeNode.type] skipped: no active node (activeNodeId=${activeNodeId})`);
+      return;
+    }
+    if (!activeNode.type) {
+      if (DEBUG_WRITING_STABILITY) _ws(`effect[activeNode.type] skipped: missing type (activeNodeId=${activeNodeId})`);
+      return;
+    }
+    if (activeNode.type === lastEmittedActiveTypeRef.current) {
+      if (DEBUG_WRITING_STABILITY) _ws(`effect[activeNode.type] skipped: unchanged type "${activeNode.type}"`);
+      return;
+    }
+    if (DEBUG_WRITING_STABILITY) _ws(`effect[activeNode.type] emitted active type "${activeNode.type}" (was "${lastEmittedActiveTypeRef.current}")`);
+    lastEmittedActiveTypeRef.current = activeNode.type;
+    onActiveElementTypeChange?.(activeNode.type);
+  }, [activeNode?.type, activeNodeId, onActiveElementTypeChange]);
 
+  useEffect(() => {
+    if (DEBUG_WRITING_STABILITY) _ws(`effect[activeElementType] FIRING — activeElementType="${activeElementType}" activeNodeId=${activeNodeId} activeNode.type="${activeNode?.type}"`);
+    if (!activeElementType || !activeNodeId) {
+      if (DEBUG_WRITING_STABILITY) _ws(`effect[activeElementType] early return — missing activeElementType or activeNodeId`);
+      return;
+    }
+    if (activeNode?.type === activeElementType) {
+      if (DEBUG_WRITING_STABILITY) _ws(`effect[activeElementType] early return — types already match`);
+      return;
+    }
+    if (DEBUG_WRITING_STABILITY) _ws(`effect[activeElementType] CALLING updateNodeType(${activeNodeId}, "${activeElementType}") — was "${activeNode?.type}"`);
     updateNodeType(activeNodeId, activeElementType);
   }, [activeElementType]);
 
@@ -1886,6 +2059,10 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
   }, [nodes]);
 
   const emitNodesChange = (nextNodes) => {
+    // Cancel any pending debounced text snapshot — this emission supersedes it.
+    clearTimeout(snapshotTimerRef.current);
+    snapshotTimerRef.current = null;
+    pendingSnapshotNodesRef.current = null;
     lastEmittedNodesPayloadRef.current = getNodesPayload(nextNodes);
     onNodesChange?.(nextNodes);
   };
@@ -1926,8 +2103,18 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
   };
 
   const flushNodesFromDom = () => {
+    // Cancel pending debounced snapshot and emit immediately from live DOM.
+    clearTimeout(snapshotTimerRef.current);
+    snapshotTimerRef.current = null;
+    pendingSnapshotNodesRef.current = null;
+
     const liveNodes = readNodesFromDom(nodesRef.current);
     const livePayload = getNodesPayload(liveNodes);
+
+    // Sync React nodes state on flush so FrozenTextSpan is unfrozen with correct
+    // text the next time it renders (blur, structural op, or document switch).
+    nodesRef.current = liveNodes;
+    setNodes(liveNodes);
 
     if (livePayload !== lastEmittedNodesPayloadRef.current) {
       lastEmittedNodesPayloadRef.current = livePayload;
@@ -1950,7 +2137,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
     }));
   };
 
-  const pushHistorySnapshot = (snapshotNodes = readNodesFromDom(nodes)) => {
+  const pushHistorySnapshot = (snapshotNodes = readNodesFromDom(nodesRef.current)) => {
     undoStackRef.current.push(cloneNodesForHistory(snapshotNodes));
 
     if (undoStackRef.current.length > 100) {
@@ -1980,7 +2167,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
   };
 
   const handleUndoRedo = (direction) => {
-    const currentNodes = readNodesFromDom(nodes);
+    const currentNodes = readNodesFromDom(nodesRef.current);
 
     if (direction === "undo") {
       const previousSnapshot = undoStackRef.current.pop();
@@ -2000,9 +2187,11 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
     }
   };
 
-  const updateNodes = (updater, focusNodeId = null, focusOptions = {}) => {
+  const updateNodes = (updater, focusNodeId = null, focusOptions = {}, _caller = "") => {
+    const _t0 = performance.now();
     let normalizedNextNodes = null;
     let shouldEmit = false;
+    const prevCount = nodesRef.current.length;
 
     setNodes(prev => {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -2012,6 +2201,12 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
       shouldEmit = prevPayload !== nextPayload;
       return shouldEmit ? normalizedNextNodes : prev;
     });
+
+    if (DEBUG_WRITING_STABILITY) {
+      const nextCount = normalizedNextNodes?.length ?? prevCount;
+      lastUpdateNodesRef.current = { time: _t0, caller: _caller, prevCount, nextCount, focusNodeId, shouldEmit };
+      _ws(`updateNodes caller="${_caller}" prevNodes=${prevCount} nextNodes=${nextCount} shouldEmit=${shouldEmit} focusNodeId=${focusNodeId} dt=${(performance.now() - _t0).toFixed(1)}ms`);
+    }
 
     if (normalizedNextNodes && shouldEmit) {
       requestAnimationFrame(() => {
@@ -2032,6 +2227,8 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
           }
 
           setActiveNodeId(focusNodeId);
+        } else if (DEBUG_WRITING_STABILITY) {
+          _ws(`updateNodes rAF focus: element NOT FOUND for focusNodeId=${focusNodeId}`);
         }
       });
     }
@@ -2062,7 +2259,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
   const moveSceneSection = (draggedSceneId, targetSceneId, position = "before") => {
     if (!draggedSceneId || !targetSceneId || draggedSceneId === targetSceneId) return;
 
-    const currentNodes = readNodesFromDom(nodes);
+    const currentNodes = readNodesFromDom(nodesRef.current);
     const ranges = getSceneRanges(currentNodes);
     const draggedRange = ranges.find(range => range.sceneId === String(draggedSceneId));
     const targetRange = ranges.find(range => range.sceneId === String(targetSceneId));
@@ -2257,7 +2454,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
   };
 
   const deleteEmptyNode = (nodeId) => {
-    const currentNodes = readNodesFromDom(nodes);
+    const currentNodes = readNodesFromDom(nodesRef.current);
 
     if (currentNodes.length <= 1) return;
 
@@ -2327,7 +2524,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
 
   const getCurrentLiveNode = () => {
     const currentNodeId = getCaretNodeId() || activeNodeId;
-    const currentNodes = readNodesFromDom(nodes);
+    const currentNodes = readNodesFromDom(nodesRef.current);
 
     if (!currentNodeId) {
       return {
@@ -2384,7 +2581,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
       return null;
     }
 
-    const currentNodes = readNodesFromDom(nodes);
+    const currentNodes = readNodesFromDom(nodesRef.current);
     const startPos = getSelectionPositionInNode(range.startContainer, range.startOffset);
     const endPos = getSelectionPositionInNode(range.endContainer, range.endOffset);
 
@@ -2458,7 +2655,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
     }
 
     if (selection.isCollapsed) {
-      const currentNodes = readNodesFromDom(nodes);
+      const currentNodes = readNodesFromDom(nodesRef.current);
       const pos = getSelectionPositionInNode(range.startContainer, range.startOffset);
       const node = pos ? currentNodes.find(item => item.id === pos.nodeId) : null;
       return getInlineFormatsAtOffset(node, pos?.offset || 0);
@@ -2598,7 +2795,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
   const replaceTextRange = ({ nodeId, startOffset = 0, endOffset = startOffset, replacement = "" } = {}) => {
     if (!nodeId) return false;
 
-    const currentNodes = readNodesFromDom(nodes);
+    const currentNodes = readNodesFromDom(nodesRef.current);
     const nodeIndex = currentNodes.findIndex(node => node.id === nodeId);
     if (nodeIndex < 0) return false;
 
@@ -2626,7 +2823,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
 	    const safeRanges = Array.isArray(ranges) ? ranges : [];
 	    if (!safeRanges.length) return false;
 
-    const currentNodes = readNodesFromDom(nodes);
+    const currentNodes = readNodesFromDom(nodesRef.current);
     const rangesByNodeId = safeRanges.reduce((acc, range) => {
       if (!range?.nodeId) return acc;
       acc[range.nodeId] = acc[range.nodeId] || [];
@@ -2712,20 +2909,26 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
 	    getActiveInlineFormats: getActiveInlineFormatsForSelection,
 	    setActiveSpellcheckRange: updateActiveSpellcheckRange,
 	    clearSpellcheckRange: clearActiveSpellcheckRange,
+	    setCharacterTagHighlights: (highlights) => { setActiveCharacterTagHighlights(Array.isArray(highlights) ? highlights : []); },
+	    clearCharacterTagHighlights: () => { setActiveCharacterTagHighlights([]); },
 	    selectTextRange,
 	    replaceTextRange,
 	    replaceTextRanges,
 	    getPdfExportModel: () => ({ pages: paginatedPages, nodes, layoutTuning: DEFAULT_LAYOUT_TUNING }),
-	    focusFirstNode: (nodeId) => {
-	      const targetId = nodeId || nodesRef.current[0]?.id;
-	      if (!targetId) return;
-	      requestAnimationFrame(() => {
-	        const el = getNodeElement(editorRef.current, targetId);
-	        if (!el) return;
-	        el.focus();
-	        setCaretToEnd(el);
-	        setActiveNodeId(targetId);
-	      });
+	    // Focus a node by ID immediately. Returns true if the element was found.
+	    // Focuses the outer contentEditable, then places caret via setCaretToEnd.
+	    // Does not call setActiveNodeId to avoid triggering the active-type effect chain.
+	    focusNodeById: (nodeId) => {
+	      const rowEl = getNodeElement(editorRef.current, nodeId);
+	      if (!rowEl) return false;
+	      editorRef.current?.focus({ preventScroll: true });
+	      setCaretToEnd(rowEl);
+	      return true;
+	    },
+	    // Register a node ID to focus after the next documentKey-driven reinit.
+	    // Call this BEFORE bumping documentKey so the effect picks it up.
+	    setFocusNodeAfterReinit: (nodeId) => {
+	      focusNodeAfterReinitRef.current = nodeId || null;
 	    },
 	  }));
 
@@ -2741,7 +2944,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
       return false;
     }
 
-    const currentNodes = readNodesFromDom(nodes);
+    const currentNodes = readNodesFromDom(nodesRef.current);
     const startPos = getSelectionPositionInNode(range.startContainer, range.startOffset);
     const endPos = getSelectionPositionInNode(range.endContainer, range.endOffset);
 
@@ -3117,7 +3320,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
 
     const root = editorRef.current;
     const selection = window.getSelection();
-    const currentNodes = readNodesFromDom(nodes);
+    const currentNodes = readNodesFromDom(nodesRef.current);
 
     let workingNodes = currentNodes;
     let targetNodeId = null;
@@ -3223,72 +3426,48 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
   };
 
   const handleInput = () => {
+    const _inputT0 = performance.now();
     setElementChooser(null);
     updateActiveNodeFromSelection();
 
+    // Capture active node id before yielding — focus can shift during the frame.
     const savedCaretNodeId = getCaretNodeId() || activeNodeId;
-    const savedCaretTextEl = savedCaretNodeId ? getNodeTextElement(editorRef.current, savedCaretNodeId) : null;
-    const savedCaretOffset = savedCaretTextEl ? getCaretOffsetInElement(savedCaretTextEl) : 0;
+    if (DEBUG_WRITING_STABILITY) _ws(`handleInput START nodeId=${savedCaretNodeId} activeEl=${document.activeElement?.tagName}`);
 
     requestAnimationFrame(() => {
+      // The DOM is the live source of truth during typing. nodesRef is kept
+      // current so structural ops (Enter, Backspace, type-change) always start
+      // from the latest typed model. setNodes is NOT called here — React
+      // reconciliation would rewrite the active text span and reset the caret.
+      // Saves happen at commit/line-boundary points only (Enter, blur, paste, etc.).
       const liveNodes = readNodesFromDom(nodes);
       const currentNodeId = savedCaretNodeId;
       const currentNode = liveNodes.find(node => node.id === currentNodeId) || null;
       const currentEl = currentNodeId ? getNodeElement(editorRef.current, currentNodeId) : null;
       const currentText = getTextFromNodeElement(currentEl);
 
-      const prevCurrentNode = nodes.find(n => n.id === currentNodeId);
-      if (currentNode && JSON.stringify(currentNode.runs) !== JSON.stringify(prevCurrentNode?.runs)) {
-        if (getNodesPayload(liveNodes) !== getNodesPayload(nodes)) {
-          setNodes(liveNodes);
-          emitNodesChange(liveNodes);
-        }
-        requestAnimationFrame(() => {
-          const el = getNodeElement(editorRef.current, currentNodeId);
-          if (el) setCaretOffset(el, savedCaretOffset);
-        });
-        return;
-      }
-
+      // Dialogue overflow is a structural op — updateNodes handles setNodes + focus.
       if (currentNode?.type === "Dialogue") {
         const currentIndex = liveNodes.findIndex(node => node.id === currentNode.id);
         const caretOffset = getCaretOffsetInElement(getNodeTextElement(editorRef.current, currentNode.id));
         const splitResult = findDialoguePageOverflowSplit(liveNodes, currentIndex, caretOffset);
 
         if (splitResult) {
+          if (DEBUG_WRITING_STABILITY) _ws(`handleInput rAF: dialogue overflow split — structural op`);
           updateNodes(splitResult.nextNodes, splitResult.focusNodeId, {
             caretOffset: splitResult.focusOffset,
-          });
+          }, "handleInput/dialogueOverflow");
           return;
         }
       }
 
-      if (getNodesPayload(liveNodes) !== lastEmittedNodesPayloadRef.current) {
-        // Keep the editor's nodes state in sync with the live DOM so the React
-        // fiber never diverges from what the browser has painted. Without this,
-        // a re-render triggered by the parent can run with stale `nodes` and
-        // cause React to reconcile the empty-node placeholder against actual
-        // typed content, losing the caret.
-        if (getNodesPayload(liveNodes) !== getNodesPayload(nodes)) {
-          setNodes(liveNodes);
-          const restoreNodeId = currentNodeId;
-          const restoreOffset = savedCaretOffset;
-          requestAnimationFrame(() => {
-            const el = getNodeElement(editorRef.current, restoreNodeId);
-            if (el) setCaretOffset(el, restoreOffset);
-          });
-        }
-        emitNodesChange(liveNodes);
-      }
+      // Keep nodesRef current so the next structural op (Enter, Backspace) has
+      // the latest typed text, and mark the active node so FrozenTextSpan blocks
+      // React reconciliation on any incidental re-renders during typing.
+      nodesRef.current = liveNodes;
+      activeTypingNodeIdRef.current = currentNodeId;
 
-      const livePaginated = paginateNodesForScreen(liveNodes);
-      const nextStats = getSceneStatsFromPaginatedPages(livePaginated, liveNodes);
-      const nextStatsPayload = getSceneStatsPayload(nextStats);
-      if (nextStatsPayload !== lastSceneStatsPayloadRef.current) {
-        lastSceneStatsPayloadRef.current = nextStatsPayload;
-        onSceneStatsChange?.(nextStats);
-      }
-
+      // Local autocomplete UI only — no parent/save/stats callbacks.
       if (currentNode?.type === "Character") {
         updateCharacterAutocomplete(currentNode.id, currentText);
         setLocationAutocomplete(null);
@@ -3299,7 +3478,45 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
         setCharacterAutocomplete(null);
         setLocationAutocomplete(null);
       }
+
+      if (DEBUG_WRITING_STABILITY) {
+        const _info = {
+          nodeId: currentNodeId,
+          type: currentNode?.type,
+          textLen: currentText?.length,
+          setNodesCalled: false,
+          nodesRefUpdated: true,
+          rafDuration: "n/a",
+          totalDuration: (performance.now() - _inputT0).toFixed(1) + "ms",
+        };
+        lastInputEventRef.current = { ..._info, time: performance.now() };
+        _ws(`handleInput rAF done nodeId=${currentNodeId} type=${currentNode?.type} textLen=${currentText?.length}`);
+      }
     });
+  };
+
+  const _handleBlurWithDiagnostics = () => {
+    if (DEBUG_WRITING_STABILITY) {
+      const activeEl = document.activeElement;
+      const blurInfo = {
+        time: performance.now(),
+        activeElement: `${activeEl?.tagName}#${activeEl?.id || ""}.${String(activeEl?.className || "").split(" ")[0]}`,
+        activeNodeId,
+        lastInput: lastInputEventRef.current,
+        lastEffect: lastEffectRef.current,
+        lastUpdateNodes: lastUpdateNodesRef.current,
+      };
+      lastFocusEventRef.current = { event: "blur", ...blurInfo };
+      _wsGroup("BLUR EVENT", () => {
+        console.log("activeElement:", blurInfo.activeElement);
+        console.log("activeNodeId at blur:", activeNodeId);
+        console.log("lastInput:", lastInputEventRef.current);
+        console.log("lastEffect:", lastEffectRef.current);
+        console.log("lastUpdateNodes:", lastUpdateNodesRef.current);
+      });
+    }
+    activeTypingNodeIdRef.current = null;
+    flushNodesFromDom();
   };
   const handleClick = (event) => {
     const nodeId = getNodeIdFromTarget(event.target);
@@ -3529,6 +3746,12 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
   };
 
   const handleKeyDown = (event) => {
+    if (DEBUG_WRITING_STABILITY && !["Shift","Control","Alt","Meta","CapsLock"].includes(event.key)) {
+      const _kNodeId = getCaretNodeId() || activeNodeId;
+      const _kNode = nodesRef.current.find(n => n.id === _kNodeId);
+      const _kOffset = _kNodeId ? getCaretOffsetInElement(getNodeTextElement(editorRef.current, _kNodeId)) : -1;
+      _ws(`keyDown key="${event.key}" nodeId=${_kNodeId} type=${_kNode?.type} offset=${_kOffset} meta=${event.metaKey} ctrl=${event.ctrlKey}`);
+    }
     if (elementChooser?.options?.length) {
       const requestedType = NODE_TYPE_BY_KEY[String(event.key || "").toUpperCase()];
 
@@ -3703,6 +3926,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
       event.preventDefault();
 
       const nextType = getDocumentNodeElementTypeAfterEnter(currentNode.type);
+      if (DEBUG_WRITING_STABILITY) _ws(`keyDown Enter — nodeId=${currentNode.id} type=${currentNode.type} nextType=${nextType} empty=${isEffectivelyEmptyText(currentText)} → STRUCTURAL updateNodes`);
 
       if (isEffectivelyEmptyText(currentText)) {
         if (currentNode.type === "Action" || currentNode.type === "Character" || currentNode.type === "Dialogue" || currentNode.type === "Shot") {
@@ -3837,30 +4061,6 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
         }
         return;
       }
-
-      // Intercept any deletion that would leave this node empty. When the browser
-      // removes the last character from a contentEditable node inline, React's
-      // reconciliation crashes: it tries to replace the rendered span-element child
-      // with a ​ text-node placeholder while the DOM is already in a modified
-      // state, causing removeChild on a non-child. Prevent the browser from
-      // touching the DOM and route the change through the model instead.
-      {
-        const sourceText = String(currentText || "");
-        const textAfterKey = event.key === "Backspace"
-          ? sourceText.slice(0, caretOffset - 1) + sourceText.slice(caretOffset)
-          : sourceText.slice(0, caretOffset) + sourceText.slice(caretOffset + 1);
-
-        if (isEffectivelyEmptyText(textAfterKey)) {
-          event.preventDefault();
-          event.stopPropagation();
-          pushHistorySnapshot(currentNodes);
-          const nextNodes = currentNodes.map(n =>
-            n.id === currentNode.id ? { ...n, text: "", runs: undefined } : n
-          );
-          updateNodes(nextNodes, currentNode.id, { caretOffset: 0 });
-          return;
-        }
-      }
     }
   };
 
@@ -3916,7 +4116,14 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
         suppressContentEditableWarning
         spellCheck={spellCheckEnabled}
         onInput={handleInput}
-        onBlur={flushNodesFromDom}
+        onFocus={() => {
+          if (DEBUG_WRITING_STABILITY) {
+            const nodeId = getCaretNodeId();
+            _ws(`FOCUS EVENT — nodeId=${nodeId} activeNodeId=${activeNodeId}`);
+            lastFocusEventRef.current = { event: "focus", time: performance.now(), nodeId };
+          }
+        }}
+        onBlur={_handleBlurWithDiagnostics}
         onMouseDownCapture={handleEditorMouseDownCapture}
         onClick={handleClick}
         onMouseUp={updateActiveNodeFromSelection}
@@ -4068,7 +4275,18 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
                   activeSpellcheckRange?.nodeId === node.id
                     ? Math.max(spellcheckStartOffset, Math.min(String(node.text || "").length, Number(activeSpellcheckRange.endOffset) || 0))
                     : null;
-                const renderFormattedTextPiece = (run, key, isSpellcheckMatch = false) => {
+                const nodeText = String(node.text || "");
+                const nodeTextLen = nodeText.length;
+                // Collect all char-tag highlights for this node (multiple matches possible).
+                const charTagRanges = activeCharacterTagHighlights
+                  .filter((h) => h.nodeId === node.id)
+                  .map((h) => ({
+                    start: Math.max(0, Math.min(nodeTextLen, Number(h.startOffset) || 0)),
+                    end: Math.max(0, Math.min(nodeTextLen, Number(h.endOffset) || 0)),
+                  }))
+                  .filter((r) => r.end > r.start)
+                  .sort((a, b) => a.start - b.start);
+                const renderFormattedTextPiece = (run, key, isSpellcheckMatch = false, isCharTagMatch = false) => {
 	                  let inner = <>{run.text}</>;
 	                  if (run.highlight) inner = <mark style={{ backgroundColor: run.highlight === true ? "#ffff00" : run.highlight }}>{inner}</mark>;
 	                  if (run.strike) inner = <s>{inner}</s>;
@@ -4080,11 +4298,18 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
 	                    inner = (
 	                      <span
 	                        data-spellcheck-highlight="true"
-	                        style={{ boxShadow: "0 0 0 2px #f6c344", borderRadius: "2px", textDecoration: "underline wavy #c62828", textUnderlineOffset: "2px" }}
+	                        style={{ backgroundColor: "#ffe066", borderRadius: "2px" }}
 	                      >
 	                        {inner}
 	                      </span>
 	                    );
+                  }
+                  if (isCharTagMatch) {
+                    inner = (
+                      <mark data-char-tag-highlight="true" style={{ backgroundColor: "#ffe066", borderRadius: "2px", padding: "0 1px" }}>
+                        {inner}
+                      </mark>
+                    );
                   }
                   return <span key={key}>{inner}</span>;
                 };
@@ -4097,33 +4322,58 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
                     spellcheckStartOffset !== null &&
                     spellcheckEndOffset !== null &&
                     spellcheckEndOffset > spellcheckStartOffset;
+                  const hasCharTagRanges = charTagRanges.length > 0;
 
-                  if (!hasSpellcheckRange) {
+                  if (!hasSpellcheckRange && !hasCharTagRanges) {
                     return sourceRuns.map((run, runIndex) => renderFormattedTextPiece(run, runIndex));
                   }
 
+                  // Build a flat list of segments with their highlight type.
+                  // For spellcheck: single range. For charTag: multiple ranges, non-overlapping.
+                  const buildSegments = (totalLen, hlRanges, isSpellType) => {
+                    const segments = [];
+                    let pos = 0;
+                    hlRanges.forEach(({ start, end }) => {
+                      if (start > pos) segments.push({ start: pos, end: start, hl: false });
+                      segments.push({ start, end, hl: true, isSpellType });
+                      pos = end;
+                    });
+                    if (pos < totalLen) segments.push({ start: pos, end: totalLen, hl: false });
+                    return segments;
+                  };
+
+                  const hlRanges = hasSpellcheckRange
+                    ? [{ start: spellcheckStartOffset, end: spellcheckEndOffset }]
+                    : charTagRanges;
+                  const segments = buildSegments(nodeTextLen, hlRanges, hasSpellcheckRange);
+
+                  // Slice sourceRuns into the segment boundaries.
                   const pieces = [];
                   let cursor = 0;
+                  let segIdx = 0;
                   sourceRuns.forEach((run, runIndex) => {
                     const runText = String(run.text || "");
                     const runStart = cursor;
                     const runEnd = cursor + runText.length;
                     cursor = runEnd;
-
-                    if (runEnd <= spellcheckStartOffset || runStart >= spellcheckEndOffset) {
-                      pieces.push(renderFormattedTextPiece(run, `${runIndex}-all`));
-                      return;
+                    let localPos = 0;
+                    // Walk segments that overlap this run.
+                    while (segIdx < segments.length && segments[segIdx].start < runEnd) {
+                      const seg = segments[segIdx];
+                      const segStartInRun = Math.max(seg.start, runStart) - runStart;
+                      const segEndInRun = Math.min(seg.end, runEnd) - runStart;
+                      if (segEndInRun <= localPos) { if (seg.end <= runEnd) segIdx++; break; }
+                      if (segStartInRun > localPos) {
+                        pieces.push(renderFormattedTextPiece({ ...run, text: runText.slice(localPos, segStartInRun) }, `${runIndex}-${localPos}-plain`));
+                      }
+                      const sliceText = runText.slice(segStartInRun, segEndInRun);
+                      if (sliceText) pieces.push(renderFormattedTextPiece({ ...run, text: sliceText }, `${runIndex}-${segStartInRun}-hl`, seg.hl && seg.isSpellType, seg.hl && !seg.isSpellType));
+                      localPos = segEndInRun;
+                      if (seg.end <= runEnd) segIdx++; else break;
                     }
-
-                    const selectedStart = Math.max(spellcheckStartOffset, runStart);
-                    const selectedEnd = Math.min(spellcheckEndOffset, runEnd);
-                    const beforeText = runText.slice(0, selectedStart - runStart);
-                    const selectedText = runText.slice(selectedStart - runStart, selectedEnd - runStart);
-                    const afterText = runText.slice(selectedEnd - runStart);
-
-                    if (beforeText) pieces.push(renderFormattedTextPiece({ ...run, text: beforeText }, `${runIndex}-before`));
-                    if (selectedText) pieces.push(renderFormattedTextPiece({ ...run, text: selectedText }, `${runIndex}-spellcheck`, true));
-                    if (afterText) pieces.push(renderFormattedTextPiece({ ...run, text: afterText }, `${runIndex}-after`));
+                    if (localPos < runText.length) {
+                      pieces.push(renderFormattedTextPiece({ ...run, text: runText.slice(localPos) }, `${runIndex}-${localPos}-tail`));
+                    }
                   });
 
                   return pieces;
@@ -4211,8 +4461,8 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
                       </>
                     )}
 
-                    <span
-                      data-node-text="true"
+                    <FrozenTextSpan
+                      frozen={node.id === activeTypingNodeIdRef.current}
                       style={{
                         display: type === "Character" ? "inline" : "block",
                         whiteSpace: "pre-wrap",
@@ -4225,7 +4475,7 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
                       }}
                     >
                       {renderNodeText()}
-                    </span>
+                    </FrozenTextSpan>
                     {showCharacterContinued && (
                       <span
                         contentEditable={false}
@@ -4477,4 +4727,5 @@ const ScriptWritingEditor = forwardRef(function ScriptWritingEditor({
   );
 });
 
+ScriptWritingEditor.displayName = "ScriptWritingEditor";
 export default ScriptWritingEditor;
