@@ -5291,6 +5291,9 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
             canEdit={canEdit(userRole)}
             isViewOnly={isViewOnly(userRole)}
             syncShootingDays={syncShootingDaysToDatabase}
+            callSheetData={callSheetData}
+            setCallSheetData={setCallSheetData}
+            syncCallSheetData={syncCallSheetDataToDatabase}
           />
         );
       case "Calendar":

@@ -3275,6 +3275,9 @@ function MobileWardrobeModule({
   characters,
   castCrew = [],
   setCastCrew,
+  onMobileSyncBegin,
+  onMobileSyncEnd,
+  onMobileSyncMarker,
 }) {
   const [wardrobeItems, setWardrobeItems] = useState([]);
   const [garmentInventory, setGarmentInventory] = useState([]);
@@ -3330,16 +3333,20 @@ function MobileWardrobeModule({
   const saveWardrobe = useCallback(
     async (updated) => {
       setSaving(true);
+      onMobileSyncBegin?.();
       // Brief delay to let React state settle before DB write
       await new Promise((r) => setTimeout(r, 50));
       try {
         await database.syncWardrobeItemsToDatabase(selectedProject, updated);
+        onMobileSyncMarker?.("wardrobe");
       } catch (e) {
         console.error(e);
+      } finally {
+        onMobileSyncEnd?.();
+        setSaving(false);
       }
-      setSaving(false);
     },
-    [selectedProject]
+    [selectedProject, onMobileSyncBegin, onMobileSyncEnd, onMobileSyncMarker]
   );
 
   // Get or create the character entry
@@ -3417,13 +3424,17 @@ function MobileWardrobeModule({
 
   const saveGarmentInventory = useCallback(
     async (updated) => {
+      onMobileSyncBegin?.();
       try {
         await database.syncGarmentInventoryToDatabase(selectedProject, updated);
+        onMobileSyncMarker?.("garmentInventory");
       } catch (e) {
         console.error("Garment inventory sync error:", e);
+      } finally {
+        onMobileSyncEnd?.();
       }
     },
-    [selectedProject]
+    [selectedProject, onMobileSyncBegin, onMobileSyncEnd, onMobileSyncMarker]
   );
 
   const addGarmentToLook = (characterName, lookId, garmentId) => {
@@ -3858,7 +3869,7 @@ const MOBILE_PROP_SUBCATEGORIES = [
 ];
 const MOBILE_SUBCATEGORY_MAP = Object.fromEntries(MOBILE_PROP_SUBCATEGORIES.map((s) => [s.key, s]));
 
-function MobilePropsModule({ selectedProject, scenes = [], characters = {}, initialPropId, stripboardScenes = [], shootingDays = [], onNavigate }) {
+function MobilePropsModule({ selectedProject, scenes = [], characters = {}, initialPropId, stripboardScenes = [], shootingDays = [], onNavigate, onMobileSyncBegin, onMobileSyncEnd, onMobileSyncMarker }) {
   const [taggedItems, setTaggedItems] = useState({});
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("props"); // "props" | "scenes"
@@ -4030,28 +4041,36 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
   }, [initialPropId, Object.keys(taggedItems).join(",")]);
 
   const syncItems = useCallback(async (updated) => {
-    await database.syncTaggedItemsToDatabase(selectedProject, updated);
-    // Patch extended fields
-    const arr = Object.entries(updated).map(([word, item]) => ({
-      project_id: selectedProject.id, word,
-      display_name: item.displayName, custom_title: item.customTitle || null,
-      category: item.category, color: item.color,
-      chronological_number: item.chronologicalNumber, position: item.position || 0,
-      scenes: item.scenes || [], instances: item.instances || [],
-      assigned_characters: item.assignedCharacters || [],
-      manually_created: item.manuallyCreated || false,
-      original_prop: item.originalProp || null,
-      default_character: item.defaultCharacter || false,
-      scenes_before_default: item.scenesBeforeDefault ?? null,
-      photos: item.photos || [],
-      prop_id: item.propId || null,
-      prop_subcategory: item.propSubcategory || null,
-      prop_id_locked: item.propIdLocked || false,
-      scenes_locked: item.scenesLocked || false,
-    }));
-    await supabase.from("tagged_items")
-      .upsert(arr, { onConflict: "project_id,word" });
-  }, [selectedProject]);
+    onMobileSyncBegin?.();
+    try {
+      await database.syncTaggedItemsToDatabase(selectedProject, updated);
+      // Patch extended fields
+      const arr = Object.entries(updated).map(([word, item]) => ({
+        project_id: selectedProject.id, word,
+        display_name: item.displayName, custom_title: item.customTitle || null,
+        category: item.category, color: item.color,
+        chronological_number: item.chronologicalNumber, position: item.position || 0,
+        scenes: item.scenes || [], instances: item.instances || [],
+        assigned_characters: item.assignedCharacters || [],
+        manually_created: item.manuallyCreated || false,
+        original_prop: item.originalProp || null,
+        default_character: item.defaultCharacter || false,
+        scenes_before_default: item.scenesBeforeDefault ?? null,
+        photos: item.photos || [],
+        prop_id: item.propId || null,
+        prop_subcategory: item.propSubcategory || null,
+        prop_id_locked: item.propIdLocked || false,
+        scenes_locked: item.scenesLocked || false,
+      }));
+      await supabase.from("tagged_items")
+        .upsert(arr, { onConflict: "project_id,word" });
+      onMobileSyncMarker?.("taggedItems");
+    } catch (e) {
+      console.error("Props sync error:", e);
+    } finally {
+      onMobileSyncEnd?.();
+    }
+  }, [selectedProject, onMobileSyncBegin, onMobileSyncEnd, onMobileSyncMarker]);
 
   // ── Prop sorting helpers ──────────────────────────────────────────────────
   const getEarliestScene = (prop) => {
@@ -4935,7 +4954,7 @@ function MobilePropsModule({ selectedProject, scenes = [], characters = {}, init
   );
 }
 
-function MobileCostReportModule({ selectedProject }) {
+function MobileCostReportModule({ selectedProject, onMobileSyncBegin, onMobileSyncEnd, onMobileSyncMarker }) {
   const [costCategories, setCostCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -4992,14 +5011,18 @@ function MobileCostReportModule({ selectedProject }) {
   const saveCategories = useCallback(
     async (updated) => {
       setSaving(true);
+      onMobileSyncBegin?.();
       try {
         await database.syncCostCategoriesToDatabase(selectedProject, updated);
+        onMobileSyncMarker?.("costCategories");
       } catch (e) {
         console.error(e);
+      } finally {
+        onMobileSyncEnd?.();
+        setSaving(false);
       }
-      setSaving(false);
     },
-    [selectedProject]
+    [selectedProject, onMobileSyncBegin, onMobileSyncEnd, onMobileSyncMarker]
   );
 
   const getSubTotal = (sub) =>
@@ -6878,21 +6901,80 @@ export default function MobileApp({ initialPropId, initialProjectId }) {
     );
   }, [selectedProject?.id]);
 
+  // ─── Mobile in-flight sync tracker ───────────────────────────────────────────
+  // Counts active Supabase writes so the Projects button can wait for them to
+  // settle before returning to project selector. Never blocks writes themselves.
+  const activeMobileSyncsRef = useRef(0);
+  const [isMobileSyncing, setIsMobileSyncing] = useState(false);
+
+  const beginMobileSync = useCallback(() => {
+    activeMobileSyncsRef.current += 1;
+    setIsMobileSyncing(true);
+  }, []);
+
+  const endMobileSync = useCallback(() => {
+    activeMobileSyncsRef.current = Math.max(0, activeMobileSyncsRef.current - 1);
+    if (activeMobileSyncsRef.current === 0) setIsMobileSyncing(false);
+  }, []);
+
+  // touchMobileSyncMarker — fires after a successful Supabase write.
+  // Uses the existing project_sync_status RPC. Failure is logged and swallowed —
+  // the actual module write already succeeded.
+  const touchMobileSyncMarker = useCallback(async (source) => {
+    const projectId = selectedProject?.id;
+    if (!projectId) return;
+    try {
+      const result = await database.touchProjectSyncStatus(projectId, source);
+      if (!result?.last_successful_sync_at && process.env.NODE_ENV === "development") {
+        console.warn(`[MobileSync] touch_project_sync_status returned no timestamp, source=${source}`);
+      }
+    } catch (err) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn(`[MobileSync] touch_project_sync_status failed, source=${source}:`, err?.message);
+      }
+    }
+  }, [selectedProject?.id]);
+
   const handleToggleTodo = async (taskId) => {
     const updated = todoItems.map((t) =>
       t.id === taskId ? { ...t, completed: !t.completed } : t
     );
     setTodoItems(updated);
+    beginMobileSync();
     try {
       await database.syncTodoItemsToDatabase(selectedProject, updated);
+      touchMobileSyncMarker("todoItems");
     } catch (e) {
       console.error("Failed to toggle todo:", e);
+    } finally {
+      endMobileSync();
     }
   };
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  // exitToProjectSelector — waits for any active mobile syncs to settle (up to
+  // 8 seconds) before returning to the project selector. Does not clear
+  // localStorage (mobile has none) and does not create an emergency backup.
+  const exitToProjectSelector = useCallback(async () => {
+    if (activeMobileSyncsRef.current > 0) {
+      setIsMobileSyncing(true);
+      const deadline = Date.now() + 8000;
+      await new Promise((resolve) => {
+        const check = () => {
+          if (activeMobileSyncsRef.current === 0 || Date.now() >= deadline) {
+            resolve();
+          } else {
+            setTimeout(check, 100);
+          }
+        };
+        check();
+      });
+    }
     setSelectedProject(null);
+  }, []);
+
+  const handleSignOut = async () => {
+    await exitToProjectSelector();
+    await supabase.auth.signOut();
     setSession(null);
   };
 
@@ -6982,10 +7064,11 @@ export default function MobileApp({ initialPropId, initialProjectId }) {
             ))}
           </select>
           <button
-            onClick={() => setSelectedProject(null)}
-            style={styles.signOutBtn}
+            onClick={exitToProjectSelector}
+            disabled={isMobileSyncing}
+            style={{ ...styles.signOutBtn, opacity: isMobileSyncing ? 0.6 : 1 }}
           >
-            Projects
+            {isMobileSyncing ? "Saving…" : "Projects"}
           </button>
         </div>
       </div>
@@ -7039,6 +7122,9 @@ export default function MobileApp({ initialPropId, initialProjectId }) {
               characters={characters}
               castCrew={castCrew}
               setCastCrew={setCastCrew}
+              onMobileSyncBegin={beginMobileSync}
+              onMobileSyncEnd={endMobileSync}
+              onMobileSyncMarker={touchMobileSyncMarker}
             />
           )}
           {activeModule === "Props" && (
@@ -7050,10 +7136,18 @@ export default function MobileApp({ initialPropId, initialProjectId }) {
               stripboardScenes={stripboardScenes}
               shootingDays={shootingDays}
               onNavigate={setActiveModule}
+              onMobileSyncBegin={beginMobileSync}
+              onMobileSyncEnd={endMobileSync}
+              onMobileSyncMarker={touchMobileSyncMarker}
             />
           )}
           {activeModule === "Cost Report" && (
-            <MobileCostReportModule selectedProject={selectedProject} />
+            <MobileCostReportModule
+              selectedProject={selectedProject}
+              onMobileSyncBegin={beginMobileSync}
+              onMobileSyncEnd={endMobileSync}
+              onMobileSyncMarker={touchMobileSyncMarker}
+            />
           )}
           {MODULES.find((m) => m.name === activeModule && !m.active) && (
             <div

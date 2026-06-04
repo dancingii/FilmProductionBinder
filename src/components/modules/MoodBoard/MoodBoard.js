@@ -865,10 +865,21 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
             if (process.env.NODE_ENV === "development") {
               console.info(`[MoodBoard load] loaded from database — boards: ${data.boards?.length ?? "?"}, images: ${data.images?.length ?? "?"}`);
             }
+            // Merge UI-preference fields (characterBoardLinks, hiddenCharacterIds) from
+            // localStorage. These are not stored in moodboard_data columns — localStorage
+            // is the source of truth for these project-scoped UI preferences. On a new
+            // device the localStorage fallback will be {} / [] which is correct.
+            let localPrefs = {};
+            try {
+              const raw = localStorage.getItem(storageKey);
+              if (raw) localPrefs = JSON.parse(raw);
+            } catch { /* ignore */ }
             applyNormalized(normalizeImportedState({
               boards: data.boards, activeBoardId: data.active_board_id,
               links: data.links, images: data.images,
               canvasItems: data.canvas_items, zoom: data.zoom, showGrid: data.show_grid,
+              characterBoardLinks: localPrefs.characterBoardLinks,
+              hiddenCharacterIds: localPrefs.hiddenCharacterIds,
             }), userDisplayNameRef.current);
             setStatusMessage("Loaded MoodBoard from database.");
             setTimeout(() => setStatusMessage(prev => prev === "Loaded MoodBoard from database." ? "Saved" : prev), 2500);
@@ -1057,6 +1068,15 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
       document.removeEventListener("keydown", handleEsc);
     };
   }, [showFontDropdown, showTextSpacingDropdown, showFitDropdown, showSelectDropdown, showSolidDropdown, showEffectsDropdown]);
+
+  useEffect(() => {
+    if (!showShareModal) return;
+    const handleShareEsc = (e) => {
+      if (e.key === "Escape") { setShowShareModal(false); setShareMessage(""); }
+    };
+    window.addEventListener("keydown", handleShareEsc);
+    return () => window.removeEventListener("keydown", handleShareEsc);
+  }, [showShareModal]);
 
   const activeBoard = useMemo(() => {
     if (!boards.length) return null;
@@ -3146,7 +3166,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
                 <input value={newBoardName} onChange={(event) => setNewBoardName(event.target.value)} placeholder="New board name" disabled={!canEdit || isViewOnly} style={{ flex: 1, padding: "6px", fontSize: "12px", border: "1px solid #ccc", borderRadius: "4px" }} />
                 <button onClick={addBoard} disabled={!canEdit || isViewOnly} style={{ padding: "6px 9px", cursor: "pointer" }}>+</button>
               </div>
-              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", border: "1px inset #ddd", backgroundColor: "white" }}>
+              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", scrollbarGutter: "stable", border: "1px inset #ddd", backgroundColor: "white" }}>
                 {boards.map((board) => {
                   const isActive = activeBoard?.id === board.id;
                   const isExpanded = expandedBoardIds.has(board.id);
@@ -4592,7 +4612,7 @@ function CharactersTab({
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", border: "1px inset #ddd", backgroundColor: "white", margin: "8px 10px 0" }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", scrollbarGutter: "stable", border: "1px inset #ddd", backgroundColor: "white", margin: "8px 10px 0" }}>
         {visible.map((prof) => renderCharRow(prof, false))}
 
         {hidden.length > 0 && (
