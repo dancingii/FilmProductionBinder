@@ -49,6 +49,10 @@ import {
   saveWritingDraftSafely,
   saveWritingTitlePageSettingsAsync,
   buildWritingDraftPayload,
+  loadWritingBeatsAsync,
+  saveWritingBeatsAsync,
+  loadWritingTargetPageCountAsync,
+  saveWritingTargetPageCountAsync,
 } from "./writingDraftPersistence";
 import {
   saveCurrentProjectCache,
@@ -1289,6 +1293,11 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
   const latestSaveSnapshotNodesRef = useRef([]);
   const latestSaveSnapshotPayloadRef = useRef("");
   const skipNextBeatPersistRef = useRef(false);
+  const beatsSaveTimerRef = useRef(null);
+  const beatsLoadedRef = useRef(false);
+  const skipNextTargetPageCountPersistRef = useRef(false);
+  const targetPageCountSaveTimerRef = useRef(null);
+  const targetPageCountLoadedRef = useRef(false);
   const skipNextTabPersistRef = useRef(false);
   const skipNextCollapsedActsPersistRef = useRef(false);
   const skipNextTimelineSettingsPersistRef = useRef(false);
@@ -1312,16 +1321,6 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
   const getLegacyScriptStorageKey = useCallback((key) => {
     const projectId = selectedProject?.id || selectedProject?.name || "default-project";
     return `${key}:${projectId}`;
-  }, [selectedProject?.id, selectedProject?.name]);
-
-  const getBeatsStorageKey = useCallback(() => {
-    const projectId = selectedProject?.id || selectedProject?.name || "default-project";
-    return `writingScriptBeats:${projectId}`;
-  }, [selectedProject?.id, selectedProject?.name]);
-
-  const getLegacyBeatsStorageKey = useCallback(() => {
-    const projectId = selectedProject?.id || selectedProject?.name || "default-project";
-    return `scriptBeats:${projectId}`;
   }, [selectedProject?.id, selectedProject?.name]);
 
   const getEditorPositionStorageKey = useCallback(() => {
@@ -1726,52 +1725,43 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
   }, [saveEditorPositionNow]);
 
   // ─── Load/save beats ─────────────────────────────────────────────────────────
+  // Load: Supabase projects.settings first, localStorage fallback, legacy key last.
   useEffect(() => {
     if (!selectedProject) return;
-    try {
-      const storageKey = getBeatsStorageKey();
-      const legacyStorageKey = getLegacyBeatsStorageKey();
-
-      const parseStoredBeats = (rawValue) => {
-        if (!rawValue) return null;
-        try {
-          const parsed = JSON.parse(rawValue);
-          if (!Array.isArray(parsed)) return null;
-          const normalizedBeats = normalizeOutlineItems(parsed);
-          return {
-            normalizedBeats,
-            hasBeats: normalizedBeats.length > 0,
-          };
-        } catch {
-          return null;
-        }
-      };
-
-      const storedBeats = parseStoredBeats(localStorage.getItem(storageKey));
-      const legacyBeats = parseStoredBeats(localStorage.getItem(legacyStorageKey));
-      const selectedBeats =
-        storedBeats?.hasBeats ? storedBeats :
-        legacyBeats?.hasBeats ? legacyBeats :
-        storedBeats || legacyBeats || { normalizedBeats: [] };
-
-      if (!storedBeats?.hasBeats && legacyBeats?.hasBeats) {
-        localStorage.setItem(storageKey, JSON.stringify(legacyBeats.normalizedBeats));
-      }
-
+    let cancelled = false;
+    beatsLoadedRef.current = false;
+    loadWritingBeatsAsync(selectedProject).then((result) => {
+      if (cancelled) return;
+      const normalizedBeats = normalizeOutlineItems(result.beats || []);
       skipNextBeatPersistRef.current = true;
-      setBeats(selectedBeats.normalizedBeats);
-    } catch (err) {
+      setBeats(normalizedBeats);
+      beatsLoadedRef.current = true;
+    }).catch((err) => {
+      if (cancelled) return;
       console.warn("Could not load beats:", err);
       skipNextBeatPersistRef.current = true;
       setBeats([]);
-    }
-  }, [selectedProject?.id, selectedProject?.name, getBeatsStorageKey, getLegacyBeatsStorageKey]);
+      beatsLoadedRef.current = true;
+    });
+    return () => { cancelled = true; };
+  }, [selectedProject?.id, selectedProject?.name]);
 
+  // Save: debounced Supabase write + localStorage mirror. Hydration guard prevents
+  // saving empty/default beats before load completes.
   useEffect(() => {
     if (!selectedProject) return;
     if (skipNextBeatPersistRef.current) { skipNextBeatPersistRef.current = false; return; }
-    try { localStorage.setItem(getBeatsStorageKey(), JSON.stringify(beats)); } catch (err) { console.warn("Could not persist beats:", err); }
-  }, [beats, selectedProject?.id, selectedProject?.name, getBeatsStorageKey]);
+    if (!beatsLoadedRef.current) return;
+    clearTimeout(beatsSaveTimerRef.current);
+    beatsSaveTimerRef.current = setTimeout(() => {
+      saveWritingBeatsAsync(selectedProject, beats).catch((err) => {
+        console.warn("Could not save beats to Supabase:", err);
+        // localStorage mirror already written by saveWritingBeatsAsync on failure.
+      });
+    }, 1500);
+  }, [beats, selectedProject?.id, selectedProject?.name]);
+
+  useEffect(() => () => { clearTimeout(beatsSaveTimerRef.current); }, []);
 
   // ─── Load/save active tab ────────────────────────────────────────────────────
   useEffect(() => {
@@ -2108,26 +2098,41 @@ function WritingScript({ selectedProject = null, user = null, userRole = null, p
     loadMoodboardImagesForScript();
   }, [selectedProject?.id, selectedProject?.name]);
 
-  // ─── Load/save target page count ────────────────────────────────────────────
+  // ─── Load/save target page count ─────────────────────────────────────────────
+  // Load: Supabase projects.settings first, localStorage fallback, legacy key last.
   useEffect(() => {
     if (!selectedProject) return;
-    const storageKey = getProjectStorageKey("writingScriptTargetPageCount");
-    const legacyStorageKey = getLegacyScriptStorageKey("scriptTargetPageCount");
-    const stored = localStorage.getItem(storageKey) || localStorage.getItem(legacyStorageKey);
-    const parsed = Number(stored);
-    const safeTargetPageCount = Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 90;
-    if (!localStorage.getItem(storageKey) && stored !== null) {
-      try { localStorage.setItem(storageKey, String(safeTargetPageCount)); } catch {}
-    }
-    setTargetPageCount(safeTargetPageCount);
-  }, [selectedProject?.id, selectedProject?.name, getLegacyScriptStorageKey, getProjectStorageKey]);
+    let cancelled = false;
+    targetPageCountLoadedRef.current = false;
+    loadWritingTargetPageCountAsync(selectedProject, 90).then((result) => {
+      if (cancelled) return;
+      skipNextTargetPageCountPersistRef.current = true;
+      setTargetPageCount(result.count);
+      targetPageCountLoadedRef.current = true;
+    }).catch((err) => {
+      if (cancelled) return;
+      console.warn("Could not load target page count:", err);
+      targetPageCountLoadedRef.current = true;
+    });
+    return () => { cancelled = true; };
+  }, [selectedProject?.id, selectedProject?.name]);
 
+  // Save: debounced Supabase write + localStorage mirror. Guard prevents premature saves.
   useEffect(() => {
     if (!selectedProject) return;
+    if (skipNextTargetPageCountPersistRef.current) { skipNextTargetPageCountPersistRef.current = false; return; }
+    if (!targetPageCountLoadedRef.current) return;
     const safe = Number(targetPageCount);
     if (!Number.isFinite(safe) || safe < 1) return;
-    try { localStorage.setItem(getProjectStorageKey("writingScriptTargetPageCount"), String(Math.round(safe))); } catch {}
-  }, [targetPageCount, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
+    clearTimeout(targetPageCountSaveTimerRef.current);
+    targetPageCountSaveTimerRef.current = setTimeout(() => {
+      saveWritingTargetPageCountAsync(selectedProject, safe).catch((err) => {
+        console.warn("Could not save target page count to Supabase:", err);
+      });
+    }, 1500);
+  }, [targetPageCount, selectedProject?.id, selectedProject?.name]);
+
+  useEffect(() => () => { clearTimeout(targetPageCountSaveTimerRef.current); }, []);
 
   // ─── Keyboard shortcuts for modals ──────────────────────────────────────────
   useEffect(() => {

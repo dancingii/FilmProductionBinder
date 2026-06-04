@@ -151,7 +151,6 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
   // Database-synced scenes state
   const [scenes, setScenes] = useState([]);
   const [scenesLoaded, setScenesLoaded] = useState(false);
-  const [scriptMoodImages, setScriptMoodImages] = useState([]);
   const [isSavingScenes, setIsSavingScenes] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [devBacklogOpen, setDevBacklogOpen] = useState(false);
@@ -4666,7 +4665,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
         // Always include updated_at so we can compare timestamps.
         const { data, error } = await supabase
           .from("moodboard_data")
-          .select("active_board_id, boards, links, images, canvas_items, zoom, show_grid, updated_at")
+          .select("active_board_id, boards, links, images, canvas_items, zoom, show_grid, ui_prefs, updated_at")
           .eq("project_id", projectId)
           .maybeSingle();
 
@@ -4700,6 +4699,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
               canvas_items: localData.canvasItems ?? [],
               zoom: localData.zoom ?? 0.65,
               show_grid: localData.showGrid ?? true,
+              ui_prefs: localData.ui_prefs ?? {},
               updated_at: savedAt,
             }, { onConflict: "project_id" });
 
@@ -4777,6 +4777,7 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
             canvas_items: localData.canvasItems ?? data.canvas_items,
             zoom: localData.zoom ?? data.zoom,
             show_grid: localData.showGrid ?? data.show_grid,
+            ui_prefs: localData.ui_prefs ?? data.ui_prefs ?? {},
             updated_at: savedAt,
           }, { onConflict: "project_id" });
 
@@ -5172,9 +5173,6 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
       canEdit={canEdit(userRole)}
       isViewOnly={isViewOnly(userRole)}
       user={user}
-      onMoodboardDataChange={({ images }) => {
-        setScriptMoodImages(images || []);
-      }}
     />
   );
 
@@ -5242,7 +5240,6 @@ function App({ selectedProject, userRole, modulePermissions, user, activeWorkflo
             characters={characters}
             setCharacters={setCharacters}
             syncCharactersToDatabase={syncCharactersToDatabase}
-            moodboardImages={scriptMoodImages}
             setStripboardScenes={setStripboardScenes}
 	            syncStripboardScenesToDatabase={syncStripboardScenesToDatabase}
 	            onScenesReordered={handleScriptScenesReordered}

@@ -7,6 +7,8 @@ const WRITING_DRAFT_STORE_NAME = "drafts";
 const WRITING_DRAFT_SETTINGS_KEY = "writingScriptDraft";
 const WRITING_DICTIONARY_SETTINGS_KEY = "writingSpellcheckDictionaryWords";
 const WRITING_TITLE_PAGE_SETTINGS_KEY = "writingTitlePageSettings";
+const WRITING_BEATS_SETTINGS_KEY = "writingScriptBeats";
+const WRITING_TARGET_PAGE_COUNT_SETTINGS_KEY = "writingScriptTargetPageCount";
 
 // Full draft payloads must NEVER be written to literal localStorage.
 // localStorage only stores a tiny marker {storage:"indexedDB", indexedDbKey, ...}.
@@ -296,6 +298,129 @@ export const saveWritingTitlePageSettingsAsync = async (project, settings = {}) 
   }
 };
 
+
+// ─── Writing Script Beats ─────────────────────────────────────────────────────
+// Load priority: Supabase projects.settings → localStorage current key → legacy key → []
+// Save: Supabase-first with localStorage mirror.
+
+export const loadWritingBeatsAsync = async (project) => {
+  const projectId = getWritingDraftProjectId(project);
+  const storageKey = `writingScriptBeats:${projectId}`;
+  const legacyStorageKey = `scriptBeats:${projectId}`;
+
+  const parseBeats = (raw) => {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
+  try {
+    const settings = await loadProjectSettings(project);
+    const dbBeats = settings?.[WRITING_BEATS_SETTINGS_KEY];
+    if (Array.isArray(dbBeats)) {
+      try { localStorage.setItem(storageKey, JSON.stringify(dbBeats)); } catch {}
+      return { beats: dbBeats, storage: "database" };
+    }
+  } catch {
+    // Local fallback below.
+  }
+
+  const localBeats = parseBeats(localStorage.getItem(storageKey));
+  if (localBeats) return { beats: localBeats, storage: "localStorage" };
+
+  const legacyBeats = parseBeats(localStorage.getItem(legacyStorageKey));
+  if (legacyBeats) {
+    try { localStorage.setItem(storageKey, JSON.stringify(legacyBeats)); } catch {}
+    return { beats: legacyBeats, storage: "localStorage" };
+  }
+
+  return { beats: [], storage: "empty" };
+};
+
+export const saveWritingBeatsAsync = async (project, beats = []) => {
+  const projectId = getWritingDraftProjectId(project);
+  const storageKey = `writingScriptBeats:${projectId}`;
+  const safeBeats = Array.isArray(beats) ? beats : [];
+
+  try {
+    await updateProjectSettings(project, {
+      [WRITING_BEATS_SETTINGS_KEY]: safeBeats,
+    });
+    try { localStorage.setItem(storageKey, JSON.stringify(safeBeats)); } catch {}
+    return { beats: safeBeats, storage: "database" };
+  } catch (error) {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(safeBeats));
+      return { beats: safeBeats, storage: "localStorage", databaseError: error };
+    } catch {
+      throw error;
+    }
+  }
+};
+
+// ─── Writing Script Target Page Count ────────────────────────────────────────
+// Load priority: Supabase projects.settings → localStorage current key → legacy key → default
+// Save: Supabase-first with localStorage mirror.
+
+export const loadWritingTargetPageCountAsync = async (project, defaultCount = 90) => {
+  const projectId = getWritingDraftProjectId(project);
+  const storageKey = `writingScriptTargetPageCount:${projectId}`;
+  const legacyStorageKey = `scriptTargetPageCount:${projectId}`;
+
+  const parseCount = (raw) => {
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+  };
+
+  try {
+    const settings = await loadProjectSettings(project);
+    const dbCount = settings?.[WRITING_TARGET_PAGE_COUNT_SETTINGS_KEY];
+    const parsed = parseCount(dbCount);
+    if (parsed !== null) {
+      try { localStorage.setItem(storageKey, String(parsed)); } catch {}
+      return { count: parsed, storage: "database" };
+    }
+  } catch {
+    // Local fallback below.
+  }
+
+  const localCount = parseCount(localStorage.getItem(storageKey));
+  if (localCount !== null) return { count: localCount, storage: "localStorage" };
+
+  const legacyCount = parseCount(localStorage.getItem(legacyStorageKey));
+  if (legacyCount !== null) {
+    try { localStorage.setItem(storageKey, String(legacyCount)); } catch {}
+    return { count: legacyCount, storage: "localStorage" };
+  }
+
+  return { count: defaultCount, storage: "empty" };
+};
+
+export const saveWritingTargetPageCountAsync = async (project, count) => {
+  const projectId = getWritingDraftProjectId(project);
+  const storageKey = `writingScriptTargetPageCount:${projectId}`;
+  const safeCount = Math.round(Number(count));
+  if (!Number.isFinite(safeCount) || safeCount < 1) throw new Error("Invalid target page count");
+
+  try {
+    await updateProjectSettings(project, {
+      [WRITING_TARGET_PAGE_COUNT_SETTINGS_KEY]: safeCount,
+    });
+    try { localStorage.setItem(storageKey, String(safeCount)); } catch {}
+    return { count: safeCount, storage: "database" };
+  } catch (error) {
+    try {
+      localStorage.setItem(storageKey, String(safeCount));
+      return { count: safeCount, storage: "localStorage", databaseError: error };
+    } catch {
+      throw error;
+    }
+  }
+};
 
 const openWritingDraftDatabase = () => {
   if (typeof indexedDB === "undefined") {

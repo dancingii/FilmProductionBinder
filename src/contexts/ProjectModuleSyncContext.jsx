@@ -528,6 +528,7 @@ export function ProjectModuleSyncProvider({ selectedProject, children, onProject
           canvas_items: payload.canvasItems,
           zoom: payload.zoom,
           show_grid: payload.showGrid,
+          ui_prefs: payload.ui_prefs ?? {},
           updated_at: new Date().toISOString(),
         }, { onConflict: "project_id" });
 

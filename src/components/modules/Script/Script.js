@@ -18,7 +18,6 @@ import { usePresence } from "../../../hooks/usePresence";
 import PresenceIndicator from "../../shared/PresenceIndicator";
 import SceneDetailModal from "../../shared/SceneDetailModal";
 import { supabase } from "../../../supabase";
-import { rippleTimelineSceneMove } from "../../../experimental/writingTimeline/writingTimelineUtils";
 import { createSceneId, isValidSceneId } from "../../../utils/sceneIdentity";
 import { buildSceneDisplayLabelMap, getSceneDisplayLabel } from "../../../utils/sceneDisplayLabel";
 import { createScriptSearchKey, searchScript as searchScriptUtil } from "../../../utils/scriptSearch";
@@ -308,7 +307,7 @@ const resequenceInsertedGroupLetters = (sceneList, insertedIndex) => {
 };
 
 // ─── Scene List ───────────────────────────────────────────────────────────────
-function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor, selectedProject, user, onSceneNumberChange, setCurrentIndex, showMoodOverlay, canDeleteScene = false, onDeleteScene = null, onReorderScene = null, onUpdateSceneMetadata = null, onInsertScene = null, onOpenSceneDetail = null, onRequestInsert = null, pageStatsBySceneId = null }) {
+function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor, selectedProject, user, onSceneNumberChange, setCurrentIndex, canDeleteScene = false, onDeleteScene = null, onReorderScene = null, onUpdateSceneMetadata = null, onInsertScene = null, onOpenSceneDetail = null, onRequestInsert = null, pageStatsBySceneId = null }) {
   const { otherUsers } = usePresence(selectedProject?.id, user, "script", currentSceneNumber);
   const [dragState, setDragState] = useState({ draggedKey: null, overKey: null, position: "before" });
   const listRef = useRef(null);
@@ -385,7 +384,7 @@ function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor,
   if (scenes.length === 0) {
     return (
       <div style={{ marginLeft: "20px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <div style={{ flex: 1, width: "492px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden", padding: "18px", boxSizing: "border-box", color: "#555", lineHeight: 1.45 }}>
+        <div style={{ flex: 1, width: "492px", border: "2px inset #ccc", backgroundColor: "white", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden", padding: "18px", boxSizing: "border-box", color: "#555", lineHeight: 1.45 }}>
           <div style={{ fontWeight: "bold", fontSize: "14px", color: "#222", marginBottom: "8px" }}>No scenes yet</div>
           <div style={{ marginBottom: "14px" }}>Upload a script to begin breakdown.</div>
         </div>
@@ -395,7 +394,7 @@ function SceneList({ scenes, currentSceneNumber, sceneRefs, getSceneStatusColor,
 
   return (
     <div style={{ marginLeft: "20px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div ref={listRef} style={{ flex: 1, width: "492px", border: "2px inset #ccc", backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden" }}>
+      <div ref={listRef} style={{ flex: 1, width: "492px", border: "2px inset #ccc", backgroundColor: "white", fontFamily: "'Questrial', 'Futura', 'Arial', sans-serif", fontSize: "12px", overflowY: "auto", overflowX: "hidden" }}>
 	        {scenes.map((scene, index) => {
 	          const sceneKey = getSceneDragKey(scene, index);
 	          const statusPresentation = getSceneStatusColor(scene.sceneNumber);
@@ -2748,7 +2747,6 @@ function Script({
   characters = {},
   setCharacters = null,
   syncCharactersToDatabase = null,
-  moodboardImages = [],
   setStripboardScenes = null,
 	  syncStripboardScenesToDatabase = null,
 	  onScenesReordered = null,
@@ -2767,32 +2765,10 @@ function Script({
   const [showReplaceDialog,setShowReplaceDialog]= useState(false);
   const [replaceTargetIdx, setReplaceTargetIdx] = useState(null);
   const [currentSceneNumber,setCurrentSceneNumber] = useState(scenes[0]?.sceneNumber || null);
-  const [showMoodOverlay, setShowMoodOverlay] = useState(() => {
-    return localStorage.getItem("scriptMoodOverlayEnabled") === "true";
-  });
-  
-  const [moodOverlaySettings, setMoodOverlaySettings] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("scriptMoodOverlaySettings")) || {
-        opacity: 0.5,
-        columnWidth: 220,
-        columns: 4,
-        refreshSeconds: 0,
-      };
-    } catch {
-      return {
-        opacity: 0.5,
-        columnWidth: 220,
-        columns: 4,
-        refreshSeconds: 0,
-      };
-    }
-  });
   const [editingSceneIndex, setEditingSceneIndex] = useState(null);
   const [scriptHeadingForm, setScriptHeadingForm] = useState({ intExt: "INT.", location: "", timeOfDay: "DAY", modifier: "" });
   const [pendingInsertIndex, setPendingInsertIndex] = useState(null);
   const [showInsertSourceModal, setShowInsertSourceModal] = useState(false);
-  const [scriptMoodboardImages, setScriptMoodboardImages] = useState([]);
   const [viewerPageStatsBySceneId, setViewerPageStatsBySceneId] = useState({});
   const [isPdfExporting, setIsPdfExporting] = useState(false);
 
@@ -2808,7 +2784,6 @@ function Script({
 
   const isProductionMode = true;
   const isScriptEditable = isEditMode;
-  const targetPageCount = 90;
   const exportScenes = useMemo(
     () => (isScriptEditable ? editingScenes : normalizeCharacterContinuationMarkers(scenes)),
     [editingScenes, isScriptEditable, scenes]
@@ -2848,27 +2823,6 @@ function Script({
     const projectId = selectedProject?.id || selectedProject?.name || "default-project";
     return `${key}:${projectId}`;
   }, [selectedProject?.id, selectedProject?.name]);
-
-  const getTimelinePositionsStorageKey = useCallback(() => {
-    const projectId = selectedProject?.id || selectedProject?.name || "default-project";
-    return `scriptTimelinePositions:${projectId}`;
-  }, [selectedProject?.id, selectedProject?.name]);
-
-  const persistTimelinePositions = useCallback((sceneList = []) => {
-    try {
-      const payload = sceneList.map((scene, index) => ({
-        sceneId: scene.id || null,
-        sceneNumber: scene.sceneNumber,
-        heading: scene.heading,
-        timelineStartPage: Number.isFinite(Number(scene.timelineStartPage)) ? Number(scene.timelineStartPage) : 0,
-        orderIndex: index,
-      }));
-
-      localStorage.setItem(getTimelinePositionsStorageKey(), JSON.stringify(payload));
-    } catch (err) {
-      console.warn("Could not persist timeline positions:", err);
-    }
-  }, [getTimelinePositionsStorageKey]);
 
   const loadRevisions = useCallback(async () => {
     if (!selectedProject) return;
@@ -2947,55 +2901,7 @@ function Script({
   }, [scenes]);
 
   useEffect(() => {
-    if (!scenes.length) return;
-
-    let savedPositions = [];
-
-    try {
-      savedPositions = JSON.parse(localStorage.getItem(getTimelinePositionsStorageKey()) || "[]");
-    } catch (err) {
-      console.warn("Could not read saved timeline positions:", err);
-      return;
-    }
-
-    if (!Array.isArray(savedPositions) || savedPositions.length === 0) return;
-
-    const findSavedPosition = (scene) => {
-      return savedPositions.find(saved =>
-        saved.sceneId && scene.id && String(saved.sceneId) === String(scene.id)
-      ) || savedPositions.find(saved =>
-        String(saved.heading || "").trim().toUpperCase() === String(scene.heading || "").trim().toUpperCase()
-      );
-    };
-
-    let changed = false;
-
-    const patchedScenes = scenes.map((scene) => {
-      const saved = findSavedPosition(scene);
-      if (!saved) return scene;
-
-      const savedStartPage = Number(saved.timelineStartPage);
-      if (!Number.isFinite(savedStartPage)) return scene;
-
-      const currentStartPage = Number(scene.timelineStartPage);
-      if (Number.isFinite(currentStartPage) && currentStartPage === savedStartPage) return scene;
-
-      changed = true;
-
-      return {
-        ...scene,
-        timelineStartPage: savedStartPage,
-      };
-    });
-
-    if (!changed) return;
-
-    setScenes(patchedScenes);
-
-  }, [scenes, getTimelinePositionsStorageKey, setScenes]);
-
-  useEffect(() => {
-    if (!editingScenes.length) return;
+    if (!isEditMode || !editingScenes.length) return;
 
     const payload = JSON.stringify(editingScenes);
     if (payload === lastAutoSavePayloadRef.current) return;
@@ -3015,78 +2921,7 @@ function Script({
     }, 15000);
 
     return () => clearTimeout(autoSaveTimerRef.current);
-  }, [editingScenes, saveScenesDatabase, setScenes]);
-
-  useEffect(() => {
-    if (!selectedProject) return;
-
-    const storedOverlay = localStorage.getItem(getProjectStorageKey("scriptMoodOverlayEnabled"));
-    setShowMoodOverlay(storedOverlay === "true");
-
-    try {
-      const storedSettings = JSON.parse(localStorage.getItem(getProjectStorageKey("scriptMoodOverlaySettings")));
-      if (storedSettings) setMoodOverlaySettings(storedSettings);
-    } catch {}
-  }, [selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
-
-  useEffect(() => {
-    if (!selectedProject) return;
-    localStorage.setItem(getProjectStorageKey("scriptMoodOverlayEnabled"), showMoodOverlay ? "true" : "false");
-  }, [showMoodOverlay, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
-
-  useEffect(() => {
-    if (!selectedProject) return;
-    localStorage.setItem(getProjectStorageKey("scriptMoodOverlaySettings"), JSON.stringify(moodOverlaySettings));
-  }, [moodOverlaySettings, selectedProject?.id, selectedProject?.name, getProjectStorageKey]);
-
-  useEffect(() => {
-    const incomingImages = Array.isArray(moodboardImages) ? moodboardImages.filter(img => img?.url) : [];
-
-    if (incomingImages.length > 0) {
-      setScriptMoodboardImages(incomingImages);
-      return;
-    }
-
-    const loadMoodboardImagesForScript = async () => {
-      const projectId = selectedProject?.id || selectedProject?.name || "default-project";
-      const storageKey = `filmProductionBinder:moodboard:${projectId}`;
-
-      try {
-        const localRaw = localStorage.getItem(storageKey);
-
-        if (localRaw) {
-          const parsed = JSON.parse(localRaw);
-          const localImages = Array.isArray(parsed?.images) ? parsed.images.filter(img => img?.url) : [];
-
-          if (localImages.length > 0) {
-            setScriptMoodboardImages(localImages);
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn("Could not load local moodboard images for script overlay:", err);
-      }
-
-      if (!selectedProject?.id) return;
-
-      try {
-        const { data, error } = await supabase
-          .from("moodboard_data")
-          .select("images")
-          .eq("project_id", selectedProject.id)
-          .maybeSingle();
-
-        if (error) throw error;
-
-        const dbImages = Array.isArray(data?.images) ? data.images.filter(img => img?.url) : [];
-        setScriptMoodboardImages(dbImages);
-      } catch (err) {
-        console.warn("Could not load database moodboard images for script overlay:", err);
-      }
-    };
-
-    loadMoodboardImagesForScript();
-  }, [moodboardImages, selectedProject?.id, selectedProject?.name]);
+  }, [isEditMode, editingScenes, saveScenesDatabase, setScenes]);
 
   const enterEditMode = () => {
     const copy = scenes.map(s => ({ ...s, content: s.content.map(b => ({ ...b })) }));
@@ -3202,7 +3037,7 @@ function Script({
       : 0;
     const timelineStartPage = Math.min(
       Math.max(0, sourceStartPage + getSceneEstimatedPageLength(sourceScene)),
-      Math.max(0, targetPageCount - 1)
+      89
     );
     const newScene = createBlankScene(nextSceneNumber, timelineStartPage);
     // The block at blockIndex triggered scene creation (it was empty). Remove it
@@ -3242,7 +3077,7 @@ function Script({
 	      console.error("Error creating scene from writing:", err);
 	      void showScriptAlert("Could not create scene: " + err.message);
 	    });
-	  }, [editingScenes, scenes, isScriptEditable, targetPageCount, saveScenesDatabase, setScenes, setCurrentIndex, showScriptAlert]);
+	  }, [editingScenes, scenes, isScriptEditable, saveScenesDatabase, setScenes, setCurrentIndex, showScriptAlert]);
 
   const handleInsertScene = async (insertAtIndex) => {
     const baseScenes = isScriptEditable ? editingScenes : scenes;
@@ -3253,7 +3088,7 @@ function Script({
     const prevStart = prevScene && Number.isFinite(Number(prevScene.timelineStartPage))
       ? Number(prevScene.timelineStartPage) : 0;
     const timelineStartPage = prevScene
-      ? Math.min(Math.max(0, prevStart + getSceneEstimatedPageLength(prevScene)), Math.max(0, targetPageCount - 1))
+      ? Math.min(Math.max(0, prevStart + getSceneEstimatedPageLength(prevScene)), 89)
       : 0;
 
     const newScene = {
@@ -3342,7 +3177,6 @@ function Script({
     })));
     setOriginalContent(buildOriginalContentMap(updatedScenes));
     setActiveBlock(null);
-    persistTimelinePositions(updatedScenes);
 
     try {
       if (selectedProject?.id) {
@@ -3432,11 +3266,11 @@ function Script({
     })));
     setOriginalContent(buildOriginalContentMap(updatedScenes));
     setActiveBlock(null);
-    persistTimelinePositions(updatedScenes);
 
     try {
       await saveScenesDatabase(updatedScenes);
       if (onScenesReordered) onScenesReordered(updatedScenes);
+      if (!isEditMode) setEditingScenes([]);
 	    } catch (err) {
 	      console.error("Error saving scene list reorder:", err);
 	      void showScriptAlert("Could not reorder scenes: " + err.message);
@@ -3464,51 +3298,6 @@ function Script({
       console.error("Error updating scene metadata:", err);
       void showScriptAlert("Could not save scene metadata: " + err.message);
     }
-  };
-
-  const renumberScenesByTimeline = (sceneList) => {
-    return [...sceneList]
-      .sort((a, b) => {
-        const aStart = Number.isFinite(Number(a.timelineStartPage)) ? Number(a.timelineStartPage) : 0;
-        const bStart = Number.isFinite(Number(b.timelineStartPage)) ? Number(b.timelineStartPage) : 0;
-        return aStart - bStart;
-      })
-      .map((scene, index) => ({
-        ...scene,
-        sceneNumber: index + 1,
-      }));
-  };
-
-  const handleTimelineSceneMove = async (sceneIndex, nextStartPage, shouldPersist = false) => {
-    const baseScenes = isScriptEditable ? editingScenes : scenes;
-
-    const movedScene = baseScenes[sceneIndex];
-    if (!movedScene) return;
-
-    const movedScenes = rippleTimelineSceneMove(baseScenes, sceneIndex, nextStartPage);
-
-    const nextScenes = shouldPersist ? renumberScenesByTimeline(movedScenes) : movedScenes;
-
-    setScenes(nextScenes);
-
-    if (isScriptEditable) {
-      setEditingScenes(nextScenes.map(scene => ({
-        ...scene,
-        content: Array.isArray(scene.content) ? scene.content.map(block => ({ ...block })) : [],
-      })));
-    }
-
-    if (!shouldPersist) return;
-
-    persistTimelinePositions(nextScenes);
-
-    try {
-      await saveScenesDatabase(nextScenes);
-      if (onScenesReordered) onScenesReordered(nextScenes);
-	    } catch (err) {
-	      console.error("Error saving timeline scene move:", err);
-	      void showScriptAlert("Could not save timeline move: " + err.message);
-	    }
   };
 
   const handleSave = async () => {
@@ -3808,22 +3597,6 @@ function Script({
     return result;
   };
 
-  const getSceneSpecificMoodImages = (scene) => {
-    if (!scene || !Array.isArray(scriptMoodboardImages)) return [];
-
-    const sceneNumber = String(scene.sceneNumber).toLowerCase();
-    const heading = String(scene.heading || "").toLowerCase();
-
-    return scriptMoodboardImages.filter((image) => {
-      const title = String(image.title || "").toLowerCase();
-      return (
-        title.includes(`scene ${sceneNumber}`) ||
-        title.includes(`sc ${sceneNumber}`) ||
-        title.includes(heading)
-      );
-    });
-  };
-
   const displaySceneNumber = currentSceneNumber || scenes[currentIndex]?.sceneNumber;
 
   return (
@@ -3967,7 +3740,6 @@ function Script({
           onInsertAfter={!isViewOnly ? () => { const idx = editingSceneIndex; setEditingSceneIndex(null); setPendingInsertIndex(idx + 1); setShowInsertSourceModal(true); } : null}
           tagged={getSceneCardTaggedItems(scenes[editingSceneIndex].sceneNumber)}
           sceneCharacters={getSceneCardCharacters(scenes[editingSceneIndex])}
-          sceneMoodImages={getSceneSpecificMoodImages(scenes[editingSceneIndex])}
         />
       )}
 
@@ -4080,7 +3852,7 @@ function Script({
             overflowY: "auto",
             overflowX: "hidden",
             padding: `${SCRIPT_PAGE_LAYOUT.pageMarginTop} ${SCRIPT_PAGE_LAYOUT.pageMarginRight} ${SCRIPT_PAGE_LAYOUT.pageMarginBottom} ${SCRIPT_PAGE_LAYOUT.pageMarginLeft}`,
-            backgroundColor: showMoodOverlay ? "rgba(255,255,255,0.15)" : "white",
+            backgroundColor: "white",
             boxSizing: "border-box",
             fontFamily: "'Courier Prime', Courier, 'Courier New', monospace",
             fontSize: "12pt",
@@ -4124,7 +3896,7 @@ function Script({
           )}
         </div>
         </div>
-        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative", zIndex: 1, backgroundColor: showMoodOverlay ? "transparent" : "white", minWidth: 0 }}>
+        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative", zIndex: 1, backgroundColor: "white", minWidth: 0 }}>
           <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <SceneList
               scenes={scenes}
@@ -4135,7 +3907,6 @@ function Script({
               user={user}
               onSceneNumberChange={onSceneNumberChange}
               setCurrentIndex={setCurrentIndex}
-              showMoodOverlay={showMoodOverlay}
               canDeleteScene={!isViewOnly}
               onDeleteScene={handleDeleteScene}
               onReorderScene={!isViewOnly ? handleSceneListReorder : null}

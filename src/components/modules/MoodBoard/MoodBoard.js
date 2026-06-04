@@ -865,21 +865,21 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
             if (process.env.NODE_ENV === "development") {
               console.info(`[MoodBoard load] loaded from database — boards: ${data.boards?.length ?? "?"}, images: ${data.images?.length ?? "?"}`);
             }
-            // Merge UI-preference fields (characterBoardLinks, hiddenCharacterIds) from
-            // localStorage. These are not stored in moodboard_data columns — localStorage
-            // is the source of truth for these project-scoped UI preferences. On a new
-            // device the localStorage fallback will be {} / [] which is correct.
+            // ui_prefs is the Supabase-backed source of truth for cross-device UI preferences.
+            // localStorage is kept only as a backward-compat fallback for rows that predate
+            // the ui_prefs column (those rows return ui_prefs = {}).
             let localPrefs = {};
             try {
               const raw = localStorage.getItem(storageKey);
               if (raw) localPrefs = JSON.parse(raw);
             } catch { /* ignore */ }
+            const dbPrefs = data.ui_prefs && typeof data.ui_prefs === "object" ? data.ui_prefs : {};
             applyNormalized(normalizeImportedState({
               boards: data.boards, activeBoardId: data.active_board_id,
               links: data.links, images: data.images,
               canvasItems: data.canvas_items, zoom: data.zoom, showGrid: data.show_grid,
-              characterBoardLinks: localPrefs.characterBoardLinks,
-              hiddenCharacterIds: localPrefs.hiddenCharacterIds,
+              characterBoardLinks: dbPrefs.characterBoardLinks ?? localPrefs.characterBoardLinks,
+              hiddenCharacterIds: dbPrefs.hiddenCharacterIds ?? localPrefs.hiddenCharacterIds,
             }), userDisplayNameRef.current);
             setStatusMessage("Loaded MoodBoard from database.");
             setTimeout(() => setStatusMessage(prev => prev === "Loaded MoodBoard from database." ? "Saved" : prev), 2500);
@@ -906,10 +906,14 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     MOODBOARD_SESSION_CACHE.set(storageKey, { boards, activeBoardId, links, images, canvasItems, zoom, showGrid, characterBoardLinks, hiddenCharacterIds });
 
     // Build the local storage payload.
+    // ui_prefs is included both as a nested object (matches Supabase column shape, read by
+    // App.js proxy flush as localData.ui_prefs) and as flat fields (backward compat for
+    // any code that reads localPrefs.hiddenCharacterIds / localPrefs.characterBoardLinks directly).
     const localPayload = {
       version: STORAGE_VERSION, savedAt: new Date().toISOString(),
       activeBoardId, boards, links, images, canvasItems, zoom, showGrid,
       characterBoardLinks, hiddenCharacterIds,
+      ui_prefs: { hiddenCharacterIds, characterBoardLinks },
     };
 
     // Always write localStorage immediately — local mirror is synchronous.
@@ -927,6 +931,7 @@ function MoodBoard({ selectedProject, userRole, canEdit = true, isViewOnly = fal
     setStatusMessage("Saving...");
     const supabasePayload = {
       activeBoardId, boards, links, images, canvasItems, zoom, showGrid,
+      ui_prefs: { hiddenCharacterIds, characterBoardLinks },
     };
     moodBoardSyncMarkDirtyRef.current(supabasePayload, localPayload);
 
